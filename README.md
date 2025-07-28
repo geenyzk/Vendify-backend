@@ -1,6 +1,5 @@
-<<<<<<< HEAD
-# vtu_backend
-=======
+
+# VTU BACKEND
 <!-- what to do  -->
 <!-- run job queue -->
 <!-- php artisan queue:work -->
@@ -36,4 +35,6 @@
     # NOTIFICATION AND TEMPLATING
     # TRANSACTION CALCULATOR
 -->
->>>>>>> ae80270 (initial commit)
+
+[Documentation]
+    - Run `php artisan scribe:generate` to generate documentation for this project
