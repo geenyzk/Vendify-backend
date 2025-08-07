@@ -2,11 +2,11 @@
 
 return [
 
-    'paths' => ['api/*'],
+    'paths' => ['api/*', 'sanctum/csrf-cookie', 'docs/*'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => ['http://localhost:8000', 'http://127.0.0.1:8000', 'http://localhost/*'],
 
     'allowed_origins_patterns' => [],
 

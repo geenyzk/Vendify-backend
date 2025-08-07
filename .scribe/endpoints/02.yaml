@@ -5,129 +5,6 @@ description: |-
 endpoints:
   -
     httpMethods:
-      - GET
-    uri: 'api/table/{table}'
-    metadata:
-      groupName: 'Admin Management'
-      groupDescription: |-
-
-        APIs for dashboard statistics, universal table access, broadcasting notifications, and wallet funding.
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters:
-      table:
-        name: table
-        description: 'The table.'
-        required: true
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-    cleanUrlParameters:
-      table: consequatur
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses:
-      -
-        status: 404
-        content: '{"message":"Model not found for slug: consequatur","success":false,"errors":[],"type":"error"}'
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - GET
-    uri: 'api/table/{table}/{id}'
-    metadata:
-      groupName: 'Admin Management'
-      groupDescription: |-
-
-        APIs for dashboard statistics, universal table access, broadcasting notifications, and wallet funding.
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters:
-      table:
-        name: table
-        description: 'The table.'
-        required: true
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      id:
-        name: id
-        description: 'The ID of the {table}.'
-        required: true
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-    cleanUrlParameters:
-      table: consequatur
-      id: consequatur
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses:
-      -
-        status: 404
-        content: '{"message":"Table not found","success":false,"errors":[],"type":"error"}'
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
       - POST
       - PUT
     uri: 'api/table/{table}'
@@ -151,14 +28,14 @@ endpoints:
         name: table
         description: 'The table.'
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanUrlParameters:
-      table: consequatur
+      table: architecto
     queryParameters: []
     cleanQueryParameters: []
     bodyParameters: []
@@ -198,7 +75,7 @@ endpoints:
         name: table
         description: 'The table.'
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -208,15 +85,15 @@ endpoints:
         name: id
         description: 'The ID of the {table}.'
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanUrlParameters:
-      table: consequatur
-      id: consequatur
+      table: architecto
+      id: architecto
     queryParameters: []
     cleanQueryParameters: []
     bodyParameters: []
@@ -343,7 +220,7 @@ endpoints:
         name: smsMessage
         description: 'Must not be greater than 160 characters.'
         required: false
-        example: vmqeopfuudtdsufvyvddq
+        example: b
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -353,7 +230,7 @@ endpoints:
         name: emailSubject
         description: ''
         required: false
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -363,7 +240,7 @@ endpoints:
         name: emailBody
         description: ''
         required: false
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -373,7 +250,7 @@ endpoints:
         name: notifTitle
         description: ''
         required: false
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -383,7 +260,7 @@ endpoints:
         name: notifMessage
         description: ''
         required: false
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -403,7 +280,7 @@ endpoints:
         name: scheduleDate
         description: 'Must be a valid date.'
         required: false
-        example: '2025-07-28T07:15:15'
+        example: '2025-08-02T12:40:22'
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -422,72 +299,16 @@ endpoints:
     cleanBodyParameters:
       channels: []
       recipients: []
-      smsMessage: vmqeopfuudtdsufvyvddq
-      emailSubject: consequatur
-      emailBody: consequatur
-      notifTitle: consequatur
-      notifMessage: consequatur
+      smsMessage: b
+      emailSubject: architecto
+      emailBody: architecto
+      notifTitle: architecto
+      notifMessage: architecto
       sendNow: true
-      scheduleDate: '2025-07-28T07:15:15'
+      scheduleDate: '2025-08-02T12:40:22'
       priorityHigh: false
     fileParameters: []
     responses: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - GET
-    uri: 'api/admin/vendor/{id}/refresh-token'
-    metadata:
-      groupName: 'Admin Management'
-      groupDescription: |-
-
-        APIs for dashboard statistics, universal table access, broadcasting notifications, and wallet funding.
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters:
-      id:
-        name: id
-        description: 'The ID of the vendor.'
-        required: true
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-    cleanUrlParameters:
-      id: consequatur
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses:
-      -
-        status: 401
-        content: '{"message":"Unauthenticated."}'
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
     responseFields: []
     auth:
       - headers
@@ -521,14 +342,14 @@ endpoints:
         name: id
         description: 'The ID of the user.'
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanUrlParameters:
-      id: consequatur
+      id: architecto
     queryParameters: []
     cleanQueryParameters: []
     bodyParameters:
@@ -536,7 +357,7 @@ endpoints:
         name: amount
         description: 'Must be at least 0.01.'
         required: true
-        example: 73
+        example: 27
         type: number
         enumValues: []
         exampleWasSpecified: false
@@ -555,7 +376,7 @@ endpoints:
         nullable: false
         custom: []
     cleanBodyParameters:
-      amount: 73
+      amount: 27
       type: credit
     fileParameters: []
     responses: []
