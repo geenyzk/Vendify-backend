@@ -50,7 +50,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     Route::prefix("admin")->group(function () {
-        Route::resource('users', UserController::class);
+        Route::resource('users', UserController::class)
+            ->withoutMiddleware('auth:sanctum')
+            ->only(['store']);
+
+        Route::resource('users', UserController::class)
+            ->only(['show', 'update', 'destroy', 'index']);
+
         Route::resource('controls', ServiceControlController::class);
 
         Route::get('/stats', [AdminController::class, 'stats']);
