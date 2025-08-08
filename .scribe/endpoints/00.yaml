@@ -27,7 +27,7 @@ endpoints:
         name: login
         description: ''
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -54,7 +54,7 @@ endpoints:
         nullable: false
         custom: []
     cleanBodyParameters:
-      login: consequatur
+      login: architecto
       password: password123
       email: user@example.com
     fileParameters: []
@@ -111,7 +111,7 @@ endpoints:
         name: fullname
         description: 'Full name of the user.'
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -121,7 +121,7 @@ endpoints:
         name: username
         description: 'Unique username.'
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -131,7 +131,7 @@ endpoints:
         name: email
         description: 'Must be a valid email.'
         required: true
-        example: qkunze@example.com
+        example: gbailey@example.net
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -141,7 +141,7 @@ endpoints:
         name: phone
         description: 'Unique phone number.'
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -151,7 +151,7 @@ endpoints:
         name: password
         description: Password.
         required: true
-        example: 'O[2UZ5ij-e/dl4m{o,'
+        example: '|]|{+-'
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -161,19 +161,19 @@ endpoints:
         name: password_confirmation
         description: 'Confirm Password.'
         required: true
-        example: consequatur
+        example: architecto
         type: string
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanBodyParameters:
-      fullname: consequatur
-      username: consequatur
-      email: qkunze@example.com
-      phone: consequatur
-      password: 'O[2UZ5ij-e/dl4m{o,'
-      password_confirmation: consequatur
+      fullname: architecto
+      username: architecto
+      email: gbailey@example.net
+      phone: architecto
+      password: '|]|{+-'
+      password_confirmation: architecto
     fileParameters: []
     responses:
       -
@@ -245,49 +245,6 @@ endpoints:
         custom: []
     responseFields: []
     auth: []
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - GET
-    uri: api/logout
-    metadata:
-      groupName: Authentication
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: 'Logout user'
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses:
-      -
-        status: 401
-        content: '{"message":"Unauthenticated."}'
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
     controller: null
     method: null
     route: null
