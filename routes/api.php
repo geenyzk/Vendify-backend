@@ -54,7 +54,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix("admin")->group(function (){
         Route::resource('users', UserController::class);
         Route::resource('controls', ServiceControlController::class);
-
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::post('/broadcast', [AdminController::class, 'broadcast']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
@@ -65,3 +64,25 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
     Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
 });
+
+
+
+
+
+Route::prefix('vtu')->group(function () {
+    Route::get('/user', [VTUServicesController::class, 'getUser']);
+    Route::get('/networks', [VTUServicesController::class, 'getNetworks']);
+    Route::get('/network/plans', [VTUServicesController::class, 'getNetworkPlans']);
+    Route::get('/data', [VTUServicesController::class, 'getDataPlans']);
+    Route::get('/data/{id}', [VTUServicesController::class, 'getDataPlanById']);
+
+    Route::get('/validate/iuc', [VTUServicesController::class, 'validateIUC']);
+    Route::get('/validate/meter', [VTUServicesController::class, 'validateMeter']);
+
+    Route::post('/airtime/funding', [VTUServicesController::class, 'airtimeFunding']);
+    Route::post('/airtime/topup', [VTUServicesController::class, 'airtimeTopup']);
+    Route::post('/data/purchase', [VTUServicesController::class, 'dataPurchase']);
+    Route::post('/cable', [VTUServicesController::class, 'cableSubscription']);
+    Route::post('/electricity', [VTUServicesController::class, 'electricityPayment']);
+});
+
