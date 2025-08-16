@@ -17,24 +17,22 @@ Route::post("/register", [RegisteredUserController::class, 'store']);
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
 
 Route::post('/insert', [AdminController::class, 'universalInsert']);
-
 Route::get('/table/{table}', [AdminController::class, 'universalGet']);
-
 
 // Update a record by ID in a table universalBulkCreateOrUpdate
 Route::get('/table/{table}/{id}', [AdminController::class, 'universalShow']);
-Route::match(["post", 'put'],'/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
-Route::match(["post", 'put'],'/table/{table}', [AdminController::class, 'universalBulkCreateOrUpdate']);
+Route::match(["post", 'put'], '/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
+Route::match(["post", 'put'], '/table/{table}', [AdminController::class, 'universalBulkCreateOrUpdate']);
 Route::delete('/table/{table}/{id}', [AdminController::class, 'universalDelete']);
 
 
 Route::get('/test-mail', function () {
     Mail::raw('Test from Laravel', function ($message) {
         $message->to('officialspurconnect@gmail.com')
-                ->subject('Test Subject');
-        });
+            ->subject('Test Subject');
+    });
 
-        return 'Sent!';
+    return 'Sent!';
 });
 
 
@@ -46,13 +44,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::get('/transactions/report', [TransactionController::class, 'report']);
 
-    Route::prefix("customer")->group(function(){
+    Route::prefix("customer")->group(function () {
         Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
         Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);
     });
 
-    Route::prefix("admin")->group(function (){
-        Route::resource('users', UserController::class);
+    Route::prefix("admin")->group(function () {
+        Route::resource('users', UserController::class)
+            ->withoutMiddleware('auth:sanctum')
+            ->only(['store']);
+
+        Route::resource('users', UserController::class)
+            ->only(['show', 'update', 'destroy', 'index']);
+
         Route::resource('controls', ServiceControlController::class);
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::post('/broadcast', [AdminController::class, 'broadcast']);

@@ -17,6 +17,7 @@ class User extends Authenticatable
     ];
 
     protected $appends  = ["transactions", "banks", "stats", "referrals"];
+
     protected $hidden = [
         'password',
         'remember_token',
@@ -29,21 +30,22 @@ class User extends Authenticatable
         'last_login_at' => 'datetime',
     ];
 
-
-
     public function getReferralsAttribute()
     {
         return User::whereReferredBy($this->id)->get();
     }
 
 
-    function getTransactionsAttribute(){
+    function getTransactionsAttribute()
+    {
         return Transaction::where("user_id", $this->id)->get();
     }
 
-    function getStatsAttribute(){
+    function getStatsAttribute()
+    {
 
         $transaction = Transaction::where("user_id", $this->id);
+
         return [
             "daily_purchased_data" => $transaction
             ->whereTransactionType("data_subscription")
@@ -57,7 +59,8 @@ class User extends Authenticatable
     }
 
 
-    function getBanksAttribute($query){
+    function getBanksAttribute($query)
+    {
         return Bank::where("user_id", $this->id)->get();
     }
 }
