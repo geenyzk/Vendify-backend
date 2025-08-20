@@ -43,5 +43,4 @@ jobs:
           local-dir: ./ # deploy everything
           exclude: |
             **/node_modules/**
-            **/vendor/**
             **/.git*
