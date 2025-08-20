@@ -48,7 +48,7 @@ endpoints:
         name: bypass
         description: ''
         required: true
-        example: true
+        example: false
         type: boolean
         enumValues: []
         exampleWasSpecified: false
@@ -116,7 +116,7 @@ endpoints:
         custom: []
     cleanBodyParameters:
       amount: '100'
-      bypass: true
+      bypass: false
       pin: '1234'
       discount_amount: 11613.31890586
       simulate_status: consequatur

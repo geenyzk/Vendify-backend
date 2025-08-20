@@ -205,7 +205,7 @@
     </ul>
 
     <ul class="toc-footer" id="last-updated">
-        <li>Last updated: July 28, 2025</li>
+        <li>Last updated: August 9, 2025</li>
     </ul>
 </div>
 
@@ -1006,7 +1006,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     \"notifTitle\": \"consequatur\",
     \"notifMessage\": \"consequatur\",
     \"sendNow\": true,
-    \"scheduleDate\": \"2025-07-28T07:15:15\",
+    \"scheduleDate\": \"2025-08-09T13:39:24\",
     \"priorityHigh\": false
 }"
 </code></pre></div>
@@ -1032,7 +1032,7 @@ let body = {
     "notifTitle": "consequatur",
     "notifMessage": "consequatur",
     "sendNow": true,
-    "scheduleDate": "2025-07-28T07:15:15",
+    "scheduleDate": "2025-08-09T13:39:24",
     "priorityHigh": false
 };
 
@@ -1231,10 +1231,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
 <i>optional</i> &nbsp;
                 <input type="text" style="display: none"
                               name="scheduleDate"                data-endpoint="POSTapi-admin-broadcast"
-               value="2025-07-28T07:15:15"
+               value="2025-08-09T13:39:24"
                data-component="body">
     <br>
-<p>Must be a valid date. Example: <code>2025-07-28T07:15:15</code></p>
+<p>Must be a valid date. Example: <code>2025-08-09T13:39:24</code></p>
         </div>
                 <div style=" padding-left: 28px;  clear: unset;">
             <b style="line-height: 2;"><code>priorityHigh</code></b>&nbsp;&nbsp;
@@ -1429,7 +1429,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Accept: application/json" \
     --data "{
     \"amount\": 73,
-    \"type\": \"credit\"
+    \"type\": \"debit\"
 }"
 </code></pre></div>
 
@@ -1447,7 +1447,7 @@ const headers = {
 
 let body = {
     "amount": 73,
-    "type": "credit"
+    "type": "debit"
 };
 
 fetch(url, {
@@ -1570,10 +1570,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="text" style="display: none"
                               name="type"                data-endpoint="POSTapi-admin-users--id--fund"
-               value="credit"
+               value="debit"
                data-component="body">
     <br>
-<p>Example: <code>credit</code></p>
+<p>Example: <code>debit</code></p>
 Must be one of:
 <ul style="list-style-type: square;"><li><code>credit</code></li> <li><code>debit</code></li></ul>
         </div>
@@ -2946,7 +2946,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Content-Type: application/json" \
     --header "Accept: application/json" \
     --data "{
-    \"upgrade_to\": \"bonanza\"
+    \"upgrade_to\": \"user\"
 }"
 </code></pre></div>
 
@@ -2963,7 +2963,7 @@ const headers = {
 };
 
 let body = {
-    "upgrade_to": "bonanza"
+    "upgrade_to": "user"
 };
 
 fetch(url, {
@@ -3063,10 +3063,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="text" style="display: none"
                               name="upgrade_to"                data-endpoint="POSTapi-customer-account-upgrade"
-               value="bonanza"
+               value="user"
                data-component="body">
     <br>
-<p>Example: <code>bonanza</code></p>
+<p>Example: <code>user</code></p>
 Must be one of:
 <ul style="list-style-type: square;"><li><code>user</code></li> <li><code>agent</code></li> <li><code>bonanza</code></li> <li><code>api</code></li></ul>
         </div>
@@ -4183,7 +4183,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Content-Type: application/json" \
     --header "Accept: application/json" \
     --data "{
-    \"isActive\": true
+    \"isActive\": false
 }"
 </code></pre></div>
 
@@ -4200,7 +4200,7 @@ const headers = {
 };
 
 let body = {
-    "isActive": true
+    "isActive": false
 };
 
 fetch(url, {
@@ -4329,7 +4329,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
             <code>false</code>
         </label>
     <br>
-<p>Example: <code>true</code></p>
+<p>Example: <code>false</code></p>
         </div>
         </form>
 
@@ -4491,7 +4491,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Accept: application/json" \
     --data "{
     \"amount\": \"100\",
-    \"bypass\": true,
+    \"bypass\": false,
     \"pin\": \"1234\",
     \"discount_amount\": 11613.31890586,
     \"simulate_status\": \"consequatur\",
@@ -4515,7 +4515,7 @@ const headers = {
 
 let body = {
     "amount": "100",
-    "bypass": true,
+    "bypass": false,
     "pin": "1234",
     "discount_amount": 11613.31890586,
     "simulate_status": "consequatur",
@@ -4692,7 +4692,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
             <code>false</code>
         </label>
     <br>
-<p>Example: <code>true</code></p>
+<p>Example: <code>false</code></p>
         </div>
                 <div style=" padding-left: 28px;  clear: unset;">
             <b style="line-height: 2;"><code>pin</code></b>&nbsp;&nbsp;

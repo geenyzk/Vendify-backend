@@ -158,7 +158,7 @@ endpoints:
         name: upgrade_to
         description: ''
         required: true
-        example: bonanza
+        example: user
         type: string
         enumValues:
           - user
@@ -169,7 +169,7 @@ endpoints:
         nullable: false
         custom: []
     cleanBodyParameters:
-      upgrade_to: bonanza
+      upgrade_to: user
     fileParameters: []
     responses: []
     responseFields: []
@@ -572,14 +572,14 @@ endpoints:
         name: isActive
         description: ''
         required: true
-        example: true
+        example: false
         type: boolean
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanBodyParameters:
-      isActive: true
+      isActive: false
     fileParameters: []
     responses: []
     responseFields: []

@@ -405,7 +405,7 @@ endpoints:
         name: scheduleDate
         description: 'Must be a valid date.'
         required: false
-        example: '2025-07-28T07:15:15'
+        example: '2025-08-09T13:39:24'
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -430,7 +430,7 @@ endpoints:
       notifTitle: consequatur
       notifMessage: consequatur
       sendNow: true
-      scheduleDate: '2025-07-28T07:15:15'
+      scheduleDate: '2025-08-09T13:39:24'
       priorityHigh: false
     fileParameters: []
     responses: []
@@ -548,7 +548,7 @@ endpoints:
         name: type
         description: ''
         required: true
-        example: credit
+        example: debit
         type: string
         enumValues:
           - credit
@@ -558,7 +558,7 @@ endpoints:
         custom: []
     cleanBodyParameters:
       amount: 73
-      type: credit
+      type: debit
     fileParameters: []
     responses: []
     responseFields: []
