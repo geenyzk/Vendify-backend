@@ -35,6 +35,7 @@ jobs:
           php artisan cache:clear
           php artisan config:clear
           php artisan route:clear
+          php artisan optimize:clear
 
 
       - name: Prepare Laravel storage and cache
