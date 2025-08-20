@@ -18,6 +18,7 @@ endpoints:
       title: 'Handle payment or vendor webhook'
       description: 'This handles webhook requests from payment providers or vendors.'
       authenticated: false
+      deprecated: false
       custom: []
     headers:
       Content-Type: application/json

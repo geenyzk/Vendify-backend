@@ -13,6 +13,7 @@ endpoints:
       title: 'Handle VTU service requests like airtime, data, etc.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -48,7 +49,7 @@ endpoints:
         name: bypass
         description: ''
         required: true
-        example: false
+        example: true
         type: boolean
         enumValues: []
         exampleWasSpecified: false
@@ -116,7 +117,7 @@ endpoints:
         custom: []
     cleanBodyParameters:
       amount: '100'
-      bypass: false
+      bypass: true
       pin: '1234'
       discount_amount: 11613.31890586
       simulate_status: consequatur
@@ -179,6 +180,7 @@ endpoints:
       title: 'Get plans for data, cable, exam, etc.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -233,6 +235,7 @@ endpoints:
       title: 'Verify user service info (like smartcard number, meter, etc.)'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'

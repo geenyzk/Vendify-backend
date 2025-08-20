@@ -30,9 +30,9 @@
         var useCsrf = Boolean();
         var csrfUrl = "/sanctum/csrf-cookie";
     </script>
-    <script src="{{ asset("/vendor/scribe/js/tryitout-5.2.1.js") }}"></script>
+    <script src="{{ asset("/vendor/scribe/js/tryitout-5.3.0.js") }}"></script>
 
-    <script src="{{ asset("/vendor/scribe/js/theme-default-5.2.1.js") }}"></script>
+    <script src="{{ asset("/vendor/scribe/js/theme-default-5.3.0.js") }}"></script>
 
 </head>
 
@@ -205,7 +205,7 @@
     </ul>
 
     <ul class="toc-footer" id="last-updated">
-        <li>Last updated: August 9, 2025</li>
+        <li>Last updated: August 20, 2025</li>
     </ul>
 </div>
 
@@ -1006,8 +1006,8 @@ You can check the Dev Tools console for debugging information.</code></pre>
     \"notifTitle\": \"consequatur\",
     \"notifMessage\": \"consequatur\",
     \"sendNow\": true,
-    \"scheduleDate\": \"2025-08-09T13:39:24\",
-    \"priorityHigh\": false
+    \"scheduleDate\": \"2025-08-20T05:36:50\",
+    \"priorityHigh\": true
 }"
 </code></pre></div>
 
@@ -1032,8 +1032,8 @@ let body = {
     "notifTitle": "consequatur",
     "notifMessage": "consequatur",
     "sendNow": true,
-    "scheduleDate": "2025-08-09T13:39:24",
-    "priorityHigh": false
+    "scheduleDate": "2025-08-20T05:36:50",
+    "priorityHigh": true
 };
 
 fetch(url, {
@@ -1231,10 +1231,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
 <i>optional</i> &nbsp;
                 <input type="text" style="display: none"
                               name="scheduleDate"                data-endpoint="POSTapi-admin-broadcast"
-               value="2025-08-09T13:39:24"
+               value="2025-08-20T05:36:50"
                data-component="body">
     <br>
-<p>Must be a valid date. Example: <code>2025-08-09T13:39:24</code></p>
+<p>Must be a valid date. Example: <code>2025-08-20T05:36:50</code></p>
         </div>
                 <div style=" padding-left: 28px;  clear: unset;">
             <b style="line-height: 2;"><code>priorityHigh</code></b>&nbsp;&nbsp;
@@ -1255,7 +1255,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
             <code>false</code>
         </label>
     <br>
-<p>Example: <code>false</code></p>
+<p>Example: <code>true</code></p>
         </div>
         </form>
 
@@ -1429,7 +1429,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Accept: application/json" \
     --data "{
     \"amount\": 73,
-    \"type\": \"debit\"
+    \"type\": \"credit\"
 }"
 </code></pre></div>
 
@@ -1447,7 +1447,7 @@ const headers = {
 
 let body = {
     "amount": 73,
-    "type": "debit"
+    "type": "credit"
 };
 
 fetch(url, {
@@ -1570,10 +1570,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="text" style="display: none"
                               name="type"                data-endpoint="POSTapi-admin-users--id--fund"
-               value="debit"
+               value="credit"
                data-component="body">
     <br>
-<p>Example: <code>debit</code></p>
+<p>Example: <code>credit</code></p>
 Must be one of:
 <ul style="list-style-type: square;"><li><code>credit</code></li> <li><code>debit</code></li></ul>
         </div>
@@ -4183,7 +4183,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Content-Type: application/json" \
     --header "Accept: application/json" \
     --data "{
-    \"isActive\": false
+    \"isActive\": true
 }"
 </code></pre></div>
 
@@ -4200,7 +4200,7 @@ const headers = {
 };
 
 let body = {
-    "isActive": false
+    "isActive": true
 };
 
 fetch(url, {
@@ -4329,7 +4329,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
             <code>false</code>
         </label>
     <br>
-<p>Example: <code>false</code></p>
+<p>Example: <code>true</code></p>
         </div>
         </form>
 
@@ -4491,7 +4491,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Accept: application/json" \
     --data "{
     \"amount\": \"100\",
-    \"bypass\": false,
+    \"bypass\": true,
     \"pin\": \"1234\",
     \"discount_amount\": 11613.31890586,
     \"simulate_status\": \"consequatur\",
@@ -4515,7 +4515,7 @@ const headers = {
 
 let body = {
     "amount": "100",
-    "bypass": false,
+    "bypass": true,
     "pin": "1234",
     "discount_amount": 11613.31890586,
     "simulate_status": "consequatur",
@@ -4692,7 +4692,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
             <code>false</code>
         </label>
     <br>
-<p>Example: <code>false</code></p>
+<p>Example: <code>true</code></p>
         </div>
                 <div style=" padding-left: 28px;  clear: unset;">
             <b style="line-height: 2;"><code>pin</code></b>&nbsp;&nbsp;

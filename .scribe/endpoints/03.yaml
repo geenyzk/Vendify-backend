@@ -13,6 +13,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -56,6 +57,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -99,6 +101,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -144,6 +147,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -193,6 +197,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -236,6 +241,7 @@ endpoints:
       title: 'Store a newly created resource in storage.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -270,6 +276,7 @@ endpoints:
       title: 'Display the specified resource.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -325,6 +332,7 @@ endpoints:
       title: 'Update the specified resource in storage.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -370,6 +378,7 @@ endpoints:
       title: 'Remove the specified resource from storage.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -415,6 +424,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -458,6 +468,7 @@ endpoints:
       title: 'Store a newly created resource in storage.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -492,6 +503,7 @@ endpoints:
       title: 'Display the specified resource.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -547,6 +559,7 @@ endpoints:
       title: 'Update the specified resource in storage.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -572,14 +585,14 @@ endpoints:
         name: isActive
         description: ''
         required: true
-        example: false
+        example: true
         type: boolean
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanBodyParameters:
-      isActive: false
+      isActive: true
     fileParameters: []
     responses: []
     responseFields: []
@@ -603,6 +616,7 @@ endpoints:
       title: 'Remove the specified resource from storage.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'

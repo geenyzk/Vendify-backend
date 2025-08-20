@@ -13,6 +13,7 @@ endpoints:
       title: 'Login a user'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -98,6 +99,7 @@ endpoints:
       title: 'Register a new user'
       description: ''
       authenticated: false
+      deprecated: false
       custom: []
     headers:
       Content-Type: application/json
@@ -214,6 +216,7 @@ endpoints:
       title: 'Get the current authenticated user'
       description: ''
       authenticated: false
+      deprecated: false
       custom: []
     headers:
       Content-Type: application/json
@@ -261,6 +264,7 @@ endpoints:
       title: 'Logout user'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'

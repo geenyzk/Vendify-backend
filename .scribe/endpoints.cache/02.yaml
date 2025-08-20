@@ -19,6 +19,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -75,6 +76,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -143,6 +145,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -190,6 +193,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -248,6 +252,7 @@ endpoints:
       title: 'Dashboard statistics overview.'
       description: 'Returns user chart data, transaction counts, total user balance, and more.'
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -311,6 +316,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -405,7 +411,7 @@ endpoints:
         name: scheduleDate
         description: 'Must be a valid date.'
         required: false
-        example: '2025-08-09T13:39:24'
+        example: '2025-08-20T05:36:50'
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -415,7 +421,7 @@ endpoints:
         name: priorityHigh
         description: ''
         required: true
-        example: false
+        example: true
         type: boolean
         enumValues: []
         exampleWasSpecified: false
@@ -430,8 +436,8 @@ endpoints:
       notifTitle: consequatur
       notifMessage: consequatur
       sendNow: true
-      scheduleDate: '2025-08-09T13:39:24'
-      priorityHigh: false
+      scheduleDate: '2025-08-20T05:36:50'
+      priorityHigh: true
     fileParameters: []
     responses: []
     responseFields: []
@@ -457,6 +463,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -513,6 +520,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -548,7 +556,7 @@ endpoints:
         name: type
         description: ''
         required: true
-        example: debit
+        example: credit
         type: string
         enumValues:
           - credit
@@ -558,7 +566,7 @@ endpoints:
         custom: []
     cleanBodyParameters:
       amount: 73
-      type: debit
+      type: credit
     fileParameters: []
     responses: []
     responseFields: []
@@ -584,6 +592,7 @@ endpoints:
       title: 'Get airtime discount configuration.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -632,6 +641,7 @@ endpoints:
       title: 'Get general system information.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
