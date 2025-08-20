@@ -66,12 +66,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
     });
+
     Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
 });
-
-
-
-
 
 Route::prefix('vtu')->group(function () {
     Route::get('/user', [VTUServicesController::class, 'getUser']);
@@ -89,4 +86,3 @@ Route::prefix('vtu')->group(function () {
     Route::post('/cable', [VTUServicesController::class, 'cableSubscription']);
     Route::post('/electricity', [VTUServicesController::class, 'electricityPayment']);
 });
-
