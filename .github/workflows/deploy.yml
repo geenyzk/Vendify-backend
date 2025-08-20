@@ -39,7 +39,6 @@ jobs:
           php artisan route:clear
           php artisan optimize:clear
 
-
       - name: Prepare Laravel storage and cache
         run: |
           mkdir -p storage/framework/views
