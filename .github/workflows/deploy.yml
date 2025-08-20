@@ -2,7 +2,8 @@ name: Deploy Site to test
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -12,20 +13,21 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Setup PHP
+      - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: mbstring, bcmath, pdo_mysql
+          extensions: mbstring, bcmath, curl, pdo, mysql
+          coverage: none
 
       - name: Copy .env
-        run: |
-          cp .env.example .env
-          php artisan key:generate
+        run: cp .env.example .env
 
-      - name: Install PHP dependencies
+      - name: Install dependencies
+        run: composer install --no-dev --optimize-autoloader
+
+      - name: Run Laravel optimizations
         run: |
-          composer install --no-dev --optimize-autoloader
           php artisan config:cache
           php artisan route:cache
           php artisan migrate --force
@@ -36,7 +38,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./
+          local-dir: ./ # deploy everything
           exclude: |
             **/node_modules/**
             **/vendor/**
