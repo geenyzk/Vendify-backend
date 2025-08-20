@@ -30,6 +30,7 @@ jobs:
         run: |
           php artisan config:cache
           php artisan route:cache
+          php artisan scribe:generate
 
       - name: Deploy Backend
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
