@@ -1,43 +1,43 @@
-name: 🚀 Deploy via FTP
+name: Deploy Site to test
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
 jobs:
-  ftp-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout your repository
-      - name: 📂 Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-      # Step 2: (Optional) Run build steps
-      # Uncomment if your project requires build before deployment
-      - name: Install dependencies
-        run: npm install
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, bcmath, pdo_mysql
 
+      - name: Copy .env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
 
       - name: Install PHP dependencies
         run: |
-          php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-          php composer-setup.php --install-dir=/usr/local/bin --filename=composer
           composer install --no-dev --optimize-autoloader
-
-      - name: Run migrations
-        run: |
+          php artisan config:cache
+          php artisan route:cache
           php artisan migrate --force
 
-      - name: Build project
-        run: npm run build
-
-      # Step 3: FTP Deploy
-      - name: 📤 Deploy to FTP server
+      - name: Deploy Backend
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./
+          exclude: |
+            **/node_modules/**
+            **/vendor/**
+            **/.git*
