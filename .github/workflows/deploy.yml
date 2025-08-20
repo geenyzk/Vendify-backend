@@ -23,8 +23,11 @@ jobs:
       - name: Copy .env
         run: cp .env.example .env
 
-      - name: Install dependencies
-        run: composer install --no-dev --optimize-autoloader
+      - name: Install PHP dependencies
+        run: |
+          php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+          php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+          composer install --no-dev --optimize-autoloader
 
       - name: Run Laravel optimizations
         run: |
