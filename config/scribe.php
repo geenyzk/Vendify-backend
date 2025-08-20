@@ -1,6 +1,5 @@
 <?php
 
-use Knuckles\Scribe\Config\AuthIn;
 use Knuckles\Scribe\Extracting\Strategies;
 use Knuckles\Scribe\Config\Defaults;
 use function Knuckles\Scribe\Config\{removeStrategies, configureStrategy};
@@ -102,7 +101,7 @@ return [
         'default' => "bearer",
 
         // Where is the auth value meant to be sent in a request?
-        'in' => AuthIn::BEARER->value,
+        'in' => 'bearer',
 
         // The name of the auth parameter (e.g. token, key, apiKey) or header (e.g. Authorization, Api-Key).
         'name' => 'Authorization',
