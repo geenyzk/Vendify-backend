@@ -16,11 +16,10 @@ endpoints:
       subgroupDescription: ''
       title: ''
       description: ''
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters:
@@ -52,10 +51,7 @@ endpoints:
         description: null
         custom: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -73,11 +69,10 @@ endpoints:
       subgroupDescription: ''
       title: ''
       description: ''
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters:
@@ -120,10 +115,7 @@ endpoints:
         description: null
         custom: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -142,11 +134,10 @@ endpoints:
       subgroupDescription: ''
       title: ''
       description: ''
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters:
@@ -169,10 +160,7 @@ endpoints:
     fileParameters: []
     responses: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -190,11 +178,10 @@ endpoints:
       subgroupDescription: ''
       title: ''
       description: ''
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters:
@@ -228,10 +215,7 @@ endpoints:
     fileParameters: []
     responses: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -249,11 +233,10 @@ endpoints:
       subgroupDescription: ''
       title: 'Dashboard statistics overview.'
       description: 'Returns user chart data, transaction counts, total user balance, and more.'
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters: []
@@ -292,10 +275,7 @@ endpoints:
         description: ''
         custom: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -313,11 +293,10 @@ endpoints:
       subgroupDescription: ''
       title: ''
       description: ''
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters: []
@@ -409,7 +388,7 @@ endpoints:
         name: scheduleDate
         description: 'Must be a valid date.'
         required: false
-        example: '2025-08-20T05:36:50'
+        example: '2025-08-20T05:54:58'
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -419,7 +398,7 @@ endpoints:
         name: priorityHigh
         description: ''
         required: true
-        example: true
+        example: false
         type: boolean
         enumValues: []
         exampleWasSpecified: false
@@ -434,15 +413,12 @@ endpoints:
       notifTitle: consequatur
       notifMessage: consequatur
       sendNow: true
-      scheduleDate: '2025-08-20T05:36:50'
-      priorityHigh: true
+      scheduleDate: '2025-08-20T05:54:58'
+      priorityHigh: false
     fileParameters: []
     responses: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -460,11 +436,10 @@ endpoints:
       subgroupDescription: ''
       title: ''
       description: ''
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters:
@@ -496,10 +471,7 @@ endpoints:
         description: null
         custom: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -517,11 +489,10 @@ endpoints:
       subgroupDescription: ''
       title: ''
       description: ''
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters:
@@ -568,10 +539,7 @@ endpoints:
     fileParameters: []
     responses: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -589,11 +557,10 @@ endpoints:
       subgroupDescription: ''
       title: 'Get airtime discount configuration.'
       description: ''
-      authenticated: true
+      authenticated: false
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters: []
@@ -617,10 +584,7 @@ endpoints:
         description: ''
         custom: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
@@ -642,7 +606,6 @@ endpoints:
       deprecated: false
       custom: []
     headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
     urlParameters: []
@@ -666,10 +629,7 @@ endpoints:
         description: ''
         custom: []
     responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
+    auth: []
     controller: null
     method: null
     route: null
