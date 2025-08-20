@@ -31,7 +31,7 @@ jobs:
 
       - name: Run Laravel optimizations
         run: |
-          php migrate --force
+          php artisan migrate --force
           php artisan key:generate --force
           php artisan view:clear
           php artisan cache:clear
