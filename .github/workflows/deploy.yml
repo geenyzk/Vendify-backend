@@ -34,6 +34,14 @@ jobs:
           php artisan config:cache
           php artisan route:cache
 
+      - name: Prepare Laravel storage and cache
+        run: |
+          mkdir -p storage/framework/views
+          mkdir -p storage/framework/cache
+          mkdir -p storage/logs
+          mkdir -p bootstrap/cache
+          chmod -R 775 storage bootstrap/cache
+
       - name: Deploy Backend
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
