@@ -29,14 +29,6 @@ jobs:
           php composer-setup.php --install-dir=/usr/local/bin --filename=composer
           composer install --no-dev --optimize-autoloader
 
-      # - name: Run Laravel optimizations
-      #   run: |
-      #     php artisan view:clear
-      #     php artisan cache:clear
-      #     php artisan config:clear
-      #     php artisan route:clear
-      #     php artisan optimize:clear
-
       - name: Prepare Laravel storage and cache
         run: |
           mkdir -p storage/framework/views
@@ -44,6 +36,9 @@ jobs:
           mkdir -p storage/logs
           mkdir -p bootstrap/cache
           chmod -R 775 storage bootstrap/cache
+
+      - name: Generate Scribe docs
+        run: php artisan scribe:generate
 
       - name: Deploy Backend
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
