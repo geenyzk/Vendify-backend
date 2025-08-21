@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>test</title>
+</head>
+<body>
+    <form>
+        <input type="text" placeholder="username" id="username">
+        <input type="email" placeholder="email" id="email">
+        <input type="text" placeholder="phone" id="phone">
+        <input type="text" placeholder="fullname" id="fullname">
+        <input type="text" placeholder="user type" id="userType">
+        <input type="password" placeholder="password" id="password">
+        <input type="password" placeholder="confirm password" id="confirmPassword">
+        <button onclick="test(event)">Send</button>
+    </form>
+
+    <script>
+        const username = document.getElementById('username')
+        const email = document.getElementById('email')
+        const phone = document.getElementById('phone')
+        const fullname = document.getElementById('email')
+        const userType = document.getElementById('userType')
+        const password = document.getElementById('password')
+        const password_confirmation = document.getElementById('confirmPassword')
+        const token = "1|ATUslDlDBRMkmhJOb0ONaZWmLo8P8oY4aQwcPE6ldd65895a"
+
+        const test = async(e) => {
+            e.preventDefault()
+
+            const res = await fetch('http://localhost:8000/api/admin/users/1', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                // body: JSON.stringify({
+                //     username: username.value,
+                //     // email: email.value,
+                //     // phone: phone.value,
+                //     // fullname: fullname.value,
+                //     // user_type: userType.value,
+                //     // password: password.value,
+                //     // password_confirmation: password_confirmation.value
+                // })
+            })
+
+            const data = await res.json()
+            console.log(data)
+        }
+    </script>
+</body>
+</html>
