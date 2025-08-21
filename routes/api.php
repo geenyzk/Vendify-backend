@@ -1,16 +1,17 @@
 <?php
 
-use App\Http\Controllers\AdminController;
-use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\Auth\RegisteredUserController;
-use App\Http\Controllers\CustomerController;
-use App\Http\Controllers\ServiceControlController;
-use App\Http\Controllers\TransactionController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\VTUServicesController;
-use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\WebhookController;
+use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\PayscribeController;
+use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\VTUServicesController;
+use App\Http\Controllers\ServiceControlController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
 
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
@@ -85,4 +86,40 @@ Route::prefix('vtu')->group(function () {
     Route::post('/data/purchase', [VTUServicesController::class, 'dataPurchase']);
     Route::post('/cable', [VTUServicesController::class, 'cableSubscription']);
     Route::post('/electricity', [VTUServicesController::class, 'electricityPayment']);
+});
+
+/**
+ * payscribe integration routes
+ */
+Route::prefix('payscribe')->group(function () {
+    // Airtime
+    Route::post('/airtime', [PayscribeController::class, 'purchaseAirtime']);
+
+    // Data
+    Route::get('/data/{network}', [PayscribeController::class, 'dataLookup']);
+    Route::post('/data', [PayscribeController::class, 'purchaseData']);
+
+    // ePins
+    Route::get('/epins', [PayscribeController::class, 'availableEPins']);
+    Route::post('/epins', [PayscribeController::class, 'purchasePin']);
+    Route::post('/epins/jamb', [PayscribeController::class, 'jambUserLookup']);
+    Route::get('/epins/{trans_id}', [PayscribeController::class, 'retrieveEPin']);
+
+    // Cable
+    Route::get('/cable/bouquets/{service}', [PayscribeController::class, 'fetchBouquets']);
+    Route::post('/cable/validate', [PayscribeController::class, 'validateSmartCard']);
+    Route::post('/cable/pay', [PayscribeController::class, 'payCableTv']);
+    Route::post('/cable/topup', [PayscribeController::class, 'topUpTv']);
+
+    // Internet
+    Route::post('/internet/list', [PayscribeController::class, 'listInternetServices']);
+    Route::get('/internet/spectranet/plans', [PayscribeController::class, 'getSpectranetPinPlans']);
+    Route::post('/internet/spectranet/vend', [PayscribeController::class, 'purchaseSpectranetPins']);
+
+    // Electricity
+    Route::post('/electricity/validate', [PayscribeController::class, 'validateElectricity']);
+    Route::post('/electricity/pay', [PayscribeController::class, 'electricityPayment']);
+
+    // Requery
+    Route::get('/requery/{id}', [PayscribeController::class, 'requeryTransaction']);
 });
