@@ -1,11 +1,17 @@
+
 name: Endpoints
 description: ''
+
+name: Authentication
+description: 'This endpoint logs in a user and returns an API token.'
+
 endpoints:
   -
     httpMethods:
       - POST
     uri: api/login
     metadata:
+
       groupName: Endpoints
       groupDescription: null
       subgroup: null
@@ -16,6 +22,21 @@ endpoints:
       deprecated: false
       custom: []
     headers: []
+
+      groupName: Authentication
+      groupDescription: 'This endpoint logs in a user and returns an API token.'
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Login a user'
+      description: ''
+      authenticated: true
+      deprecated: false
+      custom: []
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_KEY}'
+      Content-Type: application/json
+      Accept: application/json
+
     urlParameters: []
     cleanUrlParameters: []
     queryParameters: []
@@ -56,9 +77,36 @@ endpoints:
       password: password123
       email: user@example.com
     fileParameters: []
+
     responses: []
     responseFields: []
     auth: []
+
+    responses:
+      -
+        status: 200
+        content: |-
+          {
+            "status": true,
+            "message": "Request successful",
+            "data": {
+              "user": {
+                "id": 1,
+                "username": "john_doe",
+                "email": "user@example.com"
+              },
+              "token": "your-generated-token"
+            }
+          }
+        headers: []
+        description: ''
+        custom: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 1'
+
     controller: null
     method: null
     route: null
@@ -68,6 +116,7 @@ endpoints:
       - POST
     uri: api/register
     metadata:
+
       groupName: Endpoints
       groupDescription: null
       subgroup: null
@@ -112,6 +161,20 @@ endpoints:
       deprecated: false
       custom: []
     headers: []
+
+      groupName: Authentication
+      groupDescription: ''
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Register a new user'
+      description: ''
+      authenticated: false
+      deprecated: false
+      custom: []
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+
     urlParameters: []
     cleanUrlParameters: []
     queryParameters: []
@@ -185,6 +248,7 @@ endpoints:
       password: 'O[2UZ5ij-e/dl4m{o,'
       password_confirmation: consequatur
     fileParameters: []
+
     responses: []
     responseFields: []
     auth: []
@@ -244,6 +308,29 @@ endpoints:
     cleanBodyParameters: []
     fileParameters: []
     responses: []
+
+    responses:
+      -
+        status: 200
+        content: |-
+          {
+            "status": true,
+            "message": "Request successful",
+            "data": {
+              "user": {
+                "id": 1,
+                "fullname": "John Doe",
+                "username": "johndoe",
+                "email": "john@example.com",
+                ...
+              },
+              "token": "eyJ0eXAiOiJKV1QiLC..."
+            }
+          }
+        headers: []
+        description: ''
+        custom: []
+
     responseFields: []
     auth: []
     controller: null
@@ -255,6 +342,7 @@ endpoints:
       - GET
     uri: api/user
     metadata:
+
       groupName: Endpoints
       groupDescription: null
       subgroup: null
@@ -265,6 +353,20 @@ endpoints:
       deprecated: false
       custom: []
     headers: []
+
+      groupName: Authentication
+      groupDescription: ''
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Get the current authenticated user'
+      description: ''
+      authenticated: false
+      deprecated: false
+      custom: []
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+
     urlParameters: []
     cleanUrlParameters: []
     queryParameters: []
@@ -272,7 +374,28 @@ endpoints:
     bodyParameters: []
     cleanBodyParameters: []
     fileParameters: []
+
     responses: []
+
+    responses:
+      -
+        status: 200
+        content: |-
+          {
+            "status": true,
+            "message": "Request successful",
+            "data": {
+              "user": {
+                "id": 1,
+                "username": "john_doe",
+                "email": "user@example.com"
+              }
+            }
+          }
+        headers: []
+        description: ''
+        custom: []
+
     responseFields: []
     auth: []
     controller: null
@@ -291,6 +414,10 @@ endpoints:
       title: 'Logout user'
       description: ''
       authenticated: true
+
+
+      deprecated: false
+
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'

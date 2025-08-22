@@ -1,0 +1,315 @@
+name: 'VTU Services'
+description: ''
+endpoints:
+  -
+    httpMethods:
+      - POST
+    uri: 'api/vtu/{service}'
+    metadata:
+      groupName: 'VTU Services'
+      groupDescription: ''
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Handle VTU service requests like airtime, data, etc.'
+      description: ''
+      authenticated: true
+      deprecated: false
+      custom: []
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_KEY}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      service:
+        name: service
+        description: 'The service type (e.g. airtime, data, cable).'
+        required: true
+        example: airtime
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+    cleanUrlParameters:
+      service: airtime
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      amount:
+        name: amount
+        description: 'The amount for the transaction.'
+        required: true
+        example: '100'
+        type: numeric
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+      bypass:
+        name: bypass
+        description: ''
+        required: true
+        example: false
+        type: boolean
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        custom: []
+      pin:
+        name: pin
+        description: 'The user transaction pin.'
+        required: true
+        example: '1234'
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: true
+        custom: []
+      discount_amount:
+        name: discount_amount
+        description: ''
+        required: false
+        example: 11613.31890586
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        custom: []
+      simulate_status:
+        name: simulate_status
+        description: ''
+        required: false
+        example: consequatur
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        custom: []
+      tx_ref:
+        name: tx_ref
+        description: ''
+        required: true
+        example: consequatur
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        custom: []
+      network_type:
+        name: network_type
+        description: 'The network type.'
+        required: true
+        example: mtn
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+      phone:
+        name: phone
+        description: 'The phone number.'
+        required: true
+        example: '08012345678'
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+    cleanBodyParameters:
+      amount: '100'
+      bypass: false
+      pin: '1234'
+      discount_amount: 11613.31890586
+      simulate_status: consequatur
+      tx_ref: consequatur
+      network_type: mtn
+      phone: '08012345678'
+    fileParameters: []
+    responses:
+      -
+        status: 200
+        content: |-
+          {
+             "status": "success",
+             "message": "Transaction successful",
+             "data": { ... }
+          }
+        headers: []
+        description: ''
+        custom: []
+      -
+        status: 402
+        content: |-
+          {
+             "status": "error",
+             "message": "Insufficient balance to complete this transaction."
+          }
+        headers: []
+        description: ''
+        custom: []
+      -
+        status: 422
+        content: |-
+          {
+             "status": "fail",
+             "errors": {
+                "pin": ["Invalid pin"]
+             }
+          }
+        headers: []
+        description: ''
+        custom: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 1'
+    controller: null
+    method: null
+    route: null
+    custom: []
+  -
+    httpMethods:
+      - GET
+    uri: 'api/vtu/{service}/plans'
+    metadata:
+      groupName: 'VTU Services'
+      groupDescription: ''
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Get plans for data, cable, exam, etc.'
+      description: ''
+      authenticated: true
+      deprecated: false
+      custom: []
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_KEY}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      service:
+        name: service
+        description: 'The service type (e.g. data, cable).'
+        required: true
+        example: data
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+    cleanUrlParameters:
+      service: data
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        status: 200
+        content: |-
+          {
+            "plans": [...]
+          }
+        headers: []
+        description: ''
+        custom: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 1'
+    controller: null
+    method: null
+    route: null
+    custom: []
+  -
+    httpMethods:
+      - GET
+    uri: 'api/vtu/{service}/verify'
+    metadata:
+      groupName: 'VTU Services'
+      groupDescription: ''
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Verify user service info (like smartcard number, meter, etc.)'
+      description: ''
+      authenticated: true
+      deprecated: false
+      custom: []
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_KEY}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      service:
+        name: service
+        description: 'The service type (e.g. cable, bill).'
+        required: true
+        example: cable
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+    cleanUrlParameters:
+      service: cable
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      identifier:
+        name: identifier
+        description: 'The value to verify (e.g. smartcard or meter number).'
+        required: true
+        example: '12345678901'
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+      cable_network:
+        name: cable_network
+        description: 'If service is cable.'
+        required: true
+        example: dstv
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+      meter_type:
+        name: meter_type
+        description: 'If service is bill.'
+        required: true
+        example: prepaid
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+    cleanBodyParameters:
+      identifier: '12345678901'
+      cable_network: dstv
+      meter_type: prepaid
+    fileParameters: []
+    responses:
+      -
+        status: 200
+        content: |-
+          {
+             "status": "success",
+             "message": "User verified",
+             "data": {...}
+          }
+        headers: []
+        description: ''
+        custom: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 1'
+    controller: null
+    method: null
+    route: null
+    custom: []

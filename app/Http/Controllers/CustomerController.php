@@ -12,6 +12,41 @@ use Illuminate\Support\Facades\Validator;
 class CustomerController extends Controller
 {
 
+
+    /**
+ * Convert Referral Balance to Wallet
+ *
+ * @group Customer
+ *
+ * This endpoint converts a user's referral bonus balance into their wallet balance.
+ * The entire referral balance will be moved to the wallet if it's greater than zero.
+ *
+ * @urlParam id integer required The ID of the user. Example: 5
+ *
+ * @response 200 {
+ *   "message": "Referral balance converted successfully.",
+ *   "user": {
+ *     "id": 5,
+ *     "name": "Jane Doe",
+ *     "email": "jane@example.com",
+ *     "wallet_balance": 1000.00,
+ *     "referral_balance": 0
+ *   }
+ * }
+ *
+ * @response 422 {
+ *   "message": "Referral balance is zero or insufficient."
+ * }
+ *
+ * @response 404 {
+ *   "message": "User not found."
+ * }
+ *
+ * @authenticated
+ */
+
+
+
     public function convertReferralToWallet(Request $request, $userId)
     {
         $user = User::findOrFail($userId);
@@ -38,6 +73,50 @@ class CustomerController extends Controller
         });
     }
 
+
+
+
+    /**
+ * Upgrade Customer Account
+ *
+ * @group Customer
+ *
+ * This endpoint allows an authenticated user to upgrade their account type (e.g., user, agent, bonanza, api).
+ * The system checks for sufficient wallet balance, deducts the upgrade cost, and updates the user type.
+ *
+ * @bodyParam upgrade_to string required The user level to upgrade to. Must be one of: user, agent, bonanza, api. Example: agent
+ *
+ * @response 200 {
+ *   "message": "Successfully upgraded your account to agent.",
+ *   "user": {
+ *     "id": 1,
+ *     "name": "John Doe",
+ *     "email": "john@example.com",
+ *     "wallet_balance": 1500.00,
+ *     "user_type": "agent"
+ *   }
+ * }
+ *
+ * @response 400 {
+ *   "error": "You are already at this user level."
+ * }
+ *
+ * @response 402 {
+ *   "error": "Insufficient wallet balance. Please fund your wallet."
+ * }
+ *
+ * @response 422 {
+ *   "error": "Invalid upgrade option"
+ * }
+ *
+ * @response 404 {
+ *   "error": "Discount info not found."
+ * }
+ *
+ * @authenticated
+ */
+
+    
 
     public function upgrade(Request $request)
     {

@@ -1,0 +1,93 @@
+name: Transactions
+description: |-
+  This endpoint returns a summary of transactions between a given date range.
+  It can also filter transactions by a specific user if the `user_id` is provided.
+endpoints:
+  -
+    httpMethods:
+      - GET
+    uri: api/transactions/report
+    metadata:
+      groupName: Transactions
+      groupDescription: |-
+        This endpoint returns a summary of transactions between a given date range.
+        It can also filter transactions by a specific user if the `user_id` is provided.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Transaction Report'
+      description: ''
+      authenticated: true
+      deprecated: false
+      custom: []
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_KEY}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters:
+      start_date:
+        name: start_date
+        description: 'date Optional. The start date of the report in YYYY-MM-DD format. Defaults to the first day of the current month.'
+        required: false
+        example: '2025-08-01'
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+      end_date:
+        name: end_date
+        description: 'date Optional. The end date of the report in YYYY-MM-DD format. Defaults to today.'
+        required: false
+        example: '2025-08-07'
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+      user_id:
+        name: user_id
+        description: 'Optional. The ID of the user to filter transactions.'
+        required: false
+        example: 12
+        type: integer
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+    cleanQueryParameters:
+      start_date: '2025-08-01'
+      end_date: '2025-08-07'
+      user_id: 12
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        status: 200
+        content: |-
+          {
+            "start_date": "2025-08-01",
+            "end_date": "2025-08-07",
+            "transactions": {
+              "total": 50000,
+              "count": 25,
+              "breakdown": {
+                "deposit": 30000,
+                "withdrawal": 20000
+              }
+            }
+          }
+        headers: []
+        description: ''
+        custom: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 1'
+    controller: null
+    method: null
+    route: null
+    custom: []

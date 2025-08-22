@@ -10,11 +10,15 @@ use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+
 use Illuminate\Support\Facades\Http;
+
+
 use Illuminate\Support\Facades\Log;
 
 class VTUServicesController extends Controller
 {
+
 
   private $baseUrl;
     private $token;
@@ -101,6 +105,8 @@ class VTUServicesController extends Controller
     {
         return $this->makeRequest('post', 'billpayment/', $request->all());
     }
+
+
        /**
      * Handle VTU service requests like airtime, data, etc.
      *
@@ -135,6 +141,9 @@ class VTUServicesController extends Controller
      *    }
      * }
      */
+
+
+
 
 
 

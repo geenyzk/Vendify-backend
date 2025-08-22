@@ -9,6 +9,7 @@
 .git
 /.github
 .github
+.env
 .env.backup
 .env.production
 .phpactor.json

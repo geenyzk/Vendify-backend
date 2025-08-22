@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Log;
 
 class WebhookController extends Controller
 {
+
+
+
+
     /**
      * Handle payment or vendor webhook
      *
@@ -25,10 +29,19 @@ class WebhookController extends Controller
      * }
      */
     public function handle(Request $request, string $type, string $identifier)
+
     {
         Log::info($request->all());
 
         try {
+
+
+    {
+
+        Log::info($request->all());
+        try {
+            //code...
+
             switch ($type) {
                 case 'payment':
                     return Payment::webhook($request, $identifier) ;
@@ -41,5 +54,12 @@ class WebhookController extends Controller
             //throw $th;
             $this->fail([], "Unauthorized", 401);
         }
+
+
+
+
+
+    }
+}
     }
 }
