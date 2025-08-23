@@ -39,6 +39,7 @@ class DataPlanSeeder extends Seeder
                         'validity'   => '30 days', // default validity
                         'created_at' => $now,
                         'updated_at' => $now,
+                        'active'     => false,
                     ]);
                 }
             }

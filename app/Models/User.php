@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -59,8 +60,21 @@ class User extends Authenticatable
     }
 
 
-    function getBanksAttribute($query)
+    function getBanksAttribute()
     {
-        return Bank::where("user_id", $this->id)->get();
+        $activeBankNames  = ServiceControl::whereSubCategory("bank")
+        ->whereIsactive(true)
+        ->pluck("name")
+        ->toArray();
+        
+        Log::info($activeBankNames);
+
+        $banks = Bank::whereUserId($this->id)
+        ->whereIn("bank_name", $activeBankNames)
+        ->get();
+
+        Log::info("User 'ID' for this is {$this->id} and bank account is {}");
+        Log::info($banks);
+        return $banks;
     }
 }

@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 class PaymentFactory
 {
     /**
+     * http://192.168.1.166:5173/customer
      * Create a new class instance.
      */
     public function __construct()

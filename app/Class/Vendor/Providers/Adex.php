@@ -32,6 +32,7 @@ class Adex extends VendorBase
         try {
             $res = $this->login();
              $cleaned = preg_replace('/[^\d.]/', '', $res['balance']);
+
             return (float) $cleaned;
         } catch (\Throwable $th) {
             // Log the exception if needed: error_log($th->getMessage());
@@ -396,4 +397,6 @@ class Adex extends VendorBase
 
         ];
     }
+
+    
 }

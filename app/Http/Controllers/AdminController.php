@@ -150,7 +150,7 @@ class AdminController extends Controller
      * }
      */
     function airtimeDiscount()
- {
+    {
         $discount = Discount::airtime();
         return $this->success(["discount" => $discount]);
     }
@@ -238,6 +238,7 @@ class AdminController extends Controller
 
         // ✅ Check if table exists
         if (!Schema::hasTable($table)) {
+            Log::info("Table not found, Table:" . $table );
             return response()->json(['error' => 'Table not found'], 404);
         }
 
@@ -245,6 +246,7 @@ class AdminController extends Controller
 
         // ✅ Validate input
         if (!is_array($items) || empty($items)) {
+            Log::error('Invalid or empty items array provided');
             return response()->json(['error' => 'No valid data array provided'], 400);
         }
 
@@ -252,6 +254,7 @@ class AdminController extends Controller
         $tableColumns = Schema::getColumnListing($table);
 
         if (!in_array('id', $tableColumns)) {
+            Log::error('Table does not have an "id" column: ' . $table);
             return response()->json(['error' => 'Table does not have an "id" column'], 400);
         }
 
@@ -260,14 +263,34 @@ class AdminController extends Controller
         try {
             DB::beginTransaction();
 
-            foreach ($items as $item) {
+            foreach ($items as $index => $item) {
 
-                Log::info('Received item:', $item);
+                Log::info($item);
+                Log::info($index);
 
                 if (!is_array($item) || !isset($item['id'])) {
+                    Log::error('Each item must be an array with an "id" key');
                     continue;
                 }
-                Log::info('Received item:', $item);
+
+                 foreach ($tableColumns as $col) {
+                    if ($request->hasFile("items.$index.$col")) {
+                        $file = $request->file("items.$index.$col");
+
+                        if (is_array($file)) {
+                            // Multiple files → store as JSON array
+                            $paths = [];
+                            foreach ($file as $f) {
+                                $paths[] = $f->store("uploads/$table", 'public');
+                            }
+                            $item[$col] = json_encode($paths);
+                        } else {
+                            // Single file → store path string
+                            $item[$col] = $file->store("uploads/$table", 'public');
+                        }
+                    }
+                }
+
 
                 // Filter only valid columns
                 $filteredData = array_filter(
@@ -297,6 +320,21 @@ class AdminController extends Controller
         }
     }
 
+
+    public static function universalCreateOrUpdate(Request $request, $table, $id = 0)
+    {
+        $data = $request->all();
+
+        if ($id > 0) {
+            $data['id'] = $id;
+        }
+
+        Log::info($request->all());
+        Log::info("create or update data");
+        return self::universalBulkCreateOrUpdate(new Request([
+            'items' => [ $data ]
+        ]), $table);
+    }
 
     public function universalDelete(Request $request, $table, $id)
     {

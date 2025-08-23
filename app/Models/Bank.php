@@ -25,12 +25,17 @@ class Bank extends Model
         'expired_at',
     ];
 
+    public function setBankNameAttribute($value)
+    {
+        $this->attributes['bank_name'] = strtolower($value);
+    }
+
     function getLogoAttribute(){
         return url("/images/".str_replace(" ", "_", Str::lower($this->bank_name)) . ".png");
     }
 
     function getChargeAttribute(){
         $provider = Provider::whereName($this->provider)->first(['charge_fee', 'charge_type']);
-        return $provider?->charge_type == 'fiat' ?"NGN" . $provider->charge_fee :$provider?->charge_fee ?? "0.00" ."%";
+        return $provider?->charge_type == 'fiat' ?"₦" . $provider->charge_fee :$provider?->charge_fee ?? "0.00" ."%";
     }
 }
