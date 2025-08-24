@@ -15,6 +15,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -49,7 +50,11 @@ endpoints:
   -
     httpMethods:
       - GET
+<<<<<<< HEAD
     uri: api/transactions/report
+=======
+    uri: api/admin/users
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
@@ -58,6 +63,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -92,6 +98,7 @@ endpoints:
   -
     httpMethods:
       - POST
+<<<<<<< HEAD
     uri: 'api/customer/{id}/convert-referral'
     metadata:
       groupName: Endpoints
@@ -186,6 +193,8 @@ endpoints:
   -
     httpMethods:
       - POST
+=======
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     uri: api/admin/users
     metadata:
       groupName: Endpoints
@@ -195,6 +204,7 @@ endpoints:
       title: 'Store a newly created resource in storage.'
       description: ''
       authenticated: true
+<<<<<<< HEAD
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -295,6 +305,9 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+=======
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -307,6 +320,7 @@ endpoints:
     bodyParameters: []
     cleanBodyParameters: []
     fileParameters: []
+<<<<<<< HEAD
     responses:
       -
         status: 401
@@ -317,6 +331,9 @@ endpoints:
           vary: Origin
         description: null
         custom: []
+=======
+    responses: []
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     responseFields: []
     auth:
       - headers
@@ -338,6 +355,10 @@ endpoints:
       title: 'Display the specified resource.'
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -393,6 +414,10 @@ endpoints:
       title: 'Update the specified resource in storage.'
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -413,6 +438,7 @@ endpoints:
       id: consequatur
     queryParameters: []
     cleanQueryParameters: []
+<<<<<<< HEAD
     bodyParameters:
       username:
         name: username
@@ -577,6 +603,10 @@ endpoints:
       status: consequatur
       referral_code: consequatur
       referred_by: 17
+=======
+    bodyParameters: []
+    cleanBodyParameters: []
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     fileParameters: []
     responses: []
     responseFields: []
@@ -600,6 +630,10 @@ endpoints:
       title: 'Remove the specified resource from storage.'
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -636,6 +670,7 @@ endpoints:
   -
     httpMethods:
       - GET
+<<<<<<< HEAD
     uri: api/vtu/user
     metadata:
       groupName: Endpoints
@@ -729,6 +764,9 @@ endpoints:
     httpMethods:
       - GET
     uri: api/vtu/network/plans
+=======
+    uri: api/admin/controls
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
@@ -737,6 +775,10 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -770,16 +812,28 @@ endpoints:
     custom: []
   -
     httpMethods:
+<<<<<<< HEAD
       - GET
     uri: api/vtu/data
+=======
+      - POST
+    uri: api/admin/controls
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
       subgroup: ''
       subgroupDescription: ''
+<<<<<<< HEAD
       title: ''
       description: ''
       authenticated: true
+=======
+      title: 'Store a newly created resource in storage.'
+      description: ''
+      authenticated: true
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -792,6 +846,7 @@ endpoints:
     bodyParameters: []
     cleanBodyParameters: []
     fileParameters: []
+<<<<<<< HEAD
     responses:
       -
         status: 500
@@ -805,6 +860,9 @@ endpoints:
           vary: Origin
         description: null
         custom: []
+=======
+    responses: []
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     responseFields: []
     auth:
       - headers
@@ -817,15 +875,26 @@ endpoints:
   -
     httpMethods:
       - GET
+<<<<<<< HEAD
     uri: 'api/vtu/data/{id}'
+=======
+    uri: 'api/admin/controls/{id}'
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
       subgroup: ''
       subgroupDescription: ''
+<<<<<<< HEAD
       title: ''
       description: ''
       authenticated: true
+=======
+      title: 'Display the specified resource.'
+      description: ''
+      authenticated: true
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -834,7 +903,11 @@ endpoints:
     urlParameters:
       id:
         name: id
+<<<<<<< HEAD
         description: 'The ID of the data.'
+=======
+        description: 'The ID of the control.'
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
         required: true
         example: consequatur
         type: string
@@ -851,11 +924,16 @@ endpoints:
     fileParameters: []
     responses:
       -
+<<<<<<< HEAD
         status: 500
         content: |-
           {
               "message": "Server Error"
           }
+=======
+        status: 401
+        content: '{"message":"Unauthenticated."}'
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
         headers:
           cache-control: 'no-cache, private'
           content-type: application/json
@@ -873,21 +951,35 @@ endpoints:
     custom: []
   -
     httpMethods:
+<<<<<<< HEAD
       - GET
     uri: api/vtu/validate/iuc
+=======
+      - PUT
+      - PATCH
+    uri: 'api/admin/controls/{id}'
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
       subgroup: ''
       subgroupDescription: ''
+<<<<<<< HEAD
       title: ''
       description: ''
       authenticated: true
+=======
+      title: 'Update the specified resource in storage.'
+      description: ''
+      authenticated: true
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
+<<<<<<< HEAD
     urlParameters: []
     cleanUrlParameters: []
     queryParameters: []
@@ -954,6 +1046,38 @@ endpoints:
           vary: Origin
         description: null
         custom: []
+=======
+    urlParameters:
+      id:
+        name: id
+        description: 'The ID of the control.'
+        required: true
+        example: consequatur
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        custom: []
+    cleanUrlParameters:
+      id: consequatur
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      isActive:
+        name: isActive
+        description: ''
+        required: true
+        example: false
+        type: boolean
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        custom: []
+    cleanBodyParameters:
+      isActive: false
+    fileParameters: []
+    responses: []
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     responseFields: []
     auth:
       - headers
@@ -965,21 +1089,34 @@ endpoints:
     custom: []
   -
     httpMethods:
+<<<<<<< HEAD
       - POST
     uri: api/vtu/airtime/funding
+=======
+      - DELETE
+    uri: 'api/admin/controls/{id}'
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
       subgroup: ''
       subgroupDescription: ''
+<<<<<<< HEAD
       title: ''
       description: ''
       authenticated: true
+=======
+      title: 'Remove the specified resource from storage.'
+      description: ''
+      authenticated: true
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
+<<<<<<< HEAD
     urlParameters: []
     cleanUrlParameters: []
     queryParameters: []
@@ -1118,6 +1255,21 @@ endpoints:
       Accept: application/json
     urlParameters: []
     cleanUrlParameters: []
+=======
+    urlParameters:
+      id:
+        name: id
+        description: 'The ID of the control.'
+        required: true
+        example: consequatur
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        custom: []
+    cleanUrlParameters:
+      id: consequatur
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     queryParameters: []
     cleanQueryParameters: []
     bodyParameters: []

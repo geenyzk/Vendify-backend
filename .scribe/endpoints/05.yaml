@@ -1,12 +1,20 @@
+<<<<<<< HEAD
 name: 'Admin Controls'
 description: |-
 
   Manage system service controls from the admin dashboard.
   These endpoints allow toggling service availability and retrieving grouped control data.
+=======
+name: Transactions
+description: |-
+  This endpoint returns a summary of transactions between a given date range.
+  It can also filter transactions by a specific user if the `user_id` is provided.
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
 endpoints:
   -
     httpMethods:
       - GET
+<<<<<<< HEAD
     uri: api/admin/controls
     metadata:
       groupName: 'Admin Controls'
@@ -21,6 +29,20 @@ endpoints:
         Fetches and returns all service controls where `isDevLock` is false (0).
         The controls are grouped by `category` and `sub_category`.
       authenticated: true
+=======
+    uri: api/transactions/report
+    metadata:
+      groupName: Transactions
+      groupDescription: |-
+        This endpoint returns a summary of transactions between a given date range.
+        It can also filter transactions by a specific user if the `user_id` is provided.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Transaction Report'
+      description: ''
+      authenticated: true
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -28,8 +50,46 @@ endpoints:
       Accept: application/json
     urlParameters: []
     cleanUrlParameters: []
+<<<<<<< HEAD
     queryParameters: []
     cleanQueryParameters: []
+=======
+    queryParameters:
+      start_date:
+        name: start_date
+        description: 'date Optional. The start date of the report in YYYY-MM-DD format. Defaults to the first day of the current month.'
+        required: false
+        example: '2025-08-01'
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+      end_date:
+        name: end_date
+        description: 'date Optional. The end date of the report in YYYY-MM-DD format. Defaults to today.'
+        required: false
+        example: '2025-08-07'
+        type: string
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+      user_id:
+        name: user_id
+        description: 'Optional. The ID of the user to filter transactions.'
+        required: false
+        example: 12
+        type: integer
+        enumValues: []
+        exampleWasSpecified: true
+        nullable: false
+        custom: []
+    cleanQueryParameters:
+      start_date: '2025-08-01'
+      end_date: '2025-08-07'
+      user_id: 12
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     bodyParameters: []
     cleanBodyParameters: []
     fileParameters: []
@@ -38,6 +98,7 @@ endpoints:
         status: 200
         content: |-
           {
+<<<<<<< HEAD
             "status": "success",
             "message": "Request was successful",
             "data": {
@@ -54,6 +115,16 @@ endpoints:
                     }
                   ]
                 }
+=======
+            "start_date": "2025-08-01",
+            "end_date": "2025-08-07",
+            "transactions": {
+              "total": 50000,
+              "count": 25,
+              "breakdown": {
+                "deposit": 30000,
+                "withdrawal": 20000
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
               }
             }
           }
@@ -69,6 +140,7 @@ endpoints:
     method: null
     route: null
     custom: []
+<<<<<<< HEAD
   -
     httpMethods:
       - PUT
@@ -163,3 +235,5 @@ endpoints:
     method: null
     route: null
     custom: []
+=======
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4

@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Log;
 
 class Payment
 {
+
+
     /**
      * Create a new class instance.
      */
@@ -17,10 +19,14 @@ class Payment
         //
     }
 
+
     static function generateAccount(User $user){
         $providers = Provider::getPaymentProviders()->get();
         $providers->map(function ($provider) use($user){
+
+
             Log::info($provider);
+
             PaymentFactory::make($provider)->generateAccount($user);
         });
 

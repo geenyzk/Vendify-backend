@@ -13,6 +13,7 @@ endpoints:
       title: 'Handle VTU service requests like airtime, data, etc.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -179,6 +180,7 @@ endpoints:
       title: 'Get plans for data, cable, exam, etc.'
       description: ''
       authenticated: true
+      deprecated: false
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -233,6 +235,10 @@ endpoints:
       title: 'Verify user service info (like smartcard number, meter, etc.)'
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
+      deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'

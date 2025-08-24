@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+<<<<<<< HEAD
 use App\Interfaces\UserRepositoryInterface;
 use App\Repository\Admin\UserRepository;
+=======
+>>>>>>> 5a8861e (Jush)
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -13,8 +16,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+<<<<<<< HEAD
         $this->app
             ->bind(UserRepositoryInterface::class, UserRepository::class);
+=======
+        //
+>>>>>>> 5a8861e (Jush)
     }
 
     /**
