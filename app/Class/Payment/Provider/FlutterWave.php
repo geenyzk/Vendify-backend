@@ -41,7 +41,6 @@ class FlutterWave extends PaymentBase
 
             if ($response->successful()) {
                 $data = $response->json('data');
-                Log::info($data);
                 return $this->formatResponse(array_merge($data, $payloadResponse), $payload);
 
             } else {

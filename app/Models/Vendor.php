@@ -37,9 +37,9 @@ class Vendor extends Model
 
     public function getConnectionAttribute()
     {
-        $key = md5($this->base_url . $this->username . $this->password."-connect");
+        $key = md5($this->base_url . $this->username . $this->password." connect");
         $provider = VendorFactory::make($this);
-        return Cache::remember($key, now()->addMinutes(2), function() use($provider) {
+        return Cache::remember($key, now()->addMinutes(60), function() use($provider) {
             return $provider->isHealthy();
         });
     }

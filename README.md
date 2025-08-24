@@ -1,5 +1,3 @@
-
-# VTU BACKEND
 <!-- what to do  -->
 <!-- run job queue -->
 <!-- php artisan queue:work -->
@@ -35,6 +33,3 @@
     # NOTIFICATION AND TEMPLATING
     # TRANSACTION CALCULATOR
 -->
-
-[Documentation]
-    - Run `php artisan scribe:generate` to generate documentation for this project

@@ -33,9 +33,8 @@ class SMEPlug extends VendorBase
 
     public function checkBalance(): string
     {
-        // $res = $this->login();
-        // return $res['balance'] ?? "";
-        return "0.0";
+        $res = $this->login();
+        return $res['balance'] ?? "";
     }
 
      public function verifyTransaction(string $tx_ref): array

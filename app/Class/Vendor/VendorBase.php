@@ -48,7 +48,7 @@ abstract class VendorBase implements VendorInterface
              if ($this->isSandbox) {
                 return $this->success([]);
             }
-            $parser = TemplateParser::make();
+            $parser = TemplateParser::make(); 
             $response = $this->sendRequest($service, $formattedPayload);
             $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response, $payload));
             $transaction = TransactionService::process($formattedResponse, Auth::user());
@@ -57,11 +57,11 @@ abstract class VendorBase implements VendorInterface
             $responseMessage = $parsedMessage ?? $response['data']['msg'] ?? $response['message'] ?? $response['response_message'];
             Log:info($parsedMessage);
             $response_ = $this->{$transaction['status']}($transaction, $responseMessage , $transaction['status'] === "success"? 200:500);
-            return $response_;
+            return $response_; 
         } catch (\Exception $e) {
             return $this->fail([], $e->getMessage(), 500);
         }
-    }
+    } 
 
     abstract public function sendRequest(string $service, array $payload): array;
 
@@ -89,13 +89,8 @@ abstract class VendorBase implements VendorInterface
     {
         try {
             $response = $this->login();
-            Log::info(["res" => $response]);
-            if($response['status'] === 'success'){
-                Log::info("Vendor [{$this->providerName}] is healthy.");
-            }else{
-                Log::warning("Vendor [{$this->providerName}] is unhealthy.");
-            }
             return $response['status'] === 'success';
+
         } catch (\Throwable $e) {
             Log::warning("Vendor [{$this->providerName}] is unhealthy.");
             return false;

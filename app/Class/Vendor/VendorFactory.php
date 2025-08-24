@@ -10,8 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
-use function Laravel\Prompts\error;
-
 class VendorFactory
 {
     /**
@@ -29,7 +27,6 @@ class VendorFactory
             "sandbox"=> new SandboxService() ,
             "sme plug"=> new SMEPlug($provider),
             "spurs"=> new Adex($provider),
-            "msorg"=> new Adex($provider),
         } ;
     }
 
@@ -40,16 +37,14 @@ class VendorFactory
          $total = 0.0;
             Vendor::all()->map(function ($vendor) use (&$total) {
             try {
-                Log::info($vendor);
+                // Log::info($vendor);
                 $vendorInstance = self::make($vendor);
-                $total += (float) str_replace(',', '', $vendorInstance->checkBalance());
+                $total += $vendorInstance->checkBalance();
             } catch (\Throwable $e) {
-                error_log($e);
                 Log::warning("Failed to fetch balance for vendor [{$vendor->name}]: " . $e->getMessage());
             }
         });
 
-        error_log($total);
         return $total;
 
     }

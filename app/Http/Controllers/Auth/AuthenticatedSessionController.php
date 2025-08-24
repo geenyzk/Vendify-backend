@@ -18,73 +18,26 @@ class AuthenticatedSessionController extends Controller
 
     use HttpResponse;
 
-    /**
-     * Login a user
-     *
-     * @group Authentication
-     *
-     * This endpoint logs in a user and returns an API token.
-     *
-     * @bodyParam email string required The user's email. Example: user@example.com
-     * @bodyParam password string required The user's password. Example: password123
-     *
-     * @response 200 {
-     *   "status": true,
-     *   "message": "Request successful",
-     *   "data": {
-     *     "user": {
-     *       "id": 1,
-     *       "username": "john_doe",
-     *       "email": "user@example.com"
-     *     },
-     *     "token": "your-generated-token"
-     *   }
-     * }
-     */
     public function store(LoginRequest $request)
     {
 
-        try {
+        try{
             $request->authenticate();
             $user = Auth::user();
-            $token = $user->createToken($user->username)->plainTextToken;
+            $token = $user->createToken($user->username);
             Payment::generateAccount($user);
-            return $this->success(["user" => $user, 'token' => $token]);
+            return $this->success(["user" =>$user, 'token' => $token->plainTextToken]);
         } catch (ValidationException $e) {
-            return $this->fail($e->errors(), "Validation Error", 422);
+            return $this->fail( $e->errors(), "Validation Error", 422);
         }
     }
 
 
-    /**
-     * Get the current authenticated user
-     *
-     * @group Authentication
-     * @unauthenticated
-     *
-     * This endpoint returns the currently authenticated user's details.
-     *
-     * @response 200 {
-     *   "status": true,
-     *   "message": "Request successful",
-     *   "data": {
-     *     "user": {
-     *       "id": 1,
-     *       "username": "john_doe",
-     *       "email": "user@example.com"
-     *     }
-     *   }
-     * }
-     */
-    public function index(Request $request)
-    {
+    public function index(Request $request){
         return $this->success(["user" => $request->user()]);
     }
-
     /**
-     * Logout user
-     * @group Authentication
-     *
+     * Destroy an authenticated session.
      */
     public function destroy(Request $request): RedirectResponse
     {

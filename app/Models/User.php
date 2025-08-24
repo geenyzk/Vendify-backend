@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -18,7 +17,6 @@ class User extends Authenticatable
     ];
 
     protected $appends  = ["transactions", "banks", "stats", "referrals"];
-
     protected $hidden = [
         'password',
         'remember_token',
@@ -31,22 +29,21 @@ class User extends Authenticatable
         'last_login_at' => 'datetime',
     ];
 
+
+
     public function getReferralsAttribute()
     {
         return User::whereReferredBy($this->id)->get();
     }
 
 
-    function getTransactionsAttribute()
-    {
+    function getTransactionsAttribute(){
         return Transaction::where("user_id", $this->id)->get();
     }
 
-    function getStatsAttribute()
-    {
+    function getStatsAttribute(){
 
         $transaction = Transaction::where("user_id", $this->id);
-
         return [
             "daily_purchased_data" => $transaction
             ->whereTransactionType("data_subscription")
@@ -60,21 +57,7 @@ class User extends Authenticatable
     }
 
 
-    function getBanksAttribute()
-    {
-        $activeBankNames  = ServiceControl::whereSubCategory("bank")
-        ->whereIsactive(true)
-        ->pluck("name")
-        ->toArray();
-        
-        Log::info($activeBankNames);
-
-        $banks = Bank::whereUserId($this->id)
-        ->whereIn("bank_name", $activeBankNames)
-        ->get();
-
-        Log::info("User 'ID' for this is {$this->id} and bank account is {}");
-        Log::info($banks);
-        return $banks;
+    function getBanksAttribute($query){
+        return Bank::where("user_id", $this->id)->get();
     }
 }

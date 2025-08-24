@@ -20,82 +20,25 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * @group Admin Management
- *
- * APIs for dashboard statistics, universal table access, broadcasting notifications, and wallet funding.
- */
-
 class AdminController extends Controller
 {
 
-        /**
-     * Dashboard statistics overview.
-     *
-     * Returns user chart data, transaction counts, total user balance, and more.
-     *
-     * @response 200 {
-     *    "users_graph": {
-     *        "labels": ["user", "admin"],
-     *        "data": [{"user_type": "user", "total": 23}]
-     *    },
-     *    "transaction_count": 10,
-     *    "total_user": 50,
-     *    "total_user_balance": 12000,
-     *    "api_balances": {...},
-     *    "total_funding_today": 5000,
-     *    "total_signups_today": 3,
-     *    "transaction_status": {
-     *        "successful": 8,
-     *        "failed": 1,
-     *        "pending": 1
-     *    },
-     *    "tx_chart": {
-     *        "labels": [],
-     *        "data": []
-     *    }
-     * }
-     */
-    function stats()
-    {
+    function stats(){
         // USER DONUT CHART DATA
         $raw = User::select('user_type', DB::raw('count(*) as total'))
-            ->groupBy('user_type')
-            ->get();
+        ->groupBy('user_type')
+        ->get();
 
+        // $tx_raw = Transaction::select('user_type', DB::raw('count(*) as total'))
+        // ->groupBy('user_type')
+        // ->get();
+
+        // $tx_labels = $tx_raw->pluck("");
         $labels = $raw->pluck('user_type');
 
-        // Current year and month
-        $year = Carbon::now()->year;
-        $month = Carbon::now()->month;
-
-        $transactionCount = Transaction::whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->count();
-
-        // Current month transaction status counts
-        $successfulTx = Transaction::where('status', 'success')
-            ->whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->count();
-
-        $failedTx = Transaction::where('status', 'fail')
-            ->whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->count();
-
-        $pendingTx = Transaction::where('status', 'pending')
-            ->whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->count();
-
-        $totalFundingToday = Transaction::where('transaction_type', 'funding')
-        ->whereDate('created_at', Carbon::today())
-        ->sum('amount');
-
-        $totalSignupsToday = User::whereCreatedAt(Carbon::today())->count();
-
-
+        $transactionCount = Transaction::whereYear('created_at', Carbon::now()->year)
+        ->whereMonth('created_at', Carbon::now()->month)
+        ->count();
         return $this->success([
             "users_graph" => [
                 'labels' => $labels,
@@ -105,52 +48,18 @@ class AdminController extends Controller
             "total_user" => User::count(),
             "total_user_balance" => User::sum("wallet_balance"),
             "api_balances" => VendorFactory::sumAllBalances(),
-            "total_funding_today" => $totalFundingToday,
-            "total_signups_today" => $totalSignupsToday,
-
-
-            "transaction_status" => [
-                "successful" => $successfulTx,
-                "failed" => $failedTx,
-                "pending" => $pendingTx,
-            ],
-
             "tx_chart" => [
                 "labels" => [], // $tx_labels
-                "data" => [],   // $tx_labels
+                "data" => [], // $tx_labels
             ]
         ]);
     }
 
-
-        /**
-     * Get general system information.
-     *
-     * @response 200 {
-     *    "general": {
-     *        "site_name": "MyApp",
-     *        "support_email": "support@example.com"
-     *    }
-     * }
-     * @authenticated
-     */
-    function systemInformation()
-     {
+    function systemInformation() {
         return $this->success(["general" => General::first() ]);
     }
 
-        /**
-     * Get airtime discount configuration.
-     *
-     * @response 200 {
-     *    "discount": {
-     *        "network": "mtn",
-     *        "discount_rate": 3.5
-     *    }
-     * }
-     */
-    function airtimeDiscount()
-    {
+    function airtimeDiscount () {
         $discount = Discount::airtime();
         return $this->success(["discount" => $discount]);
     }
@@ -232,67 +141,79 @@ class AdminController extends Controller
     }
 
 
-    public static function universalBulkCreateOrUpdate(Request $request, $table)
+    static function universalCreateOrUpdate(Request $request, $table, $id)
     {
-        $self = new self();
-
-        // ✅ Check if table exists
+        // Check table exists
+        $self = new Self();
         if (!Schema::hasTable($table)) {
-            Log::info("Table not found, Table:" . $table );
             return response()->json(['error' => 'Table not found'], 404);
         }
 
-        $items = $request->input('items');
+        $data = $request->all();
+        if (empty($data)) {
+            return response()->json(['error' => 'No data provided'], 400);
+        }
 
-        // ✅ Validate input
+        // Get valid columns
+        $tableColumns = Schema::getColumnListing($table);
+        $filteredData = array_filter($data, fn($key) => in_array($key, $tableColumns), ARRAY_FILTER_USE_KEY);
+
+        if (empty($filteredData)) {
+            return response()->json(['error' => 'No valid columns provided'], 400);
+        }
+
+        try {
+            // Ensure 'id' is also in the table columns
+            if (!in_array('id', $tableColumns)) {
+                return response()->json(['error' => 'Table does not have an id column'], 400);
+            }
+
+            // Set the match condition for updateOrInsert
+            $match = ['id' => $id];
+
+            // Perform create or update
+            $updatedOrInserted = DB::table($table)->updateOrInsert($match, $filteredData);
+
+            if ($updatedOrInserted) {
+                return $self->success([], 'Create or update successful');
+            } else {
+                return $self->success([], 'No changes were made', "info");
+            }
+        } catch (\Exception $e) {
+            return $self->fail([], $e->getMessage(), 500);
+        }
+    }
+
+    static function universalBulkCreateOrUpdate(Request $request, $table)
+    {
+        $self = new Self();
+
+        // Check table exists
+        if (!Schema::hasTable($table)) {
+            return response()->json(['error' => 'Table not found'], 404);
+        }
+
+        $items = $request->input('items'); // Expecting: [ { id: ..., field1: ..., field2: ... }, ... ]
+
         if (!is_array($items) || empty($items)) {
-            Log::error('Invalid or empty items array provided');
             return response()->json(['error' => 'No valid data array provided'], 400);
         }
 
-        // ✅ Get column list
         $tableColumns = Schema::getColumnListing($table);
 
+        // Make sure the table has an ID column
         if (!in_array('id', $tableColumns)) {
-            Log::error('Table does not have an "id" column: ' . $table);
-            return response()->json(['error' => 'Table does not have an "id" column'], 400);
+            return response()->json(['error' => 'Table does not have an id column'], 400);
         }
 
         $results = [];
-
         try {
-            DB::beginTransaction();
-
-            foreach ($items as $index => $item) {
-
-                Log::info($item);
-                Log::info($index);
-
-                if (!is_array($item) || !isset($item['id'])) {
-                    Log::error('Each item must be an array with an "id" key');
-                    continue;
+            foreach ($items as $item) {
+                if (!isset($item['id'])) {
+                    continue; // Skip items without an ID
                 }
 
-                 foreach ($tableColumns as $col) {
-                    if ($request->hasFile("items.$index.$col")) {
-                        $file = $request->file("items.$index.$col");
-
-                        if (is_array($file)) {
-                            // Multiple files → store as JSON array
-                            $paths = [];
-                            foreach ($file as $f) {
-                                $paths[] = $f->store("uploads/$table", 'public');
-                            }
-                            $item[$col] = json_encode($paths);
-                        } else {
-                            // Single file → store path string
-                            $item[$col] = $file->store("uploads/$table", 'public');
-                        }
-                    }
-                }
-
-
-                // Filter only valid columns
+                // Filter valid columns
                 $filteredData = array_filter(
                     $item,
                     fn($key) => in_array($key, $tableColumns),
@@ -302,38 +223,17 @@ class AdminController extends Controller
                 if (!empty($filteredData)) {
                     $match = ['id' => $item['id']];
                     $status = DB::table($table)->updateOrInsert($match, $filteredData);
-
                     $results[] = [
                         'id' => $item['id'],
-                        'status' => $status ? 'updated/inserted' : 'unchanged',
+                        'status' => $status ? 'updated/inserted' : 'unchanged'
                     ];
                 }
             }
 
-            DB::commit();
-
             return $self->success($results, 'Bulk create or update completed');
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            Log::error('Bulk operation failed', ['error' => $e->getMessage()]);
-            return $self->fail([], 'Server error: ' . $e->getMessage(), 500);
+        } catch (\Exception $e) {
+            return $self->fail([], $e->getMessage(), 500);
         }
-    }
-
-
-    public static function universalCreateOrUpdate(Request $request, $table, $id = 0)
-    {
-        $data = $request->all();
-
-        if ($id > 0) {
-            $data['id'] = $id;
-        }
-
-        Log::info($request->all());
-        Log::info("create or update data");
-        return self::universalBulkCreateOrUpdate(new Request([
-            'items' => [ $data ]
-        ]), $table);
     }
 
     public function universalDelete(Request $request, $table, $id)
@@ -344,7 +244,7 @@ class AdminController extends Controller
         }
 
         try {
-            // Attempt to delete the recorduu
+            // Attempt to delete the record
             $deleted = DB::table($table)->where('id', $id)->delete();
 
             if ($deleted) {

@@ -15,40 +15,9 @@ use Illuminate\Validation\Rules;
 use Illuminate\View\View;
 use Illuminate\Validation\ValidationException;
 
-
 class RegisteredUserController extends Controller
 {
 
-/**
- * Register a new user
-*
-    * @group Authentication
-     * @unauthenticated
-
-    * This endpoint creates a new user and returns an auth token.
-    *
-    * @bodyParam fullname string required Full name of the user.
-    * @bodyParam username string required Unique username.
-    * @bodyParam email string required Must be a valid email.
-    * @bodyParam phone string required Unique phone number.
-    * @bodyParam password string required Password.
-    * @bodyParam password_confirmation string required Confirm Password.
-    *
-    * @response 200 {
-    *   "status": true,
-    *   "message": "Request successful",
-    *   "data": {
-    *     "user": {
-    *       "id": 1,
-    *       "fullname": "John Doe",
-    *       "username": "johndoe",
-    *       "email": "john@example.com",
-    *       ...
-    *     },
-    *     "token": "eyJ0eXAiOiJKV1QiLC..."
-    *   }
-    * }
- */
 
     public function store(Request $request)
     {

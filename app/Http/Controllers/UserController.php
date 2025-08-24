@@ -2,39 +2,28 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\AdminCreateUserRequest;
-use App\Http\Requests\AdminUpdateUserRequest;
 use App\HttpResponse;
-use App\Services\Admin\UserService;
+use App\Models\User;
+use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
-    use HttpResponse;
 
-    public function __construct(
-        protected UserService $userService
-    ){}
+    use HttpResponse;
 
     public function index()
     {
-        return $this->success([
-            "users" => $this->userService->getAllUsers()
-        ]);
+        //
+        return $this->success(["users" => User::all()->toArray()]);
+
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(AdminCreateUserRequest $request)
+    public function store(Request $request)
     {
-        $validated = $request->validated();
-        $user = $this->userService->createUser($validated);
-        $token = $user->createToken($user->username)->plainTextToken; //token can be removed if not needed for admin
-
-        return $this->success([
-            'user' => $user,
-            'user_token' => $token
-        ]);
+        //
     }
 
     /**
@@ -42,19 +31,15 @@ class UserController extends Controller
      */
     public function show(string $id)
     {
-        return $this->success([
-            "user" => $this->userService->getUser($id)
-        ]);
+        return $this->success(["user" => User::find($id)->toArray()]);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(AdminUpdateUserRequest $request, string $id)
+    public function update(Request $request, string $id)
     {
-        $validated = $request->validated();
-        $user = $this->userService->updateUser($id, $validated);
-        return $this->success(['user' => $user]);
+        //
     }
 
     /**
@@ -62,7 +47,7 @@ class UserController extends Controller
      */
     public function destroy(string $id)
     {
-        $this->userService->deleteUser($id);
-        return $this->success(['message' => 'User deleted']);
+        //
     }
+
 }

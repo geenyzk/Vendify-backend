@@ -42,12 +42,12 @@ class LoginRequest extends FormRequest
     public function authenticate()
     {
         $this->ensureIsNotRateLimited();
-        $login  = $this->input('login');
 
+        $login  = $this->input('login');
         $user = User::where("email", $login)
-            ->orWhere('phone', $login)
-            ->orWhere('username', $login)
-            ->first();
+        ->orWhere('phone', $login)
+        ->orWhere('username', $login)->first();
+
 
         if (!$user) {
             RateLimiter::hit($this->throttleKey());
@@ -55,8 +55,7 @@ class LoginRequest extends FormRequest
                 'login' => trans('auth.failed'),
             ]);
         }
-
-        if (!Auth::attempt([
+        if (! Auth::attempt([
             'email' => $user->email,
             'password' => $this->input('password'),
         ], $this->boolean('remember'))) {
@@ -98,6 +97,6 @@ class LoginRequest extends FormRequest
      */
     public function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->string('login')) . '|' . $this->ip());
+        return Str::transliterate(Str::lower($this->string('login')).'|'.$this->ip());
     }
 }

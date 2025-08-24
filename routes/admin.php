@@ -9,3 +9,6 @@ Route::middleware("auth:sanctum")->group(function (){
     Route::get("/sys-info");
    });
 });
+
+
+

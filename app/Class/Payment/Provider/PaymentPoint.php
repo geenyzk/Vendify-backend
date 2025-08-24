@@ -45,7 +45,7 @@ class PaymentPoint extends PaymentBase
             ]);
 
             if ($response->successful()) {
-                $data = $response->json();
+                $data = $response->json('data');
                 return $this->formatResponse($data, $user);
             } else {
                 Log::error("PaymentPoint: Failed to create virtual account", [
@@ -65,10 +65,10 @@ class PaymentPoint extends PaymentBase
     protected function formatPayload(array|User $payload, ?User $user = null): array
     {
         $user = $payload instanceof User ? $payload : $user;
-        General::where("",  ">", 1);
+
         return [
             'email'       => $user->email,
-            'name'        => $user->username,
+            'name'        => $user->fullname,
             'phoneNumber' => $user->phone,
             'bankCode'    => ['20946'],
             'businessId'  => $this->provider->username,
@@ -87,7 +87,6 @@ class PaymentPoint extends PaymentBase
             'bank_account' => $bankAccount['accountNumber'] ?? '',
             'bank_name'    => $bankAccount['bankName'] ?? '',
             'provider'     => 'paymentpoint',
-            "account_name" => $bankAccount['accountName'],
             'status'       => 'active',
             'amount'       => 0.00, // No amount in response, so default to 0
             'ref'          => $bankAccount['Reserved_Account_Id'] ?? null,

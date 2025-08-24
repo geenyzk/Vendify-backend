@@ -32,7 +32,7 @@ class Monnify extends PaymentBase
         try {
             $payloadResponse = $this->formatPayload($payload);
             $response = Http::withHeaders($this->getHeaders())
-                ->post($this->provider->base_url . "/bank-transfer/reserved-accounts", $payloadResponse);
+                ->post($this->provider->base_url . "/virtual-account-numbers", $payloadResponse);
 
             Log::info("Generating virtual account for {$payload->email}...", [
                 'response' => $response->json()
@@ -80,12 +80,13 @@ class Monnify extends PaymentBase
         $gen = General::first();
 
         return [
-            "accountReference" => $txRef,
-            "accountName" => "Wallet - {$txRef}",
-            "currencyCode" => "NGN",
-            "contractCode" => $this->provider->username,
+            "walletReference" => $txRef,
+            "walletName" => "Wallet - {$txRef}",
             "customerName" => $fullName,
-            "bvn" => $sessionUser->bvn ?? $gen->bvn,
+            "bvnDetails" => [
+                "bvn" => $sessionUser->bvn ?? $gen->bvn,
+                // "bvnDateOfBirth" => $sessionUser->dob ?? '1990-01-01', // Make sure this exists
+            ],
             "customerEmail" => $sessionUser->email,
         ];
     }

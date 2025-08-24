@@ -29,17 +29,14 @@ class Adex extends VendorBase
 
     public function checkBalance(): string
     {
-        try {
-            $res = $this->login();
-             $cleaned = preg_replace('/[^\d.]/', '', $res['balance']);
-
-            return (float) $cleaned;
-        } catch (\Throwable $th) {
-            // Log the exception if needed: error_log($th->getMessage());
-            return 0;
-        }
+       try {
+         $res = $this->login();
+        return (float) $res['balance'] ?? "0.00";
+       } catch (\Throwable $th) {
+        //throw $th;
+        return (float) 0;
+       }
     }
-
 
      public function verifyTransaction(string $tx_ref): array
     {
@@ -397,6 +394,4 @@ class Adex extends VendorBase
 
         ];
     }
-
-    
 }

@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Log;
 class PaymentFactory
 {
     /**
-     * http://192.168.1.166:5173/customer
      * Create a new class instance.
      */
     public function __construct()
@@ -19,6 +18,7 @@ class PaymentFactory
         //
     }
     static function make(Provider $provider){
+        Log::info($provider->name);
         return match($provider->name){
             "flutterwave" => new FlutterWave($provider),
             "monnify" => new Monnify($provider),
