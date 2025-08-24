@@ -18,6 +18,70 @@ class AuthenticatedSessionController extends Controller
 
     use HttpResponse;
 
+<<<<<<< HEAD
+=======
+    /**
+<<<<<<< HEAD
+     * Login a user
+     *
+     * @group Authentication
+     *
+     * This endpoint logs in a user and returns an API token.
+     *
+     * @bodyParam email string required The user's email. Example: user@example.com
+     * @bodyParam password string required The user's password. Example: password123
+     *
+     * @response 200 {
+     *   "status": true,
+     *   "message": "Request successful",
+     *   "data": {
+     *     "user": {
+     *       "id": 1,
+     *       "username": "john_doe",
+     *       "email": "user@example.com"
+     *     },
+     *     "token": "your-generated-token"
+     *   }
+     * }
+     */
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
+    public function store(LoginRequest $request)
+    {
+
+        try{
+            $request->authenticate();
+            $user = Auth::user();
+            $token = $user->createToken($user->username);
+            Payment::generateAccount($user);
+            return $this->success(["user" =>$user, 'token' => $token->plainTextToken]);
+        } catch (ValidationException $e) {
+<<<<<<< HEAD
+            return $this->fail( $e->errors(), "Validation Error", 422);
+=======
+            return $this->fail($e->errors(), "Validation Error", 422);
+=======
+ * Login a user
+ *
+ * @group Authentication
+ *
+ * This endpoint logs in a user and returns an API token.
+ *
+ * @bodyParam email string required The user's email. Example: user@example.com
+ * @bodyParam password string required The user's password. Example: password123
+ *
+ * @response 200 {
+ *   "status": true,
+ *   "message": "Request successful",
+ *   "data": {
+ *     "user": {
+ *       "id": 1,
+ *       "username": "john_doe",
+ *       "email": "user@example.com"
+ *     },
+ *     "token": "your-generated-token"
+ *   }
+ * }
+ */
     public function store(LoginRequest $request)
     {
 
@@ -29,15 +93,57 @@ class AuthenticatedSessionController extends Controller
             return $this->success(["user" =>$user, 'token' => $token->plainTextToken]);
         } catch (ValidationException $e) {
             return $this->fail( $e->errors(), "Validation Error", 422);
+>>>>>>> 5a8861e (Jush)
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
         }
     }
 
 
+<<<<<<< HEAD
+    public function index(Request $request){
+=======
+    /**
+     * Get the current authenticated user
+     *
+     * @group Authentication
+     * @unauthenticated
+     *
+     * This endpoint returns the currently authenticated user's details.
+     *
+     * @response 200 {
+     *   "status": true,
+     *   "message": "Request successful",
+     *   "data": {
+     *     "user": {
+     *       "id": 1,
+     *       "username": "john_doe",
+     *       "email": "user@example.com"
+     *     }
+     *   }
+     * }
+     */
+<<<<<<< HEAD
+    public function index(Request $request)
+    {
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
+        return $this->success(["user" => $request->user()]);
+    }
+    /**
+<<<<<<< HEAD
+     * Destroy an authenticated session.
+=======
+     * Logout user
+     * @group Authentication
+=======
     public function index(Request $request){
         return $this->success(["user" => $request->user()]);
     }
     /**
-     * Destroy an authenticated session.
+     * Logout user
+    * @group Authentication
+>>>>>>> 5a8861e (Jush)
+     *
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
      */
     public function destroy(Request $request): RedirectResponse
     {
@@ -49,4 +155,8 @@ class AuthenticatedSessionController extends Controller
 
         return redirect('/');
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 5a8861e (Jush)

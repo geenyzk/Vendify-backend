@@ -10,16 +10,127 @@ use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+<<<<<<< HEAD
+=======
+
+use Illuminate\Support\Facades\Http;
+
+
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
 use Illuminate\Support\Facades\Log;
 
 class VTUServicesController extends Controller
 {
+<<<<<<< HEAD
     /**
      * Handle a VTU request.
+=======
+
+
+  private $baseUrl;
+    private $token;
+
+    public function __construct()
+    {
+        $this->baseUrl = env('VTU_API_BASE');
+        $this->token = env('VTU_API_TOKEN');
+    }
+
+    private function makeRequest($method, $endpoint, $data = [])
+    {
+        $response = Http::withHeaders([
+            'Authorization' => 'Token ' . $this->token,
+            'Content-Type' => 'application/json',
+        ])->{$method}($this->baseUrl . $endpoint, $data);
+
+        return response()->json($response->json(), $response->status());
+    }
+
+    public function getUser()
+    {
+        return $this->makeRequest('get', 'user/');
+    }
+
+    public function getNetworks()
+    {
+        return $this->makeRequest('get', 'get/network/');
+    }
+
+    public function getNetworkPlans()
+    {
+        return $this->makeRequest('get', 'network/');
+    }
+
+    public function getDataPlans()
+    {
+        return $this->makeRequest('get', 'data/');
+    }
+
+    public function getDataPlanById($id)
+    {
+        return $this->makeRequest('get', "data/{$id}");
+    }
+
+    public function validateIUC(Request $request)
+    {
+        return $this->makeRequest('get', 'validateiuc', [
+            'smart_card_number' => $request->smart_card_number,
+            'cablename' => $request->cablename,
+        ]);
+    }
+
+    public function validateMeter(Request $request)
+    {
+        return $this->makeRequest('get', 'validatemeter', [
+            'meternumber' => $request->meternumber,
+            'disconame' => $request->disconame,
+            'mtype' => $request->mtype,
+        ]);
+    }
+
+    public function airtimeFunding(Request $request)
+    {
+        return $this->makeRequest('post', 'Airtime_funding/', $request->all());
+    }
+
+    public function airtimeTopup(Request $request)
+    {
+        return $this->makeRequest('post', 'topup/', $request->all());
+    }
+
+    public function dataPurchase(Request $request)
+    {
+        return $this->makeRequest('post', 'data/', $request->all());
+    }
+
+    public function cableSubscription(Request $request)
+    {
+        return $this->makeRequest('post', 'cablesub/', $request->all());
+    }
+
+    public function electricityPayment(Request $request)
+    {
+        return $this->makeRequest('post', 'billpayment/', $request->all());
+    }
+
+
+       /**
+     * Handle VTU service requests like airtime, data, etc.
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
      *
      * @param Request $request
      * @return JsonResponse
      */
+<<<<<<< HEAD
+=======
+
+
+
+
+
+
+
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     public function handle(ServiceRequest $request, string $service): JsonResponse
     {
 
