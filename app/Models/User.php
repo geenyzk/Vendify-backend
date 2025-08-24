@@ -17,10 +17,6 @@ class User extends Authenticatable
     ];
 
     protected $appends  = ["transactions", "banks", "stats", "referrals"];
-<<<<<<< HEAD
-
-=======
->>>>>>> 5a8861e (Jush)
     protected $hidden = [
         'password',
         'remember_token',
@@ -33,18 +29,12 @@ class User extends Authenticatable
         'last_login_at' => 'datetime',
     ];
 
-<<<<<<< HEAD
-=======
-
-
->>>>>>> 5a8861e (Jush)
     public function getReferralsAttribute()
     {
         return User::whereReferredBy($this->id)->get();
     }
 
 
-<<<<<<< HEAD
     function getTransactionsAttribute()
     {
         return Transaction::where("user_id", $this->id)->get();
@@ -55,15 +45,6 @@ class User extends Authenticatable
 
         $transaction = Transaction::where("user_id", $this->id);
 
-=======
-    function getTransactionsAttribute(){
-        return Transaction::where("user_id", $this->id)->get();
-    }
-
-    function getStatsAttribute(){
-
-        $transaction = Transaction::where("user_id", $this->id);
->>>>>>> 5a8861e (Jush)
         return [
             "daily_purchased_data" => $transaction
             ->whereTransactionType("data_subscription")
@@ -77,12 +58,8 @@ class User extends Authenticatable
     }
 
 
-<<<<<<< HEAD
     function getBanksAttribute($query)
     {
-=======
-    function getBanksAttribute($query){
->>>>>>> 5a8861e (Jush)
         return Bank::where("user_id", $this->id)->get();
     }
 }

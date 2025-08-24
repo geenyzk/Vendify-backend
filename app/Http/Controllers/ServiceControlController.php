@@ -5,21 +5,18 @@ namespace App\Http\Controllers;
 use App\HttpResponse;
 use App\Models\ServiceControl;
 use Illuminate\Http\Request;
-<<<<<<< HEAD
+
 /**
  * @group Admin Controls
  *
  * Manage system service controls from the admin dashboard.
  * These endpoints allow toggling service availability and retrieving grouped control data.
  */
-=======
 
->>>>>>> 5a8861e (Jush)
 class ServiceControlController extends Controller
 {
     use HttpResponse;
 
-<<<<<<< HEAD
         /**
      * Get all active service controls
      *
@@ -49,8 +46,7 @@ class ServiceControlController extends Controller
      * @authenticated
      */
 
-=======
->>>>>>> 5a8861e (Jush)
+
     public function index()
     {
         //
@@ -62,31 +58,16 @@ class ServiceControlController extends Controller
         return $this->success(['control' => $services]);
     }
 
-<<<<<<< HEAD
   /**
      * Store a newly created resource in storage.
      *
      * @hideFromAPIDocumentation
-=======
     /**
      * Store a newly created resource in storage.
->>>>>>> 5a8861e (Jush)
      */
     public function store(Request $request)
     {
         //
-    }
-
-    /**
-     * Display the specified resource.
-<<<<<<< HEAD
-     *
-     * @hideFromAPIDocumentation
-     */
-
-    public function show(string $id)
-    {
-        // 
     }
 
   
@@ -118,7 +99,6 @@ class ServiceControlController extends Controller
      * }
      *
      * @authenticated
-=======
      */
     public function show(string $id)
     {
@@ -127,7 +107,6 @@ class ServiceControlController extends Controller
 
     /**
      * Update the specified resource in storage.
->>>>>>> 5a8861e (Jush)
      */
     public function update(Request $request, string $id)
     {
@@ -140,16 +119,13 @@ class ServiceControlController extends Controller
 
     return $this->success([]);
     }
-<<<<<<< HEAD
  /**
      * Remove the specified resource from storage.
      *
      * @hideFromAPIDocumentation
-=======
 
     /**
      * Remove the specified resource from storage.
->>>>>>> 5a8861e (Jush)
      */
     public function destroy(string $id)
     {

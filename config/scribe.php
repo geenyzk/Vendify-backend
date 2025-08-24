@@ -16,7 +16,6 @@ return [
     // A short description of your API. Will be included in the docs webpage, Postman collection and OpenAPI spec.
     'description' => '',
 
-<<<<<<< HEAD
     // Text to place in the "Introduction" section, right after the `description`. Markdown and HTML are supported.
     'intro_text' => <<<INTRO
         This documentation aims to provide all the information you need to work with our API.
@@ -25,8 +24,7 @@ return [
         You can switch the language used with the tabs at the top right (or from the nav menu at the top left on mobile).</aside>
     INTRO,
 
-=======
->>>>>>> 5a8861e (Jush)
+
     // The base URL displayed in the docs.
     // If you're using `laravel` type, you can set this to a dynamic string, like '{{ config("app.tenant_url") }}' to get a dynamic base URL.
     'base_url' => config("app.url"),

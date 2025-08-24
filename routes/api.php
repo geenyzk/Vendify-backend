@@ -1,6 +1,6 @@
 <?php
 
-<<<<<<< HEAD
+
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\UserController;
@@ -13,60 +13,24 @@ use App\Http\Controllers\VTUServicesController;
 use App\Http\Controllers\ServiceControlController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
-=======
-use App\Http\Controllers\AdminController;
-use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\Auth\RegisteredUserController;
-use App\Http\Controllers\CustomerController;
-use App\Http\Controllers\ServiceControlController;
-use App\Http\Controllers\TransactionController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\VTUServicesController;
-use App\Http\Controllers\WebhookController;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Route;
->>>>>>> 5a8861e (Jush)
+
 
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
 
 Route::post('/insert', [AdminController::class, 'universalInsert']);
-<<<<<<< HEAD
+
 Route::get('/table/{table}', [AdminController::class, 'universalGet']);
 
 // Update a record by ID in a table universalBulkCreateOrUpdate
 Route::get('/table/{table}/{id}', [AdminController::class, 'universalShow']);
 Route::match(["post", 'put'], '/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
 Route::match(["post", 'put'], '/table/{table}', [AdminController::class, 'universalBulkCreateOrUpdate']);
-=======
 
-Route::get('/table/{table}', [AdminController::class, 'universalGet']);
-
-
-// Update a record by ID in a table universalBulkCreateOrUpdate
-Route::get('/table/{table}/{id}', [AdminController::class, 'universalShow']);
-Route::match(["post", 'put'],'/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
-Route::match(["post", 'put'],'/table/{table}', [AdminController::class, 'universalBulkCreateOrUpdate']);
->>>>>>> 5a8861e (Jush)
 Route::delete('/table/{table}/{id}', [AdminController::class, 'universalDelete']);
 
 
-Route::get('/test-mail', function () {
-    Mail::raw('Test from Laravel', function ($message) {
-        $message->to('officialspurconnect@gmail.com')
-<<<<<<< HEAD
-            ->subject('Test Subject');
-    });
-
-    return 'Sent!';
-=======
-                ->subject('Test Subject');
-        });
-
-        return 'Sent!';
->>>>>>> 5a8861e (Jush)
-});
 
 
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -77,16 +41,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::get('/transactions/report', [TransactionController::class, 'report']);
 
-<<<<<<< HEAD
-    Route::prefix("customer")->group(function () {
-=======
+
     Route::prefix("customer")->group(function(){
->>>>>>> 5a8861e (Jush)
+
         Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
         Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);
     });
 
-<<<<<<< HEAD
+
     Route::prefix("admin")->group(function () {
         Route::resource('users', UserController::class)
             ->withoutMiddleware('auth:sanctum')
@@ -96,12 +58,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->only(['show', 'update', 'destroy', 'index']);
 
         Route::resource('controls', ServiceControlController::class);
-=======
-    Route::prefix("admin")->group(function (){
-        Route::resource('users', UserController::class);
-        Route::resource('controls', ServiceControlController::class);
 
->>>>>>> 5a8861e (Jush)
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::post('/broadcast', [AdminController::class, 'broadcast']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
@@ -110,7 +67,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
     });
-<<<<<<< HEAD
+
 
     Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
 });
@@ -167,7 +124,4 @@ Route::prefix('payscribe')->group(function () {
     // Requery
     Route::get('/requery/{id}', [PayscribeController::class, 'requeryTransaction']);
 });
-=======
-    Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
-});
->>>>>>> 5a8861e (Jush)
+
