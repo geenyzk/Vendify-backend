@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
-use App\Class\Payment\Payment;
+use App\Classes\Payment\Payment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\HttpResponse;

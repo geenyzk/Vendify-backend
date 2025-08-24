@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Class\Payment;
+namespace App\Classes\Payment;
 
-use App\Class\Payment\Provider\FlutterWave;
-use App\Class\Payment\Provider\Monnify;
-use App\Class\Payment\Provider\PaymentPoint;
+use App\Classes\Payment\Provider\FlutterWave;
+use App\Classes\Payment\Provider\Monnify;
+use App\Classes\Payment\Provider\PaymentPoint;
 
 
 use App\Models\Provider;

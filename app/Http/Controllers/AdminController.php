@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Class\TemplateParser;
-use App\Class\TransactionService;
-use App\Class\Vendor\VendorFactory;
+use App\Classes\TemplateParser;
+use App\Classes\TransactionService;
+use App\Classes\Vendor\VendorFactory;
 use App\Models\Discount;
 use App\Models\General;
 use App\Models\Provider;

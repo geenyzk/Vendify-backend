@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Class\Vendor;
+namespace App\Classes\Vendor;
 
-use App\Class\Vendor\Providers\Adex;
-use App\Class\Vendor\Providers\SandboxService;
-use App\Class\Vendor\Providers\SMEPlug;
+use App\Classes\Vendor\Providers\Adex;
+use App\Classes\Vendor\Providers\SandboxService;
+use App\Classes\Vendor\Providers\SMEPlug;
 use App\Models\Vendor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;

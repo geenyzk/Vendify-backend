@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Class\Vendor;
+namespace App\Classes\Vendor;
 
-use App\Class\TemplateParser;
-use App\Class\TransactionService;
-use App\Class\Vendor\Interface\VendorInterface;
+use App\Classes\TemplateParser;
+use App\Classes\TransactionService;
+use App\Classes\Vendor\Interface\VendorInterface;
 use App\HttpResponse;
 use App\Models\Message;
 use App\Models\Transaction;

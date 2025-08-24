@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Class\SerivceControl\ServiceControlService;
-use App\Class\VTUServices\VTUServiceFactory;
+use App\Classes\SerivceControl\ServiceControlService;
+use App\Classes\VTUServices\VTUServiceFactory;
 use App\Http\Requests\ServiceRequest;
 use App\Models\Discount;
 use App\Models\Transaction;

@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Class\VTUServices;
+namespace App\Classes\VTUServices;
 
-use App\Class\Vendor\VendorFactory;
+use App\Classes\Vendor\VendorFactory;
 use App\Models\Vendor;
 use Illuminate\Support\Facades\Log;
 

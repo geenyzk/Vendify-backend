@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Class\Vendor\VendorFactory;
+use App\Classes\Vendor\VendorFactory;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Class;
+namespace App\Classes;
 
 use App\Jobs\SendTransactionCallback;
 use App\Models\Transaction;

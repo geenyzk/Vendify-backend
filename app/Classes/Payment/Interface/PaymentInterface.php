@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Class\Payment\Interface;
+namespace App\Classes\Payment\Interface;
 
 use App\Models\User;
 use Illuminate\Http\Request;

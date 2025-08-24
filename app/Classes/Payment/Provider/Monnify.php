@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Class\Payment\Provider;
+namespace App\Classes\Payment\Provider;
 
-use App\Class\Payment\PaymentBase;
+use App\Classes\Payment\PaymentBase;
 use App\Models\Bank;
 use App\Models\General;
 use App\Models\Transaction;

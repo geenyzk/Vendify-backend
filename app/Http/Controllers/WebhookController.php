@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Class\Payment\Payment;
-use App\Class\Vendor\VendorFactory;
+use App\Classes\Payment\Payment;
+use App\Classes\Vendor\VendorFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
