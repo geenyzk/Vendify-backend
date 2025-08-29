@@ -8,15 +8,6 @@ use Illuminate\Support\Facades\Log;
 
 class VTUServiceFactory
 {
-    /**
-     * Create a new class instance.
-     */
-    public function __construct()
-    {
-        //
-    }
-
-
      static function make ($service='', $sub="") {
          $provider = Vendor::provider($sub ?? $service)->first();
         return match ($service) {

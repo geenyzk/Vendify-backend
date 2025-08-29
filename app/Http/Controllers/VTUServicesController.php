@@ -143,11 +143,6 @@ class VTUServicesController extends Controller
      */
 
 
-
-
-
-
-
     public function handle(ServiceRequest $request, string $service): JsonResponse
     {
 
@@ -176,8 +171,10 @@ class VTUServicesController extends Controller
         }
 
         $serviceType =$service;
+        Log::info($validated);
+        Log::info($serviceType);
 
-        $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type']);
+        $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType);
 
         if (!$handler) {
             return response()->json([
@@ -187,6 +184,7 @@ class VTUServicesController extends Controller
         }
 
         try {
+            //code...
             // Log::info($validated);
             return  $handler->process($service, $validated);
         } catch (\Throwable $e) {
@@ -202,6 +200,10 @@ class VTUServicesController extends Controller
      * Get plans for data, cable, exam, etc.
      *
      * @group VTU Services
+        } catch (\Throwable $th) {
+            //throw $th;
+            Log::info($th);
+        } {
      *
      * @authenticated
      *
@@ -246,21 +248,32 @@ class VTUServicesController extends Controller
      * }
      */
     function verify(Request $request, string $service){
-        $val = [];
-        if($service == "cable"){
-            $val = [
-            'cable_network' => 'required|string',
-            ];
-        }elseif ($service == 'bill') {
-            $val = [
-            'meter_type' => 'required|string',
-
-            ];
+        // try{
+        try {
+            //code...
+            $val = [];
+            if($service == "cable"){
+                $val = [
+                'cable_network' => 'required|string',
+                ];
+            }elseif ($service == 'electricity') {
+                $val = [
+                'meter_type' => 'required|string',
+                'disco' => 'required|string',
+                ];
+            }
+            $payload = $request->validate(array_merge([
+                'identifier' => 'required|string',
+            ], $val));
+            $handler = VTUServiceFactory::make($service, $request->cable_network??"");
+            return $handler->verifyUser($service, $request->identifier, $payload);
+        } catch (\Throwable $th) {
+            //throw $th;
+            Log::info($th);
         }
-        $payload = $request->validate(array_merge([
-            'identifier' => 'required|string',
-        ], $val));
-        $handler = VTUServiceFactory::make($service, $request->cable_network??"");
-        return $handler->verifyUser($service, $request->identifier, $payload);
+
+        // }Except(e){
+
+        // }
     }
 }

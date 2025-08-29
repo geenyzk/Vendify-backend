@@ -58,12 +58,11 @@ class AdminController extends Controller
      */
     function stats()
     {
-        // USER DONUT CHART DATA
-        $raw = User::select('user_type', DB::raw('count(*) as total'))
-            ->groupBy('user_type')
-            ->get();
+        $days = collect();
+        for ($i = 6; $i >= 0; $i--) {
+            $days->push(Carbon::today()->subDays($i)->format('Y-m-d'));
+        }
 
-        $labels = $raw->pluck('user_type');
 
         // Current year and month
         $year = Carbon::now()->year;
@@ -95,12 +94,70 @@ class AdminController extends Controller
 
         $totalSignupsToday = User::whereCreatedAt(Carbon::today())->count();
 
+        $usersRaw = User::select('user_type', DB::raw('count(*) as total'))
+    ->groupBy('user_type')
+    ->get();
+
+    // Extract labels and values
+    $user_labels = $usersRaw->pluck('user_type')->toArray();
+    $user_values = $usersRaw->pluck('total')->toArray();
+
+    // Donut chart structure for Chart.js
+    $user_chart = [
+        'labels' => $user_labels,
+        'datasets' => [
+            [
+                'label' => 'Users by Type',
+                'data' => $user_values,
+                'backgroundColor' => [
+                    '#36A2EB',
+                    '#FF6384',
+                    '#FFCE56',
+                    '#4BC0C0',
+                    '#9966FF',
+                ], // Add more colors if needed
+                'borderColor' => [
+                    '#36A2EB',
+                    '#FF6384',
+                    '#FFCE56',
+                    '#4BC0C0',
+                    '#9966FF',
+                ]
+            ]
+        ]
+    ];
+
+
+        $txData = Transaction::select(
+            DB::raw('DATE(created_at) as date'),
+            DB::raw('count(*) as total')
+        )
+        ->whereDate('created_at', '>=', Carbon::today()->subDays(6))
+        ->groupBy(DB::raw('DATE(created_at)'))
+        ->orderBy('date')
+        ->get()
+        ->keyBy('date');
+
+
+        foreach ($days as $day) {
+            $tx_labels[] = Carbon::parse($day)->format('D'); // e.g., Mon, Tue
+            $tx_values[] = $txData[$day]->total ?? 0; // 0 if no transaction
+        }
+
+        $tx_chart = [
+            'labels' => $tx_labels,
+            'datasets' => [
+                [
+                    'label' => 'Transactions',
+                    'data' => $tx_values,
+                    'backgroundColor' => '#36A2EB',
+                    "borderRadius" => 8
+                ]
+            ]
+        ];
 
         return $this->success([
-            "users_graph" => [
-                'labels' => $labels,
-                'data' => $raw,
-            ],
+            "users_graph" =>$user_chart,
             "transaction_count" => $transactionCount,
             "total_user" => User::count(),
             "total_user_balance" => User::sum("wallet_balance"),
@@ -115,10 +172,7 @@ class AdminController extends Controller
                 "pending" => $pendingTx,
             ],
 
-            "tx_chart" => [
-                "labels" => [], // $tx_labels
-                "data" => [],   // $tx_labels
-            ]
+            "tx_chart" => $tx_chart
         ]);
     }
 
@@ -276,6 +330,18 @@ class AdminController extends Controller
                     ARRAY_FILTER_USE_KEY
                 );
 
+                foreach (['created_at', 'updated_at'] as $dateField) {
+                    if (isset($filteredData[$dateField]) && !empty($filteredData[$dateField])) {
+                        try {
+                            $filteredData[$dateField] = \Carbon\Carbon::parse($filteredData[$dateField])
+                                ->format('Y-m-d H:i:s');
+                        } catch (\Exception $e) {
+                            // If parsing fails, just unset the field to avoid breaking
+                            unset($filteredData[$dateField]);
+                        }
+                    }
+                }
+
                 if (!empty($filteredData)) {
                     $match = ['id' => $item['id']];
                     $status = DB::table($table)->updateOrInsert($match, $filteredData);
@@ -295,6 +361,14 @@ class AdminController extends Controller
             Log::error('Bulk operation failed', ['error' => $e->getMessage()]);
             return $self->fail([], 'Server error: ' . $e->getMessage(), 500);
         }
+    }
+
+    public static function universalCreateOrUpdate(Request $request, $table, $id)
+    {
+        $items = [$request->all()]; // wrap single item in array
+        $items[0]['id'] = $id;      // ensure 'id' is set
+
+        return self::universalBulkCreateOrUpdate(new Request(['items' => $items]), $table);
     }
 
 

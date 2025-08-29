@@ -11,20 +11,6 @@ use Illuminate\Support\Facades\Log;
 
 class TransactionController extends Controller
 {
-    //php
-
-
-    public function report(Request $request)
-    {
-        $startDate = Carbon::parse($request->input('start_date', now()->startOfMonth()))->startOfDay();
-        $endDate = Carbon::parse($request->input('end_date', now()))->endOfDay();
-        $transactions = Transaction::calculateSummary($startDate, $endDate, $request->input("user_id"));
-        return response()->json([
-            'start_date' => $startDate->toDateString(),
-            'end_date' => $endDate->toDateString(),
-            'transactions' => $transactions,
-        ]);
-    }
 
     /**
  * Transaction Report
@@ -53,20 +39,27 @@ class TransactionController extends Controller
  */
 
     public function report(Request $request)
-{
-    $startDate = Carbon::parse($request->input('start_date', now()->startOfMonth()))->startOfDay();
-    $endDate = Carbon::parse($request->input('end_date', now()))->endOfDay();
+    {
+        try {
+            //code...
+            Log::info("TRepo..");
+            $startDate = Carbon::parse($request->input('start_date', now()->startOfMonth()))->startOfDay();
+            $endDate = Carbon::parse($request->input('end_date', now()))->endOfDay();
 
-    $transactions = Transaction::calculateSummary($startDate, $endDate, $request->input("user_id"));
+            $transactions = Transaction::calculateSummary($startDate, $endDate, $request->input("user_id"));
 
 
-    return response()->json([
-        'start_date' => $startDate->toDateString(),
-        'end_date' => $endDate->toDateString(),
-        'transactions' => $transactions,
-    ]);
+            return response()->json([
+                'start_date' => $startDate->toDateString(),
+                'end_date' => $endDate->toDateString(),
+                'transactions' => $transactions,
+            ]);
+        } catch (\Throwable $th) {
+            //throw $th;
+            Log::info($th);
+        }
 
-}
+    }
 
 
 }

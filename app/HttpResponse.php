@@ -41,4 +41,15 @@ trait HttpResponse
             'type'    => $type,
         ], $code);
     }
+
+    public function redirect(string $url, string $message = "Redirecting", int $code = 200, string $type = "info"): JsonResponse
+{
+    return response()->json([
+        'success' => true,
+        'message' => $message,
+        'type'    => $type,
+        'redirect'=> $url,
+    ], $code);
+}
+
 }

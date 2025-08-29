@@ -70,6 +70,7 @@ class Discount extends Model
     }
 
     function scopeGetElectricity($query, $name){
+        Log::info(["name: " =>$name]);
         return $query->where("name", $name)
         ->first();
     }

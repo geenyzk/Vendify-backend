@@ -53,6 +53,7 @@ class RegisteredUserController extends Controller
     public function store(Request $request)
     {
         try {
+            
             $request->validate([
                 'fullname' => ['required', 'string', 'max:255'],
                 'username' => ['required', 'string', 'max:255', 'unique:'.User::class],
@@ -70,9 +71,9 @@ class RegisteredUserController extends Controller
             ]);
 
             Auth::login($user);
-            $token = $user->createToken($user->username);
+            // $token = $user->createToken($user->username);
             Payment::generateAccount($user);
-            return $this->success(["user" =>$user, 'token' => $token->plainTextToken]);
+            return $this->success();
 
         } catch (ValidationException $e) {
             return $this->fail( $e->errors(), "Validation Error", 422);

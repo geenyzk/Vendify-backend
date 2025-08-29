@@ -22,8 +22,11 @@ class Adex extends VendorBase
 
     function sendRequest(string $service, array $payload): array
     {
+        Log::info($payload);
         $response = Http::withHeaders($this->getAuthHeaders())
         ->post($this->buildEndpoint($service), $payload)->json();
+
+        Log::info($response);
         return $response;
     }
 
@@ -361,6 +364,7 @@ class Adex extends VendorBase
         } elseif ($service == 'electricity') {
             $disco = Discount::getElectricity($payload['disco']);
             $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
+            Log::info($disco);
             $meterType = $options['meter_type'] ?? 'prepaid';
             if (!$discoId) {
             return $this->fail([], "Service type not given");
@@ -371,13 +375,16 @@ class Adex extends VendorBase
         }
 
         try {
+
             $response = Http::get($url);
+            Log::info(["response: " => $response]);
 
             if ($response->ok() && $response->json('status') === 'success') {
                 return $this->success(['name' => $response->json('name')], ucfirst($service) . ' verification successful.', 201);
             }
             return $this->fail([], $response->json('message') ?? 'Verification failed.');
         } catch (\Exception $e) {
+            Log::info(["ERROR: " => $e]);
             return $this->fail([], $e->getMessage());
         }
     }

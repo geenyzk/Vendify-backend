@@ -6,6 +6,7 @@ use App\Classes\Payment\Payment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\HttpResponse;
+use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -47,11 +48,14 @@ class AuthenticatedSessionController extends Controller
         try {
             $request->authenticate();
             $user = Auth::user();
-            $token = $user->createToken($user->username)->plainTextToken;
+            // $token = $user->createToken($user->username)->plainTextToken;
             Payment::generateAccount($user);
-            return $this->success(["user" => $user, 'token' => $token]);
+            return $this->redirect($user->user_type !== "admin" ?"/customer" :'/admin');
         } catch (ValidationException $e) {
+            error_log($e);
             return $this->fail($e->errors(), "Validation Error", 422);
+        }catch (\Exception $e){
+                Log::info($e);
         }
     }
 
@@ -80,7 +84,7 @@ class AuthenticatedSessionController extends Controller
         return $this->success(["user" => $request->user()]);
     }
 
-    
+
     /**
      * Logout user
     * @group Authentication

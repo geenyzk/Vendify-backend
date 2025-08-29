@@ -18,9 +18,10 @@ class TransactionService
         return DB::transaction(function () use ($apiData, $user) {
             $transactionType = $apiData['transaction_type'];
 
-            $amount = floatval($apiData['discount_amount'] ?? $apiData['amount']);
+            $discounted_amount = floatval($apiData['amount']) - floatval($apiData['discount_amount']);
+            // $amount = floatval($apiData['amount']);
             $balanceBefore = floatval($user->wallet_balance);
-            $balanceAfter = $apiData["status"] === "success"? $balanceBefore - floatval($apiData['amount']): $user->wallet_balance;
+            $balanceAfter = $apiData["status"] === "success"? $balanceBefore - $discounted_amount: $user->wallet_balance;
 
             // Optional: Deduct wallet (if not done via API balance already)
             $user->wallet_balance = $balanceAfter;
@@ -31,12 +32,18 @@ class TransactionService
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
                 'user_id' => $user->id,
-                "amount" => $amount,
+                "amount" => $discounted_amount,
             ]);
+            Log::info(['merged_tx' => $tx_data, "unmerged_tx" =>  [
+                'balance_before' => $balanceBefore,
+                'balance_after' => $balanceAfter,
+                'user_id' => $user->id,
+                "amount" => $discounted_amount,
+            ]]);
             $transaction = Transaction::create($tx_data);
 
             // Optional: Commission distribution
-            self::distributeCommission($user, $amount, $transactionType);
+            self::distributeCommission($user, $discounted_amount, $transactionType);
 
             SendTransactionCallback::dispatch($user, $transaction);
 
@@ -99,6 +106,7 @@ class TransactionService
             'balance_after' => $balanceAfter,
             'response_message' => ucfirst($type) . ' by admin',
             'platform' => 'web',
+            "receiver" => $user->username,
         ]);
 
         return $transaction->toArray();

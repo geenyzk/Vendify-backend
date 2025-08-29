@@ -14,7 +14,6 @@ use App\Http\Controllers\ServiceControlController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 
-
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
@@ -31,15 +30,13 @@ Route::match(["post", 'put'], '/table/{table}', [AdminController::class, 'univer
 Route::delete('/table/{table}/{id}', [AdminController::class, 'universalDelete']);
 
 
-
-
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get("/user", [AuthenticatedSessionController::class, 'index']);
     Route::get("/logout", [AuthenticatedSessionController::class, 'destroy']);
     Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
-    Route::get('/transactions/report', [TransactionController::class, 'report']);
+    Route::post('/transactions/report', [TransactionController::class, 'report']);
 
 
     Route::prefix("customer")->group(function(){

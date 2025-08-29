@@ -62,7 +62,11 @@ class DataPlan extends Model
 
     public function getPriceAttribute(){
         $user = Auth::user();
-        return $this->{$user->user_type?? "user" . "_price"};
+        $type = $user?->user_type ?? "user";   // nullsafe operator
+        $column = "{$type}_price";             // build column name dynamically
+
+        // Log::info("Resolving price column: $column");
+        return $this->{$column} ?? null;
     }
     public function getNetworkAttribute($value)
     {
