@@ -15,7 +15,8 @@ Route::get("/", function(){
 
 Route::middleware(['auth:sanctum'])->group(function () {
     // Route::get("/user", [AuthenticatedSessionController::class, 'index']);
-    Route::get("/logout", [AuthenticatedSessionController::class, 'destroy']);
+    // SPA clients should POST to /logout, but we accept GET too for browser hits.
+    Route::match(['get', 'post'], "/logout", [AuthenticatedSessionController::class, 'destroy']);
     Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);

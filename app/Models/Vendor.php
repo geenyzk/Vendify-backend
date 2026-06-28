@@ -46,7 +46,8 @@ class Vendor extends Model
 
     public function getBalanceAttribute()
     {
-        $key = md5($this->base_url . $this->username . $this->password ." balance");
+        $key = md5($this->base_url . $this->username . $this->password ."_balance");
+        Log:info(["key" => $key]);
         $provider = VendorFactory::make($this);
         return Cache::remember($key, now()->addMinutes(60), function() use($provider) {
             return $provider->checkBalance();
@@ -70,6 +71,20 @@ class Vendor extends Model
 
     function getWebhookAttribute(){
         return $this->identifier ?url("/api/webhook/" . $this->sub_category ."/" . $this->identifier): '';
+    }
+
+    function networkServices(){
+        return $this->hasMany(NetworkType::class, 'provider_id');
+    }
+
+    /**
+     * Data plans supplied by this vendor (same table as providers)
+     */
+    public function dataPlans()
+    {
+        return $this->morphedByMany(DataPlan::class, 'providerable', 'providerables', 'provider_id', 'providerable_id')
+            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id'])
+            ->withTimestamps();
     }
 }
 

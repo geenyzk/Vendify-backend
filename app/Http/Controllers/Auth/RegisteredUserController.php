@@ -52,18 +52,21 @@ class RegisteredUserController extends Controller
 
     public function store(Request $request)
     {
+        // Log::info($request->all());
         try {
-            
+
             $request->validate([
-                'fullname' => ['required', 'string', 'max:255'],
+                'fullname' => ['string', 'max:255'],
                 'username' => ['required', 'string', 'max:255', 'unique:'.User::class],
                 'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
                 'phone' => ['required', 'string', 'max:255', 'unique:'.User::class],
-                'password' => ['required', 'confirmed', Rules\Password::defaults()],
+                'pin' => ['required', 'digits:4'],
+                'referral_code' => ['string', 'nullable', 'max:255', 'exists:users,referral_code'],
+                'password' => ['required', Rules\Password::defaults()],
             ]);
 
             $user = User::create([
-                'fullname' => $request->fullname,
+                'fullname' => $request->fullname ?? 'Anonymous',
                 'username' => $request->username,
                 'phone' => $request->phone,
                 'email' => $request->email,
@@ -73,8 +76,22 @@ class RegisteredUserController extends Controller
             Auth::login($user);
             // $token = $user->createToken($user->username);
             Payment::generateAccount($user);
-            return $this->success();
+            $user->loginStamp();
+            $user->assignRole('user');
 
+            // Send email verification notification
+            event(new Registered($user));
+            $user->sendEmailVerificationNotification();
+
+            // Return user data with unverified email status
+            return $this->success(
+                [
+                    'user' => $user,
+                    'message' => 'Registration successful! Please verify your email.',
+                    'email_verified_at' => $user->email_verified_at,
+                ],
+                'Registration successful'
+            );
         } catch (ValidationException $e) {
             return $this->fail( $e->errors(), "Validation Error", 422);
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\HasServers;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -9,8 +10,13 @@ use Illuminate\Support\Facades\Log;
 class Discount extends Model
 {
     //
+    use HasServers;
+
     protected $hidden = ["created_at", "updated_at"];
-    protected $appends = ["price"];
+
+    protected $fillable = ["id", "name", "category", "type", "min", "max",
+    "adex_discount", "spurs_discount", "msorg_discount",
+    "vtpass_discount", "payscribe_discount", "isActive"];
     protected $casts = [
         "isActive" => 'boolean'
     ];
@@ -99,17 +105,30 @@ class Discount extends Model
 
     /**
  * Calculate the discounted amount based on the original amount.
+ * Returns the final amount AFTER discount is applied.
  */
     static public function getDiscountedAmount(float $amount, string $name): float
     {
-        $discount = self::
-        where("name", $name)
-        ->orWhere("category", $name)
-        ->first();
-        $user = Auth::user();
-        $user_discount_percent = $discount->{$user?->user_type . "_discount"};
+        $discount = self::where("name", $name)
+            ->orWhere("category", $name)
+            ->first();
 
-        return round($amount - (($user_discount_percent / 100) * $amount), 2);
+        // If no discount found, return original amount
+        if (!$discount) {
+            return $amount;
+        }
+
+        $user = Auth::user();
+        $userType = $user?->user_type ?? 'user';
+        $discountField = "{$userType}_discount";
+
+        // Get discount percentage, default to 0 if field doesn't exist
+        $user_discount_percent = $discount->{$discountField} ?? 0;
+
+        // Calculate final amount after discount
+        $finalAmount = $amount - (($user_discount_percent / 100) * $amount);
+        
+        return round($finalAmount, 2);
     }
 
 

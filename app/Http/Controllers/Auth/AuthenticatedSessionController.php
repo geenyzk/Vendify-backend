@@ -50,6 +50,8 @@ class AuthenticatedSessionController extends Controller
             $user = Auth::user();
             // $token = $user->createToken($user->username)->plainTextToken;
             Payment::generateAccount($user);
+            $user->loginStamp();
+            $user->role = $user->user_type;
             return $this->redirect($user->user_type !== "admin" ?"/customer" :'/admin');
         } catch (ValidationException $e) {
             error_log($e);
@@ -81,7 +83,7 @@ class AuthenticatedSessionController extends Controller
      */
     public function index(Request $request)
     {
-        return $this->success(["user" => $request->user()]);
+        return $this->success(["user" => $request->user()->load('role')]);
     }
 
 
@@ -90,15 +92,15 @@ class AuthenticatedSessionController extends Controller
     * @group Authentication
      *
      */
-    public function destroy(Request $request): RedirectResponse
+    public function destroy(Request $request)
     {
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();
-
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        // For SPA clients, return a JSON success response instead of redirecting.
+        return $this->success(null, 'Logged out');
     }
 }
 

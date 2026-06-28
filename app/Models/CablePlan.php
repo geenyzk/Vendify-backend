@@ -2,16 +2,24 @@
 
 namespace App\Models;
 
+use App\HasServers;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
 class CablePlan extends Model
 {
     //
-    protected $appends = ["status", "price"];
+    use HasServers;
+
+    protected $appends = ["status", "price", "servers", "price_ngn"];
     protected $casts = [
         "active" => "boolean"
     ];
+
+    protected function getPriceNgnAttribute()
+    {
+        return '₦' . number_format($this->price, 2);
+    }
 
      protected static function booted()
     {

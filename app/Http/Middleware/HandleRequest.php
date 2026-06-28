@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\General;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class HandleRequest
@@ -36,6 +37,7 @@ class HandleRequest
     {
         if($this->isJsonResponse($response)){
             $data = json_decode($response->getContent(), true);
+            Log::info($data);
 
             $response->setContent(json_encode([
                 'success' => $response->isSuccessful(),

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\HasServers;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -10,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 class ExamPlan extends Model
 {
     /** @use HasFactory<\Database\Factories\ExamPlanFactory> */
-    use HasFactory;
+    use HasFactory, HasServers;
     protected $casts = [
         "active" => "boolean"
     ];

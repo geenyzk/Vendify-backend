@@ -48,20 +48,37 @@ abstract class VendorBase implements VendorInterface
              if ($this->isSandbox) {
                 return $this->success([]);
             }
-            $parser = TemplateParser::make(); 
+            $parser = TemplateParser::make();
             $response = $this->sendRequest($service, $formattedPayload);
+            // Merge API response with original payload to preserve discount/promotion data
             $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response, $payload));
             $transaction = TransactionService::process($formattedResponse, Auth::user());
             $message = Message::wherePurpose($service . "_" . $transaction['status'])->first();
-            $parsedMessage = $parser->with(["transaction" =>$transaction])->parse($message->body);
+            $parsedMessage = $parser->with(["transaction" =>$transaction])->parse($message?->body ?? "");
             $responseMessage = $parsedMessage ?? $response['data']['msg'] ?? $response['message'] ?? $response['response_message'];
-            Log:info($parsedMessage);
-            $response_ = $this->{$transaction['status']}($transaction, $responseMessage , $transaction['status'] === "success"? 200:500);
-            return $response_; 
+            
+            // Log transaction details
+            Log::info("Transaction Completed", [
+                'transaction_id' => $transaction['id'] ?? null,
+                'amount' => $transaction['amount'] ?? null,
+                'discount_applied' => $transaction['discount_applied'] ?? null,
+                'status' => $transaction['status'] ?? null
+            ]);
+            
+            // Return success response with full transaction details
+            if ($transaction['status'] === "success") {
+                return $this->success($transaction, $responseMessage, 200);
+            } else {
+                return $this->fail([], $responseMessage, 500);
+            }
         } catch (\Exception $e) {
+            Log::error("Transaction Error", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return $this->fail([], $e->getMessage(), 500);
         }
-    } 
+    }
 
     abstract public function sendRequest(string $service, array $payload): array;
 

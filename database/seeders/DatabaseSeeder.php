@@ -30,7 +30,10 @@ class DatabaseSeeder extends Seeder
             StockVendingSeeder::class,
             ProviderSeeder::class,
             MessageSeeder::class,
-            ExamPlan::class
+            ExamPlan::class,
+            AirtimeToCashRatesSeeder::class,
+            // Promotions used by frontend promotions UI
+            PromotionSeeder::class,
         ]);
     }
 }

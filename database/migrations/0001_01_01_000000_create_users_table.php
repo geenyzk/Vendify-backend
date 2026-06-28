@@ -11,11 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-<<<<<<< HEAD
+
         Schema::create('users', function (Blueprint $table) {
-=======
-         Schema::create('users', function (Blueprint $table) {
->>>>>>> 5a8861e (Jush)
+
             $table->id();
             $table->string('username')->unique();
             $table->string('fullname');

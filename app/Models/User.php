@@ -2,21 +2,28 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
+use App\Models\Transaction;
+use App\Traits\HasRole;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
-    use HasApiTokens, Notifiable;
+    use HasApiTokens, Notifiable, SoftDeletes, HasRole;
 
     protected $fillable = [
         'username', 'fullname', 'email', 'phone', 'password',
-        'user_type', 'wallet_balance', 'is_active', 'is_verified',
-        'referral_code', 'referred_by', 'last_login_at',
+        'user_type', 'role_id', 'wallet_balance', 'is_active', 'is_verified', 'status',
+        'referral_code', 'referred_by', 'last_login_at', 'email_verified_at',
     ];
 
-    protected $appends  = ["transactions", "banks", "stats", "referrals"];
+    protected $appends  = ["transactions", "banks", "stats", "referrals", "joined_at"];
     protected $hidden = [
         'password',
         'remember_token',
@@ -27,7 +34,23 @@ class User extends Authenticatable
         'is_active' => 'boolean',
         'is_verified' => 'boolean',
         'last_login_at' => 'datetime',
+        'email_verified_at' => 'datetime',
+        'deleted_at' => 'datetime',
+        'password' => 'hashed'
     ];
+
+    // User status constants
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_BANNED = 'banned';
+    public const STATUS_SUSPENDED = 'suspended';
+
+    /**
+     * Return true if the user is active.
+     */
+    public function isActive(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE;
+    }
 
     public function getReferralsAttribute()
     {
@@ -42,18 +65,96 @@ class User extends Authenticatable
 
     function getStatsAttribute()
     {
+        $base = Transaction::where("user_id", $this->id);
 
-        $transaction = Transaction::where("user_id", $this->id);
+        $now = now();
+
+        // Monthly aggregate counts
+        $transaction_count = (clone $base)
+            ->whereYear('created_at', $now->year)
+            ->whereMonth('created_at', $now->month)
+            ->count();
+
+        $monthly_successful = (clone $base)
+            ->whereYear('created_at', $now->year)
+            ->whereMonth('created_at', $now->month)
+            ->where('status', 'success')
+            ->count();
+
+        $monthly_failed = (clone $base)
+            ->whereYear('created_at', $now->year)
+            ->whereMonth('created_at', $now->month)
+            ->where('status', 'fail')
+            ->count();
+
+        $monthly_pending = (clone $base)
+            ->whereYear('created_at', $now->year)
+            ->whereMonth('created_at', $now->month)
+            ->where('status', 'pending')
+            ->count();
+
+        // Build 5-day transactions count chart (labels + data)
+        $days = collect();
+        for ($i = 4; $i >= 0; $i--) {
+            $days->push(Carbon::today()->subDays($i)->format('Y-m-d'));
+        }
+
+        $txData = Transaction::select(
+            DB::raw('DATE(created_at) as date'),
+            DB::raw('count(*) as total')
+        )
+            ->where('user_id', $this->id)
+            ->whereDate('created_at', '>=', $days->first())
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->orderBy('date')
+            ->get()
+            ->keyBy('date');
+
+        $labels = [];
+        $values = [];
+        foreach ($days as $day) {
+            $labels[] = Carbon::parse($day)->format('D');
+            $values[] = $txData[$day]->total ?? 0;
+        }
 
         return [
-            "daily_purchased_data" => $transaction
-            ->whereTransactionType("data_subscription")
-            ->whereStatus("success")
-            ->whereMonth("created_at", now()->month)
-            ->whereYear("created_at", now()->year)->sum("quantity") . "GB",
-            "monthly_tx" => $transaction
-            ->whereMonth("created_at", now()->month)
-            ->whereYear("created_at", now()->year)
+            "daily_purchased_data" => (clone $base)
+                ->whereTransactionType("data_subscription")
+                ->whereStatus("success")
+                ->whereMonth("created_at", $now->month)
+                ->whereYear("created_at", $now->year)->sum("quantity") . "GB",
+            // raw monthly transactions (full collection)
+            "monthly_tx" => (clone $base)
+                ->whereMonth("created_at", $now->month)
+                ->whereYear("created_at", $now->year)->get(),
+            // counts and breakdowns
+            "transaction_count" => $transaction_count,
+            "monthly_successful" => $monthly_successful,
+            "monthly_failed" => $monthly_failed,
+            "monthly_pending" => $monthly_pending,
+            "transaction_status" => [
+                'successful' => $monthly_successful,
+                'failed' => $monthly_failed,
+                'pending' => $monthly_pending,
+            ],
+            // compact 5-day chart for quick display
+            "tx_chart" => [
+                'labels' => $labels,
+                'datasets' => [
+                    [
+                        'label' => 'Transactions',
+                        'data' => $values,
+                    ]
+                ]
+            ],
+            // keep legacy amount-based 30-day chart as extra info
+            "tx_amount_30d" => (clone $base)
+                 ->selectRaw('DATE(created_at) as date, SUM(amount) as total_amount')
+                ->whereStatus("success")
+                ->whereBetween('created_at', [now()->subDays(30)->startOfDay(), now()->endOfDay()])
+                ->groupBy('date')
+                ->orderBy('date')
+                ->get()
         ];
     }
 
@@ -62,4 +163,28 @@ class User extends Authenticatable
     {
         return Bank::where("user_id", $this->id)->get();
     }
+
+    public function loginStamp(): void
+    {
+        $this->update([
+            'last_login_at' => now(),
+        ]);
+    }
+
+
+    public function getLastLoginAtHumanAttribute(): ?string
+    {
+        return $this->last_login_at
+            ? Carbon::parse($this->last_login_at)->diffForHumans()
+            : null;
+    }
+
+
+    function getJoinedAtAttribute(){
+        return $this->created_at
+            ? Carbon::parse($this->created_at)->diffForHumans()
+            : null;
+    }
+
+
 }

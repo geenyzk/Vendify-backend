@@ -70,7 +70,7 @@ class ServiceControlController extends Controller
         //
     }
 
-  
+
     /**
      * Update the active status of a service control
      *

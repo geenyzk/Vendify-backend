@@ -16,6 +16,23 @@ trait HttpResponse
             $code = 200;
         }
 
+        // If the client requested a raw response (convention: X-Return-Raw: 1),
+        // return the payload directly instead of wrapping it. This helps
+        // clients that prefer the created resource to appear at response.data
+        // (instead of response.data.data). This is backward-compatible because
+        // existing clients that expect the wrapper will continue to get it.
+        try {
+            $raw = false;
+            if (function_exists('request')) {
+                $raw = (string) request()->header('X-Return-Raw', '') === '1';
+            }
+            if ($raw) {
+                return response()->json($data, $code);
+            }
+        } catch (\Throwable $e) {
+            // ignore and fall back to wrapped response
+        }
+
         return response()->json([
             'message' => $message,
             'success' => true,

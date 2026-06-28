@@ -23,7 +23,7 @@ class VendorFactory
         $useSandbox = env('USE_SANDBOX', false);
 
         $match = $useSandbox ? "sandbox":($provider->sub_category === "simhost" ? $provider->name : $provider->sub_category);
-        Log::info($useSandbox);
+        // Log::info($useSandbox);
         return match ($match) {
             "adex"=> new Adex($provider),
             "sandbox"=> new SandboxService() ,

@@ -68,8 +68,8 @@ class Adex extends VendorBase
 
      function login(): array
     {
-        $key = md5($this->provider->baseUrl . $this->provider->username . $this->provider->password);
-        return Cache::remember($key, now()->addDay(), function (){
+        $key = md5($this->baseUrl() . $this->provider->username . $this->provider->password);
+        return Cache::remember($key, now()->addMinutes(5), function (){
                 try {
                     $response = Http::withHeaders([
                         'Authorization' => 'Basic ' . base64_encode(
@@ -121,7 +121,8 @@ class Adex extends VendorBase
             default => throw new \InvalidArgumentException("No endpoint mapped for service [$service]")
             };
     }
-     protected function buildEndpoint(string $service): string
+    
+    protected function buildEndpoint(string $service): string
     {
         return $this->baseUrl() . $this->endpoint($service);
     }
@@ -365,6 +366,7 @@ class Adex extends VendorBase
             $disco = Discount::getElectricity($payload['disco']);
             $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
             Log::info($disco);
+            Log::info($discoId);
             $meterType = $options['meter_type'] ?? 'prepaid';
             if (!$discoId) {
             return $this->fail([], "Service type not given");
@@ -391,7 +393,8 @@ class Adex extends VendorBase
 
     protected function getPlans(?array $payload = null): JsonResponse
     {
-        return  AdminController::universalGet($payload['request'], $payload['table']);
+        $adminController = new AdminController();
+        return $adminController->universalGet($payload['request'], $payload['table']);
     }
 
     function callback(Request $request): array

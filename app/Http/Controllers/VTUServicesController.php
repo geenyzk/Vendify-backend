@@ -7,13 +7,12 @@ use App\Classes\VTUServices\VTUServiceFactory;
 use App\Http\Requests\ServiceRequest;
 use App\Models\Discount;
 use App\Models\Transaction;
+use App\Services\PromotionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
-
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-
-
 use Illuminate\Support\Facades\Log;
 
 class VTUServicesController extends Controller
@@ -147,12 +146,8 @@ class VTUServicesController extends Controller
     {
 
         $validated = $request->validated();
-        if(in_array($service, ['airtime'])){
-            if (($error = Discount::getAmountRangeError($validated['amount'], $validated['network_type']))) {
-                return $this->fail([], $error, 422);
-            }
-        }
-
+        // Amount validation now done in ServiceRequest rules for airtime (min:50, max:5000)
+        // No need to check Discount table for airtime since all discounts are now promo-based
 
         $isVerifiable = ServiceControlService::verify(Auth::id(),$validated['pin']??'');
         if (!$isVerifiable) {
@@ -163,37 +158,122 @@ class VTUServicesController extends Controller
         // $validated['tx_ref'] = Transaction::generateTransactionId();
 
         $user = Auth::user();
-        if ($user->wallet_balance < $validated['amount']) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Insufficient balance to complete this transaction.',
-            ], 402);
-        }
 
-        $serviceType =$service;
-        Log::info($validated);
-        Log::info($serviceType);
+        return DB::transaction(function () use ($service, $validated, $user) {
+            $originalAmount = (float) $validated['amount'];
+            $totalDiscountAmount = 0;
+            $promotionId = null;
 
-        $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType);
+            // Step 1: Apply base discount from Discount model (automatic, network-based)
+            $baseDiscountAmount = 0;
+            if (in_array($service, ['airtime', 'data'])) {
+                $network = $validated['network'] ?? $validated['provider'] ?? null;
+                $category = $validated['network_type'] ?? null;
 
-        if (!$handler) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unsupported or unconfigured service.',
-            ], 400);
-        }
+                if ($network && $category) {
+                    try {
+                        // Get final amount after base discount
+                        $baseDiscountedAmount = Discount::getDiscountedAmount($originalAmount, $network);
+                        $baseDiscountAmount = $originalAmount - $baseDiscountedAmount;
+                        $totalDiscountAmount += $baseDiscountAmount;
 
-        try {
-            //code...
-            // Log::info($validated);
-            return  $handler->process($service, $validated);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to process VTU request.',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
+                        Log::info("Base discount applied", [
+                            'original_amount' => $originalAmount,
+                            'base_discounted_amount' => $baseDiscountedAmount,
+                            'base_discount_amount' => $baseDiscountAmount,
+                            'network' => $network,
+                            'category' => $category,
+                            'user_type' => $user?->user_type
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error("Error calculating base discount: " . $e->getMessage());
+                        // Continue without base discount if there's an error
+                    }
+                }
+            }
+
+            // Step 2: Apply promotion if code is provided (additional discount on top of base)
+            $promotionDiscount = 0;
+            if (!empty($validated['code'] ?? '')) {
+                // Apply promotion on top of base-discounted amount
+                $baseDiscountedAmount = $originalAmount - $baseDiscountAmount;
+
+                $promotionResult = PromotionService::applyPromotion(
+                    $validated['code'],
+                    $baseDiscountedAmount, // Use amount after base discount
+                    $validated['product'] ?? ($service === 'airtime' ? 'airtime' : $service),
+                    $validated['network'] ?? $validated['provider'] ?? null,
+                    $user
+                );
+
+                if (!$promotionResult['success']) {
+                    // Invalid promo code
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $promotionResult['message'],
+                    ], 422);
+                }
+
+                $promotionDiscount = $promotionResult['discount_amount'];
+                $promotionId = $promotionResult['promotion_id'];
+                $totalDiscountAmount += $promotionDiscount;
+
+                Log::info("Promotion discount applied", [
+                    'promotion_discount' => $promotionDiscount,
+                    'promotion_id' => $promotionId,
+                    'base_discounted_amount' => $baseDiscountedAmount
+                ]);
+            }
+
+            // Calculate final amount after all discounts
+            $finalAmount = $originalAmount - $totalDiscountAmount;
+            $finalAmount = max(0, $finalAmount); // Ensure no negative amounts
+
+            Log::info("Final amount calculation", [
+                'original_amount' => $originalAmount,
+                'base_discount_amount' => $baseDiscountAmount,
+                'promotion_discount' => $promotionDiscount,
+                'total_discount_amount' => $totalDiscountAmount,
+                'final_amount' => $finalAmount,
+                'user_balance' => $user->wallet_balance
+            ]);
+
+            // Step 3: Check balance against final amount
+            if ($user->wallet_balance < $finalAmount) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Insufficient balance to complete this transaction.',
+                ], 402);
+            }
+
+            // Step 4: Add all discount details to validated data for processing
+            $validated['amount'] = $originalAmount;                 // Original amount for API (what to buy)
+            $validated['final_amount'] = $finalAmount;              // Final amount user pays (after discounts)
+            $validated['promotion_id'] = $promotionId;              // Link to promotion if used
+            $validated['discount_amount'] = $totalDiscountAmount;   // Total discount applied
+
+            $serviceType = $service;
+
+            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType);
+
+            if (!$handler) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unsupported or unconfigured service.',
+                ], 400);
+            }
+
+            try {
+                Log::info(["validated" => $validated]);
+                return $handler->process($service, $validated);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to process VTU request.',
+                    'error' => $e->getMessage(),
+                ], 500);
+            }
+        });
     }
 
     /**
@@ -215,6 +295,7 @@ class VTUServicesController extends Controller
      */
 
     public function plan(Request $request, string $service){
+        Log::info($request);
         $servicePlansObject = [
             "data" => "data_plans",
             "cable" => "cable_plans",

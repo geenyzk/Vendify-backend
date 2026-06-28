@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-       Schema::create('cable_plans', function (Blueprint $table) {
+        Schema::create('cable_plans', function (Blueprint $table) {
             $table->id();
             $table->timestamps();
             $table->string('cable_network');

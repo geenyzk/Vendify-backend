@@ -59,6 +59,8 @@ class ServiceRequest extends FormRequest
             'amount'           => 'required|numeric|min:1',
             'bypass'           => 'required|boolean',
             'pin'              => 'sometimes|nullable',
+            'code'             => 'sometimes|nullable|string|max:50',
+            'product'          => 'sometimes|nullable|string',
             'discount_amount'  => 'sometimes|numeric',
             'simulate_status'  => 'sometimes|string',
             'tx_ref'           => 'required|unique:transactions,transaction_reference',
@@ -77,6 +79,7 @@ class ServiceRequest extends FormRequest
             case "airtime":
                 $rules = [
                     'network' => 'required|string|in:mtn,airtel,glo,9mobile',
+                    'amount' => 'required|numeric|min:50|max:5000',
                 ];
                 $phoneRules = ['required', 'string', 'regex:/^\+?[0-9]{10,15}$/'];
                 if (!empty($network) && !$bypass) {

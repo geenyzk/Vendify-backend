@@ -37,9 +37,7 @@ abstract class PaymentBase implements PaymentInterface
                 ->first();
             if (!$existing) {
                 Bank::create($response);
-                Log::info("Virtual account saved successfully for user {$user->id}.");
-            } else {
-                Log::info("User {$user->id} already has a virtual account with {$response['bank_name']}.");
+
             }
         } catch (\Throwable $th) {
             //throw $th;
@@ -83,7 +81,6 @@ abstract class PaymentBase implements PaymentInterface
         $amount = floatval($amount);
 
         $v = Provider::whereName($this->providerName)->first(["charge_fee", "charge_type"]);
-        Log::info(["provider" => $v]);
         if (!$v) {
             return $amount; // fallback if provider not found
         }
