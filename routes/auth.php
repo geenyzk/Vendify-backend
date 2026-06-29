@@ -42,13 +42,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get("user", function(){
         return auth()->user();
     });
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-
-=======
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     Route::get('verify-email/{id}/{hash}', VerifyEmailController::class)
         ->middleware(['signed', 'throttle:6,1'])
         ->name('verification.verify');

@@ -18,15 +18,6 @@ class Payment
     }
 
 
-    /**
-     * Create a new class instance.
-     */
-    public function __construct()
-    {
-        //
-    }
-
-
     static function generateAccount(User $user){
         $providers = Provider::getPaymentProviders()->get();
         Log::info($providers);

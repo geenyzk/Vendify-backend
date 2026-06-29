@@ -17,13 +17,6 @@ class User extends Authenticatable
     ];
 
     protected $appends  = ["transactions", "banks", "stats", "referrals"];
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-
-=======
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     protected $hidden = [
         'password',
         'remember_token',
@@ -36,39 +29,14 @@ class User extends Authenticatable
         'last_login_at' => 'datetime',
     ];
 
-<<<<<<< HEAD
 
 
-=======
-<<<<<<< HEAD
-=======
-
-
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     public function getReferralsAttribute()
     {
         return User::whereReferredBy($this->id)->get();
     }
 
 
-<<<<<<< HEAD
-    function getTransactionsAttribute(){
-=======
-<<<<<<< HEAD
-    function getTransactionsAttribute()
-    {
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
-        return Transaction::where("user_id", $this->id)->get();
-    }
-
-    function getStatsAttribute(){
-
-        $transaction = Transaction::where("user_id", $this->id);
-<<<<<<< HEAD
-=======
-
-=======
     function getTransactionsAttribute(){
         return Transaction::where("user_id", $this->id)->get();
     }
@@ -76,8 +44,6 @@ class User extends Authenticatable
     function getStatsAttribute(){
 
         $transaction = Transaction::where("user_id", $this->id);
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
         return [
             "daily_purchased_data" => $transaction
             ->whereTransactionType("data_subscription")
@@ -91,16 +57,7 @@ class User extends Authenticatable
     }
 
 
-<<<<<<< HEAD
     function getBanksAttribute($query){
-=======
-<<<<<<< HEAD
-    function getBanksAttribute($query)
-    {
-=======
-    function getBanksAttribute($query){
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
         return Bank::where("user_id", $this->id)->get();
     }
 }

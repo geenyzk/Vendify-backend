@@ -5,59 +5,11 @@ namespace App\Http\Controllers;
 use App\HttpResponse;
 use App\Models\ServiceControl;
 use Illuminate\Http\Request;
-<<<<<<< HEAD
 
-=======
-<<<<<<< HEAD
-/**
- * @group Admin Controls
- *
- * Manage system service controls from the admin dashboard.
- * These endpoints allow toggling service availability and retrieving grouped control data.
- */
-=======
-
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
 class ServiceControlController extends Controller
 {
     use HttpResponse;
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-        /**
-     * Get all active service controls
-     *
-     * Fetches and returns all service controls where `isDevLock` is false (0).
-     * The controls are grouped by `category` and `sub_category`.
-     *
-     * @response 200 {
-     *   "status": "success",
-     *   "message": "Request was successful",
-     *   "data": {
-     *     "control": {
-     *       "Airtime": {
-     *         "MTN": [
-     *           {
-     *             "id": 1,
-     *             "name": "MTN Airtime",
-     *             "isActive": true,
-     *             "isDevLock": false,
-     *             "category": "Airtime",
-     *             "sub_category": "MTN"
-     *           }
-     *         ]
-     *       }
-     *     }
-     *   }
-     * }
-     * @authenticated
-     */
-
-=======
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     public function index()
     {
         //
@@ -69,20 +21,8 @@ class ServiceControlController extends Controller
         return $this->success(['control' => $services]);
     }
 
-<<<<<<< HEAD
     /**
      * Store a newly created resource in storage.
-=======
-<<<<<<< HEAD
-  /**
-     * Store a newly created resource in storage.
-     *
-     * @hideFromAPIDocumentation
-=======
-    /**
-     * Store a newly created resource in storage.
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
      */
     public function store(Request $request)
     {
@@ -91,50 +31,6 @@ class ServiceControlController extends Controller
 
     /**
      * Display the specified resource.
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-     *
-     * @hideFromAPIDocumentation
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
-     */
-    public function show(string $id)
-    {
-        //
-    }
-
-    /**
-<<<<<<< HEAD
-     * Update the specified resource in storage.
-=======
-     * Update the active status of a service control
-     *
-     * Toggle the `isActive` boolean status of a service control item by ID.
-     *
-     * @urlParam id string required The ID of the service control. Example: 15
-     * @bodyParam isActive boolean required Whether the service is active. Example: true
-     *
-     * @response 200 {
-     *   "status": "success",
-     *   "message": "Request was successful",
-     *   "data": []
-     * }
-     *
-     * @response 404 {
-     *   "status": "fail",
-     *   "message": "Service control not found",
-     *   "data": []
-     * }
-     *
-     * @response 422 {
-     *   "message": "The given data was invalid.",
-     *   "errors": {
-     *     "isActive": ["The isActive field is required."]
-     *   }
-     * }
-     *
-     * @authenticated
-=======
      */
     public function show(string $id)
     {
@@ -143,8 +39,6 @@ class ServiceControlController extends Controller
 
     /**
      * Update the specified resource in storage.
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
      */
     public function update(Request $request, string $id)
     {
@@ -157,22 +51,9 @@ class ServiceControlController extends Controller
 
     return $this->success([]);
     }
-<<<<<<< HEAD
 
     /**
      * Remove the specified resource from storage.
-=======
-<<<<<<< HEAD
- /**
-     * Remove the specified resource from storage.
-     *
-     * @hideFromAPIDocumentation
-=======
-
-    /**
-     * Remove the specified resource from storage.
->>>>>>> 5a8861e (Jush)
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
      */
     public function destroy(string $id)
     {
