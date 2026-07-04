@@ -107,6 +107,34 @@ class Monnify extends PaymentBase
         ];
     }
 
+    // Monnify does not expose a transfer/payout API in the current integration.
+    // Override this when Monnify payout support is added.
+
+    /**
+     * Fetch the list of banks supported by Monnify for transfers.
+     */
+    public function getBanks(): array
+    {
+        try {
+            $response = Http::withHeaders($this->getHeaders())
+                ->get($this->provider->base_url . '/banks');
+
+            if ($response->successful()) {
+                $banks = $response->json('responseBody') ?? [];
+                return collect($banks)->map(fn($bank) => [
+                    'code' => $bank['code'],
+                    'name' => $bank['name'],
+                ])->values()->all();
+            }
+
+            Log::error('Monnify: failed to fetch banks', ['error' => $response->body()]);
+            return [];
+        } catch (\Throwable $e) {
+            Log::error('Monnify: getBanks exception', ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
     protected function callback(Request $request): array
     {
         $payload = $request->all();

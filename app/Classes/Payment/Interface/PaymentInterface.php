@@ -11,4 +11,5 @@ interface PaymentInterface
     public function connect(): mixed;
     public function checkBalance(): string;
     public function webhook(Request $request): void;
+    public function getBanks(): array;
 }

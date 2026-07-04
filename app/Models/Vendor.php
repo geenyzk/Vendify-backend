@@ -13,7 +13,23 @@ class Vendor extends Model
     //
     protected $table = 'providers';
 
-    protected $appends = ['connection', 'balance', "webhook"];
+    protected $appends = ['connection', 'balance', 'webhook'];
+
+    protected $fillable = [
+        'name', 'base_url', 'username', 'password', 'api_key',
+        'auth_type', 'identifier', 'category', 'sub_category',
+        'charge_fee', 'charge_type', 'webhook_access', 'active',
+        'auto_fund_enabled', 'auto_fund_threshold', 'auto_fund_amount',
+        'account_number', 'account_name', 'bank_code', 'bank_name',
+        'funding_provider_id',
+    ];
+
+    protected $casts = [
+        'auto_fund_enabled'  => 'boolean',
+        'auto_fund_threshold' => 'float',
+        'auto_fund_amount'   => 'float',
+        'active'             => 'boolean',
+    ];
 
     protected static function booted()
     {
@@ -73,7 +89,18 @@ class Vendor extends Model
         return $this->identifier ?url("/api/webhook/" . $this->sub_category ."/" . $this->identifier): '';
     }
 
-    function networkServices(){
+    public function fundingProvider()
+    {
+        return $this->belongsTo(Provider::class, 'funding_provider_id');
+    }
+
+    public function vendorFundings()
+    {
+        return $this->hasMany(VendorFunding::class, 'vendor_id');
+    }
+
+    public function networkServices()
+    {
         return $this->hasMany(NetworkType::class, 'provider_id');
     }
 

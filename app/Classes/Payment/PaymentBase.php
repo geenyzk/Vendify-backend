@@ -76,6 +76,29 @@ abstract class PaymentBase implements PaymentInterface
     }
 
 
+    /**
+     * Initiate a bank transfer to a vendor's account.
+     * Payment gateways that support outbound transfers must override this.
+     *
+     * @param  array{account_bank: string, account_number: string, amount: float, narration: string, reference: string}  $payload
+     * @return array{status: string, message: string, data: array}
+     */
+    public function transfer(array $payload): array
+    {
+        throw new \RuntimeException(class_basename($this) . ' does not support outbound transfers.');
+    }
+
+    /**
+     * Fetch the list of banks supported by this gateway for outbound transfers.
+     * Payment gateways that support bank lookups must override this.
+     *
+     * @return array<int, array{code: string, name: string}>
+     */
+    public function getBanks(): array
+    {
+        throw new \RuntimeException(class_basename($this) . ' does not support fetching banks.');
+    }
+
     protected function creditedAmount($amount)
     {
         $amount = floatval($amount);

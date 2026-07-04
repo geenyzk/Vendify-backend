@@ -17,6 +17,7 @@ use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
@@ -626,6 +627,23 @@ private function syncModelRelations(Model $model, array $item)
             return $this->success(['identifier' => $vendor->identifier], 'Token refreshed');
         } catch (Exception $e) {
             return $this->fail([], 'Provider not found', 404);
+        }
+    }
+
+    public function banks(string $id)
+    {
+        try {
+            $provider = Provider::findOrFail($id);
+            $gateway = \App\Classes\Payment\PaymentFactory::make($provider);
+            $banks = Cache::remember(
+                "provider_banks_{$provider->name}",
+                now()->addDay(),
+                fn() => $gateway->getBanks()
+            );
+
+            return $this->success(['banks' => $banks]);
+        } catch (Exception $e) {
+            return $this->fail([], $e->getMessage(), 500);
         }
     }
 

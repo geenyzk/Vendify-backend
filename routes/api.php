@@ -84,6 +84,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::post('/broadcast', [AdminController::class, 'broadcast']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
+        Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
 
         Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
 
@@ -155,3 +156,4 @@ Route::prefix('payscribe')->group(function () {
     Route::get('/requery/{id}', [PayscribeController::class, 'requeryTransaction']);
 });
 
+require __DIR__.'/api_v1.php';
