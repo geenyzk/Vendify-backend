@@ -2,13 +2,16 @@
 
 namespace App\Models;
 
+use App\Classes\Payment\PaymentFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class Provider extends Model
 {
     //
-    protected $fillable = ["id", "name", "base_url", "username", "password", "identifier", "sub_category"];
-    protected $appends = ["webhook"];
+    protected $fillable = ["id", "name", "base_url", "username", "password", "identifier", "sub_category", "category", "api_key", "secret_key", "charge_fee", "charge_type", "active"];
+    protected $appends = ["webhook", "connection", "balance"];
 
     function scopeGetPaymentProviders($query) {
         $query
@@ -23,6 +26,48 @@ class Provider extends Model
 
     function getWebhookAttribute(){
         return $this->identifier ?url("/api/webhook/" . $this->sub_category ."/" . $this->identifier): '';
+    }
+
+    public function getConnectionAttribute(): mixed
+    {
+        if ($this->category !== 'payment') {
+            return null;
+        }
+
+        try {
+            return Cache::remember("payment_provider_connection_{$this->id}", now()->addMinutes(5), function () {
+                return PaymentFactory::make($this)->connect();
+            });
+        } catch (\Throwable $e) {
+            Log::warning('Payment provider connection lookup failed', [
+                'provider_id' => $this->id,
+                'provider' => $this->name,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    public function getBalanceAttribute(): mixed
+    {
+        if ($this->category !== 'payment') {
+            return null;
+        }
+
+        try {
+            return Cache::remember("payment_provider_balance_{$this->id}", now()->addMinutes(5), function () {
+                return PaymentFactory::make($this)->checkBalance();
+            });
+        } catch (\Throwable $e) {
+            Log::warning('Payment provider balance lookup failed', [
+                'provider_id' => $this->id,
+                'provider' => $this->name,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**

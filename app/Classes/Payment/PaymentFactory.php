@@ -8,7 +8,6 @@ use App\Classes\Payment\Provider\PaymentPoint;
 
 
 use App\Models\Provider;
-use Illuminate\Support\Facades\Log;
 
 class PaymentFactory
 {
@@ -20,10 +19,13 @@ class PaymentFactory
         //
     }
     static function make(Provider $provider){
-        return match($provider->name){
+        $providerName = strtolower(trim((string) $provider->name));
+
+        return match($providerName){
             "flutterwave" => new FlutterWave($provider),
             "monnify" => new Monnify($provider),
-            "payment point" => new PaymentPoint($provider),
+            "payment point", "paymentpoint" => new PaymentPoint($provider),
+            default => throw new \InvalidArgumentException("Unsupported payment provider: {$provider->name}"),
         };
     }
 }

@@ -13,7 +13,7 @@ class RoleController extends Controller
      */
     public function index(): JsonResponse
     {
-        $roles = Role::with('serviceCostMargins', 'users')->get();
+        $roles = Role::with('serviceCostMargins', 'users', 'permissions')->get();
 
         return response()->json([
             'success' => true,
@@ -26,7 +26,7 @@ class RoleController extends Controller
      */
     public function show($id): JsonResponse
     {
-        $role = Role::with('serviceCostMargins', 'users')->findOrFail($id);
+        $role = Role::with('serviceCostMargins', 'users', 'permissions')->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -44,13 +44,21 @@ class RoleController extends Controller
             'slug' => 'required|string|unique:roles',
             'description' => 'nullable|string',
             'is_active' => 'boolean',
+            'permission_ids' => 'array',
+            'permission_ids.*' => 'exists:permissions,id',
         ]);
 
-        $role = Role::create($validated);
+        $role = Role::create(collect($validated)->except('permission_ids')->all());
+
+        if (array_key_exists('permission_ids', $validated)) {
+            $role->permissions()->sync($validated['permission_ids']);
+        }
+
+        $role->load('permissions');
 
         return response()->json([
             'success' => true,
-            'data' => $role,
+            'data' => $role->toResource(),
             'message' => 'Role created successfully',
         ], 201);
     }
@@ -67,13 +75,21 @@ class RoleController extends Controller
             'slug' => 'string|unique:roles,slug,' . $id,
             'description' => 'nullable|string',
             'is_active' => 'boolean',
+            'permission_ids' => 'array',
+            'permission_ids.*' => 'exists:permissions,id',
         ]);
 
-        $role->update($validated);
+        $role->update(collect($validated)->except('permission_ids')->all());
+
+        if (array_key_exists('permission_ids', $validated)) {
+            $role->permissions()->sync($validated['permission_ids']);
+        }
+
+        $role->load('permissions');
 
         return response()->json([
             'success' => true,
-            'data' => $role,
+            'data' => $role->toResource(),
             'message' => 'Role updated successfully',
         ]);
     }

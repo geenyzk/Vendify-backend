@@ -22,6 +22,8 @@
 12. [Universal Table API](#12-universal-table-api)
 13. [Webhooks](#13-webhooks)
 14. [Vendor Auto-Funding](#14-vendor-auto-funding)
+15. [Admin — Templates](#15-admin--templates)
+16. [Welcome Message](#16-welcome-message)
 
 ---
 
@@ -919,6 +921,104 @@ Returns the current airtime discount configuration.
 
 ---
 
+### 7.7 Analytics
+
+**`GET /admin/analytics`** `🔒 Auth Required`
+
+Returns time-series and breakdown data for the admin analytics page, over a date range. Distinct from [7.1 Admin Stats](#71-admin-stats), which only covers fixed windows (today / this month / last 7 days) for the main dashboard widgets.
+
+**Query Parameters**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `start_date` | date (YYYY-MM-DD) | No | Defaults to 29 days before `end_date` |
+| `end_date` | date (YYYY-MM-DD) | No | Defaults to today |
+
+**Example**
+```
+GET /admin/analytics?start_date=2026-06-01&end_date=2026-07-04
+```
+
+**Response — 200 OK**
+```json
+{
+  "status": true,
+  "message": "Request successful",
+  "data": {
+    "period": { "start_date": "2026-06-01", "end_date": "2026-07-04" },
+    "summary": {
+      "total_revenue": 291000.50,
+      "total_transactions": 340,
+      "successful_transactions": 300,
+      "failed_transactions": 40,
+      "pending_transactions": 0,
+      "success_rate": 88.24,
+      "average_transaction_value": 970.0,
+      "new_signups": 25
+    },
+    "revenue_over_time": {
+      "labels": ["2026-06-01", "2026-06-02", "..."],
+      "values": [12000, 8500, 0]
+    },
+    "transactions_over_time": {
+      "labels": ["2026-06-01", "2026-06-02", "..."],
+      "success": [10, 8, 0],
+      "fail": [1, 0, 0],
+      "pending": [0, 0, 0]
+    },
+    "by_service_type": [
+      { "type": "airtime_recharge", "label": "Airtime", "revenue": 120000, "count": 150 },
+      { "type": "data_subscription", "label": "Data", "revenue": 90000, "count": 100 },
+      { "type": "cable_subscription", "label": "Cable", "revenue": 0, "count": 0 },
+      { "type": "electric_bill", "label": "Electricity", "revenue": 0, "count": 0 },
+      { "type": "exam", "label": "Exam PIN", "revenue": 0, "count": 0 },
+      { "type": "betting_funding", "label": "Betting", "revenue": 0, "count": 0 },
+      { "type": "airtime_pin", "label": "Airtime Pin", "revenue": 0, "count": 0 },
+      { "type": "data_pin", "label": "Data Pin", "revenue": 0, "count": 0 },
+      { "type": "wallet_funding", "label": "Wallet Funding", "revenue": 0, "count": 0 },
+      { "type": "manual_funding", "label": "Manual Funding", "revenue": 81000, "count": 50 },
+      { "type": "bulksms", "label": "Bulk SMS", "revenue": 0, "count": 0 }
+    ],
+    "by_provider": [
+      { "provider": "mtn", "revenue": 120000, "count": 150 },
+      { "provider": "glo", "revenue": 40000, "count": 60 }
+    ],
+    "signups_over_time": {
+      "labels": ["2026-06-01", "2026-06-02", "..."],
+      "values": [2, 1, 0]
+    },
+    "funding_vs_spend": {
+      "total_funding": 81000,
+      "total_spend": 210000.50
+    },
+    "top_customers": [
+      {
+        "user_id": 8,
+        "name": "Olaniyi Oladele",
+        "email": "oladele@example.com",
+        "total_spent": 45000,
+        "transaction_count": 30
+      }
+    ]
+  }
+}
+```
+
+**Field Notes**
+
+- `summary.total_revenue`, `revenue_over_time`, `by_service_type[].revenue`, and `top_customers[].total_spent` exclude `wallet_funding`/`manual_funding` transactions — those are wallet top-ups, not platform revenue. They're broken out separately in `funding_vs_spend.total_funding`.
+- `by_service_type` always returns all 11 transaction types (zero-filled) so the frontend doesn't need to merge in missing categories.
+- `by_provider` only includes rows with a non-null `provider` column, sorted by revenue descending.
+- `top_customers` is capped at 10 and ranked by successful non-funding spend within the date range.
+
+**Error Responses**
+
+| Code | Description |
+|---|---|
+| 422 | `end_date` is before `start_date`, or either is not a valid date |
+
+---
+
 ## 8. Admin — Users
 
 > Routes prefixed with `/admin/users`.
@@ -1172,7 +1272,10 @@ Toggles the `isActive` status of a specific service control.
       "description": "Full system access",
       "is_active": true,
       "service_cost_margins": [ ... ],
-      "users": [ ... ]
+      "users": [ ... ],
+      "permissions": [
+        { "id": 1, "name": "Customers", "slug": "customers", "description": "Manage customer accounts" }
+      ]
     }
   ]
 }
@@ -1194,7 +1297,10 @@ Toggles the `isActive` status of a specific service control.
     "slug": "agent",
     "is_active": true,
     "service_cost_margins": [ ... ],
-    "users": [ ... ]
+    "users": [ ... ],
+    "permissions": [
+      { "id": 1, "name": "Customers", "slug": "customers", "description": "Manage customer accounts" }
+    ]
   }
 }
 ```
@@ -1213,6 +1319,7 @@ Toggles the `isActive` status of a specific service control.
 | `slug` | string | Yes | Unique slug |
 | `description` | string | No | Description |
 | `is_active` | boolean | No | Default: `true` |
+| `permission_ids` | integer[] | No | IDs of permissions to assign (see [10.7](#107-list-available-permissions)) |
 
 **Response — 201 Created**
 ```json
@@ -1221,7 +1328,10 @@ Toggles the `isActive` status of a specific service control.
   "data": {
     "id": 4,
     "name": "Reseller",
-    "slug": "reseller"
+    "slug": "reseller",
+    "permissions": [
+      { "id": 2, "name": "Wallets", "slug": "wallets", "description": "Manage wallet balances and funding" }
+    ]
   },
   "message": "Role created successfully"
 }
@@ -1233,7 +1343,7 @@ Toggles the `isActive` status of a specific service control.
 
 **`PUT /admin/roles/{id}`** `🔒 Auth Required`
 
-Send only the fields to update.
+Send only the fields to update. Accepts the same body as [10.3 Create a Role](#103-create-a-role), including `permission_ids`. When `permission_ids` is present, it fully replaces the role's assigned permissions (sync, not merge).
 
 **Response — 200 OK**
 ```json
@@ -1277,6 +1387,28 @@ Returns all users assigned to the given role.
       "email": "alice@example.com",
       "user_type": "agent"
     }
+  ]
+}
+```
+
+---
+
+### 10.7 List Available Permissions
+
+**`GET /admin/permissions`** `🔒 Auth Required`
+
+Returns every permission that can be assigned to a role (e.g. to populate a "select permissions" UI). Permissions are a fixed reference list seeded by the app, not created via this API.
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "data": [
+    { "id": 1, "name": "Customers", "slug": "customers", "description": "Manage customer accounts" },
+    { "id": 2, "name": "Wallets", "slug": "wallets", "description": "Manage wallet balances and funding" },
+    { "id": 3, "name": "Transactions", "slug": "transactions", "description": "View and manage transactions" },
+    { "id": 4, "name": "Support", "slug": "support", "description": "Handle support tickets and messages" },
+    { "id": 5, "name": "Settings", "slug": "settings", "description": "Manage platform settings" }
   ]
 }
 ```
@@ -1954,6 +2086,295 @@ Notification data shape:
 
 ---
 
+## 15. Admin — Templates
+
+> Routes prefixed with `/admin/templates`.
+
+Templates are reusable, variable-driven messages (`{{name}}`, `{{amount}}`, ...) used across the platform. Each template is either:
+- an **event** template (`type: "event"`), tied to one of `login`, `register`, `purchase`, `wallet_credit`, `wallet_debit` — e.g. the **"welcome message"** sent to new users is simply the template where `event = "register"`, or
+- a **broadcast** template (`type: "broadcast"`), a reusable one-off message (not tied to a lifecycle event) that can be used as a starting point for [7.2 Broadcast Notification](#72-broadcast-notification).
+
+> **Note:** This endpoint only stores/manages the template content. It does not yet trigger sending — no code currently fires the `register`/`login`/etc. templates automatically during those events.
+
+### 15.1 List Templates
+
+**`GET /admin/templates`** `🔒 Auth Required`
+
+**Query Parameters**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | string | No | Filter by `event` or `broadcast` |
+| `event` | string | No | Filter by event name, e.g. `?event=register` to find the welcome message |
+| `enabled` | boolean | No | Filter by enabled state |
+
+**Example**
+```
+GET /admin/templates?event=register
+```
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 44,
+      "name": "Welcome message",
+      "slug": "welcome-message",
+      "type": "event",
+      "event": "register",
+      "subject": "Welcome to {{app_name}}, {{name}}!",
+      "content": "Hi {{name}}, welcome to {{app_name}}! Your account is ready — top up your wallet to get started with airtime, data, cable, and bill payments.",
+      "channels": ["email", "in_app"],
+      "enabled": true,
+      "variables": ["app_name", "name"],
+      "created_at": "2026-07-04T11:31:51.000000Z",
+      "updated_at": "2026-07-04T11:31:51.000000Z"
+    }
+  ]
+}
+```
+
+---
+
+### 15.2 Get a Single Template
+
+**`GET /admin/templates/{id}`** `🔒 Auth Required`
+
+**Response — 200 OK** — same shape as a single item in [15.1](#151-list-templates).
+
+---
+
+### 15.3 Create a Template
+
+**`POST /admin/templates`** `🔒 Auth Required`
+
+**Request Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Human-friendly name shown in the admin UI |
+| `slug` | string | No | Unique slug; auto-generated from `name` if omitted |
+| `type` | string | Yes | `event` or `broadcast` |
+| `event` | string | No | Required in practice for `type: "event"`: `login`, `register`, `purchase`, `wallet_credit`, or `wallet_debit` |
+| `subject` | string | No | Email subject / notification headline |
+| `content` | string | Yes | Template body. Use `{{variable}}` placeholders |
+| `channels` | string[] | No | Delivery channels: `email`, `sms`, `in_app`, `push` |
+| `enabled` | boolean | No | Default: `true` |
+
+**Response — 201 Created**
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Template created successfully"
+}
+```
+
+---
+
+### 15.4 Update a Template
+
+**`PUT /admin/templates/{id}`** `🔒 Auth Required`
+
+Send only the fields to update — same body as [15.3](#153-create-a-template). To edit the welcome message: look it up via `GET /admin/templates?event=register`, then `PUT` its `content`/`subject`.
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Template updated successfully"
+}
+```
+
+---
+
+### 15.5 Delete a Template
+
+**`DELETE /admin/templates/{id}`** `🔒 Auth Required`
+
+Soft-deletes the template (the model uses `SoftDeletes`).
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "message": "Template deleted successfully"
+}
+```
+
+---
+
+## 16. Welcome Message
+
+> A single admin-configured message shown to customers as an in-app popup/banner —
+> not the same thing as [§15 Admin — Templates](#15-admin--templates). A Template is a
+> reusable, event/variable-driven message (the `register` template is not
+> auto-triggered by anything yet). A Welcome Message is a single standing message —
+> think "announcement banner" — that the admin can turn on or off at any time, shown to
+> any customer who hasn't seen the *current version* of it yet.
+>
+> There is always at most one welcome message record. `PUT /admin/welcome-message`
+> updates it in place rather than creating a new row each time — editing the
+> title/body automatically makes it pop up again for everyone (including users who'd
+> already dismissed the old version), because "seen" is tracked per `(user, message)`
+> pair and compared against the message's `updated_at`, not a fixed version number.
+
+### 16.1 Get Welcome Message (customer-facing)
+
+**`GET /welcome-message`** `🔒 Auth Required`
+
+Returns the welcome message only if it's currently `active`, along with whether the
+authenticated user has already seen the current version of it. If there's no message,
+or it's turned off, `welcome_message` is `null`.
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "message": "successful",
+  "data": {
+    "welcome_message": {
+      "id": 1,
+      "title": "Welcome to Kora VTU!",
+      "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
+      "active": true,
+      "created_at": "2026-07-04T11:45:34.000000Z",
+      "updated_at": "2026-07-04T11:45:34.000000Z"
+    },
+    "seen": false
+  },
+  "type": "success"
+}
+```
+
+---
+
+### 16.2 Get Welcome Message (admin)
+
+**`GET /admin/welcome-message`** `🔒 Auth Required`
+
+Same shape as [16.1](#161-get-welcome-message-customer-facing), minus the per-user
+`seen` flag — returns the current record regardless of `active` (or `null` if none
+exists yet), so the admin UI can load and edit a currently-disabled message.
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "message": "successful",
+  "data": {
+    "welcome_message": {
+      "id": 1,
+      "title": "Welcome to Kora VTU!",
+      "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
+      "active": true,
+      "created_at": "2026-07-04T11:45:34.000000Z",
+      "updated_at": "2026-07-04T11:45:34.000000Z"
+    }
+  },
+  "type": "success"
+}
+```
+
+---
+
+### 16.3 Create / Update Welcome Message (admin)
+
+**`PUT /admin/welcome-message`** `🔒 Auth Required`
+
+Upserts the single welcome message record — creates it if none exists yet, otherwise
+updates it in place. Any update bumps `updated_at`, which is what makes it re-appear
+for users who'd already marked the previous version as seen.
+
+**Request Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | Yes | Headline shown in the popup (max 255 chars) |
+| `body` | string | Yes | Message body |
+| `active` | boolean | No | Whether it should currently be shown. Default: `true` on first create; unchanged on update if omitted |
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "message": "Welcome message updated",
+  "data": {
+    "welcome_message": {
+      "id": 1,
+      "title": "Welcome to Kora VTU!",
+      "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
+      "active": true,
+      "created_at": "2026-07-04T11:45:34.000000Z",
+      "updated_at": "2026-07-04T11:45:34.000000Z"
+    }
+  },
+  "type": "success"
+}
+```
+
+**Error Responses**
+
+| Code | Description |
+|---|---|
+| 422 | `title` or `body` missing/invalid |
+
+---
+
+### 16.4 Delete / Clear Welcome Message (admin)
+
+**`DELETE /admin/welcome-message`** `🔒 Auth Required`
+
+Removes the configured message entirely (and cascades to delete all "seen" records for
+it), so `GET /welcome-message` starts returning `welcome_message: null` again.
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "message": "Welcome message removed",
+  "data": null,
+  "type": "success"
+}
+```
+
+---
+
+### 16.5 Mark as Seen
+
+**`POST /welcome-message/seen`** `🔒 Auth Required`
+
+Records that the authenticated user has seen the current welcome message, so it won't
+pop up again for them on other devices/browsers — this is server-tracked, not
+`localStorage`.
+
+**Request Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `welcome_message_id` | integer | Yes | The `id` from [16.1](#161-get-welcome-message-customer-facing). Must exist in `welcome_messages` |
+
+**Response — 200 OK**
+```json
+{
+  "success": true,
+  "message": "Marked as seen",
+  "data": null,
+  "type": "success"
+}
+```
+
+**Error Responses**
+
+| Code | Description |
+|---|---|
+| 422 | `welcome_message_id` missing or doesn't exist |
+
+---
+
 ## Quick Reference
 
 | Method | Endpoint | Auth | Description |
@@ -1975,6 +2396,7 @@ Notification data shape:
 | POST | `/promotions/validate` | Yes | Validate promo code |
 | POST | `/promotions/apply` | Yes | Apply promo code |
 | GET | `/admin/stats` | Yes | Admin dashboard stats |
+| GET | `/admin/analytics` | Yes | Analytics over a date range |
 | POST | `/admin/broadcast` | Yes | Broadcast notifications |
 | POST | `/admin/users/{id}/fund` | Yes | Fund/debit user wallet |
 | GET | `/admin/vendor/{id}/refresh-token` | Yes | Refresh vendor token |
@@ -1992,6 +2414,7 @@ Notification data shape:
 | PUT | `/admin/roles/{id}` | Yes | Update role |
 | DELETE | `/admin/roles/{id}` | Yes | Delete role |
 | GET | `/admin/roles/{id}/users` | Yes | Get users by role |
+| GET | `/admin/permissions` | Yes | List available permissions |
 | GET | `/admin/service-cost-margins` | Yes | List cost margins |
 | POST | `/admin/service-cost-margins` | Yes | Create cost margin |
 | PUT | `/admin/service-cost-margins/{id}` | Yes | Update cost margin |
@@ -1999,6 +2422,16 @@ Notification data shape:
 | GET | `/admin/roles/{roleId}/cost-margins` | Yes | Get margins by role |
 | GET | `/admin/roles/{roleId}/cost-margins/{serviceType}` | Yes | Get margin by role+service |
 | POST | `/admin/roles/{roleId}/cost-margins/bulk` | Yes | Bulk update margins for role |
+| GET | `/admin/templates` | Yes | List templates (e.g. `?event=register` for welcome message) |
+| GET | `/admin/templates/{id}` | Yes | Get single template |
+| POST | `/admin/templates` | Yes | Create template |
+| PUT | `/admin/templates/{id}` | Yes | Update template |
+| DELETE | `/admin/templates/{id}` | Yes | Delete template |
+| GET | `/welcome-message` | Yes | Get active welcome message + seen status |
+| POST | `/welcome-message/seen` | Yes | Mark welcome message as seen |
+| GET | `/admin/welcome-message` | Yes | Get welcome message (any active state) |
+| PUT | `/admin/welcome-message` | Yes | Create/update welcome message |
+| DELETE | `/admin/welcome-message` | Yes | Remove welcome message |
 | GET | `/table/{table}` | No | Get table records |
 | GET | `/table/{table}/{id}` | No | Get single record |
 | POST | `/table/{table}` | No | Create record |

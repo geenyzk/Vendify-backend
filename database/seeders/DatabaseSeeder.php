@@ -24,12 +24,14 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $this->call([
+            PermissionSeeder::class,
             ServiceControlSeeder::class,
             DiscountsSeeder::class,
             DataPlanSeeder::class,
             StockVendingSeeder::class,
             ProviderSeeder::class,
             MessageSeeder::class,
+            TemplateSeeder::class,
             ExamPlan::class,
             AirtimeToCashRatesSeeder::class,
             // Promotions used by frontend promotions UI

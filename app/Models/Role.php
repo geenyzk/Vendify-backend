@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Role extends Model
@@ -32,5 +33,21 @@ class Role extends Model
     public function serviceCostMargins(): HasMany
     {
         return $this->hasMany(ServiceCostMargin::class);
+    }
+
+    /**
+     * Get all permissions assigned to this role.
+     */
+    public function permissions(): BelongsToMany
+    {
+        return $this->belongsToMany(Permission::class, 'permission_role');
+    }
+
+    /**
+     * Determine whether this role has the given permission slug.
+     */
+    public function hasPermission(string $slug): bool
+    {
+        return $this->permissions()->where('slug', $slug)->exists();
     }
 }

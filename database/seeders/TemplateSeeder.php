@@ -15,6 +15,15 @@ class TemplateSeeder extends Seeder
      {
         $templates = [
             [
+                'name' => 'Welcome message',
+                'type' => 'event',
+                'event' => 'register',
+                'subject' => 'Welcome to {{app_name}}, {{name}}!',
+                'content' => "Hi {{name}}, welcome to {{app_name}}! Your account is ready — top up your wallet to get started with airtime, data, cable, and bill payments.",
+                'channels' => ['email', 'in_app'],
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Login alert (email)',
                 'type' => 'event',
                 'event' => 'login',
@@ -42,7 +51,8 @@ class TemplateSeeder extends Seeder
         ];
 
         foreach ($templates as $tpl) {
-            Template::create(array_merge($tpl, ['slug' => \Illuminate\Support\Str::slug($tpl['name'])]));
+            $slug = \Illuminate\Support\Str::slug($tpl['name']);
+            Template::firstOrCreate(['slug' => $slug], array_merge($tpl, ['slug' => $slug]));
         }
     }
 }

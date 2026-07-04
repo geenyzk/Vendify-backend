@@ -2,11 +2,10 @@
 
 namespace App\Http\Resources;
 
-use App\Classes\Payment\PaymentFactory;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class ProviderResource extends JsonResource
+class TemplateResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -15,19 +14,19 @@ class ProviderResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        if($this->category == "payment"){
-            $pf = PaymentFactory::make($this);
-        }
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'code' => $this->code,
-            'balance' => $this->balance,
+            'slug' => $this->slug,
+            'type' => $this->type,
+            'event' => $this->event,
+            'subject' => $this->subject,
+            'content' => $this->content,
+            'channels' => $this->channels,
+            'enabled' => $this->enabled,
+            'variables' => $this->variables,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
-            'username' => $this->username,
-            'password' => $this->password ?? $this->api_key,
-            "connection" => $this->connection ? $pf->connect() : null
         ];
     }
 }

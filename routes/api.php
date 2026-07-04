@@ -1,7 +1,6 @@
 <?php
 
 
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AdminController;
@@ -18,6 +17,10 @@ use App\Http\Controllers\Auth\VerifyEmailController;
 
 use App\Http\Controllers\PromotionController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\TemplateController;
+use App\Http\Controllers\WelcomeMessageController;
 use App\Http\Controllers\ServiceCostMarginController;
 
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
@@ -52,6 +55,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::post('/transactions/report', [TransactionController::class, 'report']);
 
+    Route::get('/welcome-message', [WelcomeMessageController::class, 'show']);
+    Route::post('/welcome-message/seen', [WelcomeMessageController::class, 'markSeen']);
+
         // Promotion routes
         Route::post('/promotions/validate', [PromotionController::class, 'validate']);
         Route::post('/promotions/apply', [PromotionController::class, 'apply']);
@@ -73,15 +79,21 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::resource('controls', ServiceControlController::class);
 
+        // Notification/message templates (e.g. the "welcome message" sent on
+        // registration is the template with event=register).
+        Route::resource('templates', TemplateController::class);
+
         // Role and Service Cost Margin routes
         Route::resource('roles', RoleController::class);
         Route::get('/roles/{id}/users', [RoleController::class, 'users']);
+        Route::get('/permissions', [PermissionController::class, 'index']);
         Route::resource('service-cost-margins', ServiceCostMarginController::class);
         Route::get('/roles/{roleId}/cost-margins', [ServiceCostMarginController::class, 'byRole']);
         Route::get('/roles/{roleId}/cost-margins/{serviceType}', [ServiceCostMarginController::class, 'getByService']);
         Route::post('/roles/{roleId}/cost-margins/bulk', [ServiceCostMarginController::class, 'bulkUpdateByRole']);
 
         Route::get('/stats', [AdminController::class, 'stats']);
+        Route::get('/analytics', [AnalyticsController::class, 'index']);
         Route::post('/broadcast', [AdminController::class, 'broadcast']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
@@ -89,8 +101,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
 
         Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
+
+        Route::get('/welcome-message', [WelcomeMessageController::class, 'adminShow']);
+        Route::put('/welcome-message', [WelcomeMessageController::class, 'upsert']);
+        Route::delete('/welcome-message', [WelcomeMessageController::class, 'destroy']);
     });
 
+
+    Route::get('/permissions', [PermissionController::class, 'index']);
+    Route::get('/admin/permissions', [PermissionController::class, 'index']);
 
     Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
     // Email verification endpoints (API)

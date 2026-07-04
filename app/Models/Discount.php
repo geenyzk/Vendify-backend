@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\HasServers;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
@@ -16,14 +17,25 @@ class Discount extends Model
 
     protected $fillable = ["id", "name", "category", "type", "min", "max",
     "adex_discount", "spurs_discount", "msorg_discount",
-    "vtpass_discount", "payscribe_discount", "isActive"];
+    "vtpass_discount", "payscribe_discount", "active"];
     protected $casts = [
-        "isActive" => 'boolean'
+        "active" => 'boolean'
     ];
+
+    /**
+     * Per-role discount percentages for this network/discount record.
+     */
+    public function roleDiscounts(): HasMany
+    {
+        return $this->hasMany(DiscountRole::class, 'discount_id');
+    }
     protected static function booted()
     {
         static::retrieved(function ($model) {
-            $model->network =$model->name;
+            // Note: don't set $model->network here — it isn't a real column,
+            // and mutating it marks the model dirty for that non-existent
+            // column, which makes save() throw "Unknown column 'network'".
+            // toArray() below already exposes `network` for API responses.
             if (env('APP_TYPE', "standalone") === 'affiliate') {
                 foreach (range(2, 5) as $i) {
                     unset(
@@ -72,7 +84,11 @@ class Discount extends Model
 
     public function getPriceAttribute(){
         $user = Auth::user();
-        return $this->{$user?->user_type . "_discount"};
+        if (!$user?->role_id) {
+            return 0;
+        }
+
+        return $this->roleDiscounts()->where('role_id', $user->role_id)->value('discount') ?? 0;
     }
 
     function scopeGetElectricity($query, $name){
@@ -119,15 +135,14 @@ class Discount extends Model
         }
 
         $user = Auth::user();
-        $userType = $user?->user_type ?? 'user';
-        $discountField = "{$userType}_discount";
-
-        // Get discount percentage, default to 0 if field doesn't exist
-        $user_discount_percent = $discount->{$discountField} ?? 0;
+        $percent = 0;
+        if ($user?->role_id) {
+            $percent = $discount->roleDiscounts()->where('role_id', $user->role_id)->value('discount') ?? 0;
+        }
 
         // Calculate final amount after discount
-        $finalAmount = $amount - (($user_discount_percent / 100) * $amount);
-        
+        $finalAmount = $amount - (($percent / 100) * $amount);
+
         return round($finalAmount, 2);
     }
 
