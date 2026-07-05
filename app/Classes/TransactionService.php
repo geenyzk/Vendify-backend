@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Jobs\SendTransactionCallback;
+use App\Models\CashbackRate;
 use App\Models\Setting;
 use App\Models\Transaction;
 use App\Models\User;
@@ -74,6 +75,14 @@ class TransactionService
             // Optional: Commission distribution (based on final amount user paid)
             self::distributeCommission($user, $finalAmount, $transactionType);
 
+            // Cashback: a flat, per-service-type wallet credit — replaces
+            // the old per-role Discount pricing. Only on success, and keyed
+            // off the same transaction_type stored on the row above (e.g.
+            // 'airtime_recharge'), not the Discount model's own "type".
+            if ($apiData['status'] === 'success') {
+                self::creditCashback($user, $finalAmount, $transactionType);
+            }
+
             AdminNotifier::notifyTransaction($transaction);
 
             SendTransactionCallback::dispatch($user, $transaction);
@@ -116,6 +125,22 @@ class TransactionService
             $rate = floatval(Setting::first()?->referral_commission_rate ?? 2.00);
             $commission = round($amount * ($rate / 100), 2);
             $referrer->increment('wallet_balance', $commission);
+        }
+    }
+
+    protected static function creditCashback(User $user, float $amount, string $transactionType): void
+    {
+        $rate = CashbackRate::where('service_type', $transactionType)
+            ->where('active', true)
+            ->first();
+
+        if (!$rate || $rate->percentage <= 0) {
+            return;
+        }
+
+        $cashback = round($amount * ($rate->percentage / 100), 2);
+        if ($cashback > 0) {
+            $user->increment('wallet_balance', $cashback);
         }
     }
 

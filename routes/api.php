@@ -22,27 +22,32 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\TemplateController;
 use App\Http\Controllers\WelcomeMessageController;
 use App\Http\Controllers\ServiceCostMarginController;
+use App\Http\Controllers\AccountController;
 
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
 
-Route::post('/insert', [AdminController::class, 'universalInsert']);
+// Universal Table API reads: any logged-in user (the customer dashboard's
+// service-availability widget reads /table/networks as a non-admin).
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/table/{table}', [AdminController::class, 'universalGet']);
+    Route::get('/table/{table}/{id}', [AdminController::class, 'universalShow']);
+});
 
-Route::get('/table/{table}', [AdminController::class, 'universalGet']);
-
-// Single record show, create and update
-Route::get('/table/{table}/{id}', [AdminController::class, 'universalShow']);
-Route::post('/table/{table}', [AdminController::class, 'universalCreateOrUpdate']);
-Route::put('/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
-Route::post('/table/{table}/reorder', [AdminController::class, 'reorder']);
-
-// Bulk create/update (moved to explicit /bulk path)
-Route::post('/table/{table}/bulk', [AdminController::class, 'universalBulkCreateOrUpdate']);
-Route::put('/table/{table}/bulk', [AdminController::class, 'universalBulkCreateOrUpdate']);
-
-Route::delete('/table/{table}/{id}', [AdminController::class, 'universalDelete']);
-Route::delete('/table/{table}', [AdminController::class, 'universalBulkDelete']);
+// Universal Table API writes: admin only. This used to be wide open with no
+// auth at all — every write (create/update/delete/bulk/reorder) against any
+// table was reachable by anyone, unauthenticated.
+Route::middleware(['auth:sanctum', 'user_type:admin'])->group(function () {
+    Route::post('/insert', [AdminController::class, 'universalInsert']);
+    Route::post('/table/{table}', [AdminController::class, 'universalCreateOrUpdate']);
+    Route::put('/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
+    Route::post('/table/{table}/reorder', [AdminController::class, 'reorder']);
+    Route::post('/table/{table}/bulk', [AdminController::class, 'universalBulkCreateOrUpdate']);
+    Route::put('/table/{table}/bulk', [AdminController::class, 'universalBulkCreateOrUpdate']);
+    Route::delete('/table/{table}/{id}', [AdminController::class, 'universalDelete']);
+    Route::delete('/table/{table}', [AdminController::class, 'universalBulkDelete']);
+});
 
 
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -50,6 +55,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // SPA clients should POST to /logout to properly invalidate the session.
     // We allow GET too so browser visits don't break existing behavior.
     Route::match(['get', 'post'], "/logout", [AuthenticatedSessionController::class, 'destroy']);
+
+    // Self-service account settings — shared by the admin and customer
+    // "Settings" pages alike, scoped to whoever is logged in (no role gate).
+    Route::put('/account/profile', [AccountController::class, 'updateProfile']);
+    Route::put('/account/password', [AccountController::class, 'updatePassword']);
+
     Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
@@ -69,48 +80,61 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
 
-    Route::prefix("admin")->group(function () {
+    Route::prefix("admin")->middleware('user_type:admin')->group(function () {
         Route::resource('users', UserController::class)
-            ->withoutMiddleware('auth:sanctum')
+            ->withoutMiddleware(['auth:sanctum', 'user_type:admin'])
             ->only(['store']);
 
-        Route::resource('users', UserController::class)
-            ->only(['show', 'update', 'destroy', 'index']);
+        Route::middleware('permission:customers')->group(function () {
+            Route::resource('users', UserController::class)
+                ->only(['show', 'update', 'destroy', 'index']);
+            Route::resource('roles', RoleController::class);
+            Route::get('/roles/{id}/users', [RoleController::class, 'users']);
+            Route::get('/permissions', [PermissionController::class, 'index']);
+            Route::resource('service-cost-margins', ServiceCostMarginController::class);
+            Route::get('/roles/{roleId}/cost-margins', [ServiceCostMarginController::class, 'byRole']);
+            Route::get('/roles/{roleId}/cost-margins/{serviceType}', [ServiceCostMarginController::class, 'getByService']);
+            Route::post('/roles/{roleId}/cost-margins/bulk', [ServiceCostMarginController::class, 'bulkUpdateByRole']);
+        });
 
-        Route::resource('controls', ServiceControlController::class);
+        Route::middleware('permission:settings')->group(function () {
+            Route::resource('controls', ServiceControlController::class);
+            Route::resource('templates', TemplateController::class);
+            Route::get('/welcome-message', [WelcomeMessageController::class, 'adminShow']);
+            Route::put('/welcome-message', [WelcomeMessageController::class, 'upsert']);
+            Route::delete('/welcome-message', [WelcomeMessageController::class, 'destroy']);
+        });
 
         // Transaction status override & refund (money-moving, admin-only).
-        Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
-        Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
-        Route::get('/transactions/prune-preview', [TransactionController::class, 'prunePreview']);
-        Route::post('/transactions/prune', [TransactionController::class, 'pruneNow']);
+        Route::middleware('permission:transactions')->group(function () {
+            Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
+            Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
+            Route::get('/transactions/prune-preview', [TransactionController::class, 'prunePreview']);
+            Route::post('/transactions/prune', [TransactionController::class, 'pruneNow']);
+        });
 
-        // Notification/message templates (e.g. the "welcome message" sent on
-        // registration is the template with event=register).
-        Route::resource('templates', TemplateController::class);
+        Route::middleware('permission:wallets')->group(function () {
+            Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
+        });
 
-        // Role and Service Cost Margin routes
-        Route::resource('roles', RoleController::class);
-        Route::get('/roles/{id}/users', [RoleController::class, 'users']);
-        Route::get('/permissions', [PermissionController::class, 'index']);
-        Route::resource('service-cost-margins', ServiceCostMarginController::class);
-        Route::get('/roles/{roleId}/cost-margins', [ServiceCostMarginController::class, 'byRole']);
-        Route::get('/roles/{roleId}/cost-margins/{serviceType}', [ServiceCostMarginController::class, 'getByService']);
-        Route::post('/roles/{roleId}/cost-margins/bulk', [ServiceCostMarginController::class, 'bulkUpdateByRole']);
+        Route::middleware('permission:support')->group(function () {
+            Route::post('/broadcast', [AdminController::class, 'broadcast']);
+        });
 
+        // Not clearly owned by any single permission slug — gated by
+        // user_type:admin at the group level only.
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::get('/analytics', [AnalyticsController::class, 'index']);
-        Route::post('/broadcast', [AdminController::class, 'broadcast']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
-
-        Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
-
         Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
 
-        Route::get('/welcome-message', [WelcomeMessageController::class, 'adminShow']);
-        Route::put('/welcome-message', [WelcomeMessageController::class, 'upsert']);
-        Route::delete('/welcome-message', [WelcomeMessageController::class, 'destroy']);
+        // Promo codes — a separate concept from Discount (see Discount model):
+        // a Discount is an automatic, no-code, per-network role-priced
+        // percentage; a Promotion is an opt-in code (or admin-triggered
+        // "auto") reduction with its own eligibility/date/usage-limit rules.
+        Route::apiResource('promotions', PromotionController::class)
+            ->except(['create', 'edit']);
     });
 
 

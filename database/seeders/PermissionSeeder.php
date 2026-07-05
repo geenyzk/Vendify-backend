@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Permission;
+use App\Models\Role;
 use Illuminate\Database\Seeder;
 
 class PermissionSeeder extends Seeder
@@ -18,10 +19,18 @@ class PermissionSeeder extends Seeder
             ['name' => 'Transactions', 'slug' => 'transactions', 'description' => 'View and manage transactions'],
             ['name' => 'Support', 'slug' => 'support', 'description' => 'Handle support tickets and messages'],
             ['name' => 'Settings', 'slug' => 'settings', 'description' => 'Manage platform settings'],
+            ['name' => 'Switch Account', 'slug' => 'switch_account', 'description' => 'Switch between the admin panel and the customer-facing view'],
         ];
 
+        $ids = [];
         foreach ($permissions as $permission) {
-            Permission::firstOrCreate(['slug' => $permission['slug']], $permission);
+            $ids[] = Permission::firstOrCreate(['slug' => $permission['slug']], $permission)->id;
         }
+
+        // The admin role gets every permission by default — other roles can
+        // be granted individual permissions later via the Roles & Permissions
+        // admin UI.
+        $adminRole = Role::where('slug', 'admin')->first();
+        $adminRole?->permissions()->syncWithoutDetaching($ids);
     }
 }

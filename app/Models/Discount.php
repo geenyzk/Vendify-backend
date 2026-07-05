@@ -11,11 +11,31 @@ class Discount extends Model
 {
     protected $hidden = ["created_at", "updated_at"];
 
-    protected $fillable = ["id", "name", "category", "type", "min", "max", "active"];
+    protected $fillable = ["id", "name", "category", "type", "min", "max", "active", "starts_at", "ends_at"];
 
     protected $casts = [
         "active" => 'boolean',
+        "starts_at" => 'date',
+        "ends_at" => 'date',
     ];
+
+    /**
+     * Whether this discount "event" is currently live: the active flag is on
+     * and — if a window is set — today falls inside it. A discount with no
+     * window (both null) is always-on whenever active, same as before this
+     * scheduling feature existed.
+     */
+    public function isCurrentlyActive(): bool
+    {
+        if (!$this->active) return false;
+
+        $today = now()->startOfDay();
+
+        if ($this->starts_at && $today->lt($this->starts_at)) return false;
+        if ($this->ends_at && $today->gt($this->ends_at)) return false;
+
+        return true;
+    }
 
     /**
      * Per-role discount percentages for this network/discount record.
@@ -90,8 +110,9 @@ class Discount extends Model
             ->orWhere("category", $name)
             ->first();
 
-        // If no discount found, return original amount
-        if (!$discount) {
+        // If no discount found, or its event window isn't live right now,
+        // return the original amount unchanged.
+        if (!$discount || !$discount->isCurrentlyActive()) {
             return $amount;
         }
 

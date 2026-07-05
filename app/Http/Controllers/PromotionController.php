@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\HttpResponse;
 use App\Models\Promotion;
 use App\Models\Transaction;
 use Carbon\Carbon;
@@ -10,9 +11,107 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class PromotionController extends Controller
 {
+    use HttpResponse;
+
+    /**
+     * List all promo codes for the admin management UI.
+     */
+    public function index(): JsonResponse
+    {
+        return $this->success(['promotions' => Promotion::orderByDesc('id')->get()]);
+    }
+
+    /**
+     * Show a single promo code.
+     */
+    public function show(Promotion $promotion): JsonResponse
+    {
+        return $this->success(['promotion' => $promotion]);
+    }
+
+    /**
+     * Create a new promo code.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate($this->rules());
+
+        if (!empty($validated['code'])) {
+            $validated['code'] = strtoupper($validated['code']);
+        }
+
+        $promotion = Promotion::create($validated);
+
+        return $this->success(['promotion' => $promotion], 'Promotion created', 201);
+    }
+
+    /**
+     * Update an existing promo code.
+     */
+    public function update(Request $request, Promotion $promotion): JsonResponse
+    {
+        $validated = $request->validate($this->rules($promotion->id));
+
+        if (array_key_exists('code', $validated) && $validated['code'] !== null) {
+            $validated['code'] = strtoupper($validated['code']);
+        }
+
+        $promotion->update($validated);
+
+        return $this->success(['promotion' => $promotion->fresh()], 'Promotion updated');
+    }
+
+    /**
+     * Delete a promo code.
+     */
+    public function destroy(Promotion $promotion): JsonResponse
+    {
+        $promotion->delete();
+
+        return $this->success(null, 'Promotion deleted');
+    }
+
+    /**
+     * Shared validation rules for store/update. $ignoreId lets update()
+     * exclude the current row from the code-uniqueness check.
+     */
+    private function rules(?int $ignoreId = null): array
+    {
+        return [
+            'name' => 'required|string|max:255',
+            'code' => [
+                'nullable', 'string', 'max:50', 'required_if:apply,code',
+                Rule::unique('promotions', 'code')->ignore($ignoreId),
+            ],
+            'apply' => 'required|in:auto,code',
+            'target' => 'required|in:customer,reseller,both',
+            'product' => 'required|in:airtime,data,bundle',
+            'provider' => 'nullable|string|max:255',
+            'type' => 'required|in:percentage,fixed,bonus_data,cashback',
+            'value' => 'required|numeric|min:0',
+            'active' => 'sometimes|boolean',
+            'starts_at' => 'nullable|date',
+            'ends_at' => 'nullable|date|after_or_equal:starts_at',
+            'usage_limit_total' => 'nullable|integer|min:1',
+            'usage_limit_per_customer' => 'nullable|integer|min:1',
+            'conditions' => 'nullable|array',
+            'conditions.*.kind' => 'required|string',
+            // Each condition kind carries its own extra key (see
+            // PromotionController::validateCondition) — list them all so
+            // $request->validate() doesn't silently strip them.
+            'conditions.*.amount' => 'nullable|numeric',
+            'conditions.*.provider' => 'nullable|string',
+            'conditions.*.product' => 'nullable|string',
+            'conditions.*.tier' => 'nullable|string',
+            'conditions.*.from' => 'nullable|string',
+            'conditions.*.to' => 'nullable|string',
+        ];
+    }
+
     /**
      * Validate a promo code and return applicable discount details
      *

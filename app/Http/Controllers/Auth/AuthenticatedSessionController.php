@@ -83,7 +83,7 @@ class AuthenticatedSessionController extends Controller
      */
     public function index(Request $request)
     {
-        return $this->success(["user" => $request->user()->load('role')]);
+        return $this->success(["user" => $request->user()->load('role.permissions')]);
     }
 
 

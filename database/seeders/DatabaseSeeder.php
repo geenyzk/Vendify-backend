@@ -36,6 +36,7 @@ class DatabaseSeeder extends Seeder
             AirtimeToCashRatesSeeder::class,
             // Promotions used by frontend promotions UI
             PromotionSeeder::class,
+            CashbackRateSeeder::class,
         ]);
     }
 }

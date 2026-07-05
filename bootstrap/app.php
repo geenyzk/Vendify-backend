@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\EnsurePermission;
+use App\Http\Middleware\EnsureUserType;
 use App\Http\Middleware\HandleRequest;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -18,6 +20,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->append([
             HandleRequest::class
+        ]);
+
+        $middleware->alias([
+            'user_type' => EnsureUserType::class,
+            'permission' => EnsurePermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
