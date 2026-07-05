@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Class\Payment\Interface;
+namespace App\Classes\Payment\Interface;
 
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -11,4 +11,5 @@ interface PaymentInterface
     public function connect(): mixed;
     public function checkBalance(): string;
     public function webhook(Request $request): void;
+    public function getBanks(): array;
 }

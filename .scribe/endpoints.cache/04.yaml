@@ -237,7 +237,10 @@ endpoints:
       title: 'Verify user service info (like smartcard number, meter, etc.)'
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
       deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'

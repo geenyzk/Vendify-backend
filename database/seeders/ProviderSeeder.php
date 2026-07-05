@@ -219,7 +219,7 @@ class ProviderSeeder extends Seeder
                 'sub_category' => 'payment',
             ],
             [
-                'base_url' => 'https://sandbox.monnify.com/api/v1',
+                'base_url' => 'https://api.monnify.com/api/v1',
                 'name' => 'monnify',
                 'username' => '4703191085',
                 'password' => '03N5QXJFZW3XA4RNQTP6KNLNNDRW1T7X',

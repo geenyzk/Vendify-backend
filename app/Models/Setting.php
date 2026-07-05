@@ -6,5 +6,32 @@ use Illuminate\Database\Eloquent\Model;
 
 class Setting extends Model
 {
-    //
+    protected $fillable = [
+        'referral_commission_rate',
+        'invoice_prefix', 'invoice_suffix',
+        'notify_admin_on_signup', 'notify_admin_on_funding',
+        'notify_admin_on_large_transaction', 'large_transaction_threshold',
+        'notify_admin_on_failed_transaction',
+        'mail_mailer', 'mail_host', 'mail_port', 'mail_username',
+        'mail_password', 'mail_encryption', 'mail_from_address', 'mail_from_name',
+        'registrations_open', 'signup_bonus_amount', 'min_wallet_funding_amount',
+    ];
+
+    protected $casts = [
+        'referral_commission_rate' => 'decimal:2',
+        'large_transaction_threshold' => 'decimal:2',
+        'signup_bonus_amount' => 'decimal:2',
+        'min_wallet_funding_amount' => 'decimal:2',
+        'notify_admin_on_signup' => 'boolean',
+        'notify_admin_on_funding' => 'boolean',
+        'notify_admin_on_large_transaction' => 'boolean',
+        'notify_admin_on_failed_transaction' => 'boolean',
+        'registrations_open' => 'boolean',
+    ];
+
+    // Mail password is sensitive but admin-only (mirrors how provider
+    // api_key/secret_key are already exposed to admin elsewhere) — hide it
+    // from any accidental non-admin serialization path, expose explicitly
+    // only via the admin settings resource/service instead.
+    protected $hidden = ['mail_password'];
 }

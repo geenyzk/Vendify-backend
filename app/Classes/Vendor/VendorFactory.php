@@ -1,14 +1,16 @@
 <?php
 
-namespace App\Class\Vendor;
+namespace App\Classes\Vendor;
 
-use App\Class\Vendor\Providers\Adex;
-use App\Class\Vendor\Providers\SandboxService;
-use App\Class\Vendor\Providers\SMEPlug;
+use App\Classes\Vendor\Providers\Adex;
+use App\Classes\Vendor\Providers\SandboxService;
+use App\Classes\Vendor\Providers\SMEPlug;
 use App\Models\Vendor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+
+use function Laravel\Prompts\error;
 
 class VendorFactory
 {
@@ -21,12 +23,13 @@ class VendorFactory
         $useSandbox = env('USE_SANDBOX', false);
 
         $match = $useSandbox ? "sandbox":($provider->sub_category === "simhost" ? $provider->name : $provider->sub_category);
-        Log::info($useSandbox);
+        // Log::info($useSandbox);
         return match ($match) {
             "adex"=> new Adex($provider),
             "sandbox"=> new SandboxService() ,
             "sme plug"=> new SMEPlug($provider),
             "spurs"=> new Adex($provider),
+            "msorg"=> new Adex($provider),
         } ;
     }
 
@@ -37,14 +40,16 @@ class VendorFactory
          $total = 0.0;
             Vendor::all()->map(function ($vendor) use (&$total) {
             try {
-                // Log::info($vendor);
+                Log::info($vendor);
                 $vendorInstance = self::make($vendor);
-                $total += $vendorInstance->checkBalance();
+                $total += (float) str_replace(',', '', $vendorInstance->checkBalance());
             } catch (\Throwable $e) {
+                error_log($e);
                 Log::warning("Failed to fetch balance for vendor [{$vendor->name}]: " . $e->getMessage());
             }
         });
 
+        error_log($total);
         return $total;
 
     }

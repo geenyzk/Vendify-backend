@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Discount;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class CustomerController extends Controller
 {
@@ -116,7 +118,7 @@ class CustomerController extends Controller
  * @authenticated
  */
 
-    
+
 
     public function upgrade(Request $request)
     {
@@ -156,6 +158,66 @@ class CustomerController extends Controller
         return response()->json([
             'message' => "Successfully upgraded your account to {$upgradeTo}.",
             'user' => $user,
+        ]);
+    }
+
+
+    /**
+     * Return monthly transaction status counts for the authenticated user.
+     *
+     * @group Customer
+     * @authenticated
+     */
+    public function stats(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return $this->fail([], 'Unauthenticated', 401);
+        }
+
+        $now = Carbon::now();
+
+        $baseQuery = Transaction::where('user_id', $user->id)
+            ->whereYear('created_at', $now->year)
+            ->whereMonth('created_at', $now->month);
+
+        // Build a simple 5-day transactions chart for this user
+        $days = collect();
+        for ($i = 4; $i >= 0; $i--) {
+            $days->push(Carbon::today()->subDays($i)->format('Y-m-d'));
+        }
+
+        $txData = Transaction::select(
+            DB::raw('DATE(created_at) as date'),
+            DB::raw('count(*) as total')
+        )
+            ->where('user_id', $user->id)
+            ->whereDate('created_at', '>=', $days->first())
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->orderBy('date')
+            ->get()
+            ->keyBy('date');
+
+        $labels = [];
+        $values = [];
+        foreach ($days as $day) {
+            $labels[] = Carbon::parse($day)->format('D');
+            $values[] = $txData[$day]->total ?? 0;
+        }
+
+        return $this->success([
+            'monthly_successful' => (clone $baseQuery)->where('status', 'success')->count(),
+            'monthly_pending' => (clone $baseQuery)->where('status', 'pending')->count(),
+            'tx_chart' => [
+                'labels' => $labels,
+                'datasets' => [
+                    [
+                        'label' => 'Transactions',
+                        'data' => $values,
+                        'backgroundColor' => '#36A2EB',
+                    ]
+                ]
+            ]
         ]);
     }
 }

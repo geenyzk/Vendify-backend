@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Class\Vendor\Providers;
+namespace App\Classes\Vendor\Providers;
 
-use App\Class\Vendor\VendorBase;
+use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\DataPlan;
 use App\Models\Discount;
@@ -33,8 +33,9 @@ class SMEPlug extends VendorBase
 
     public function checkBalance(): string
     {
-        $res = $this->login();
-        return $res['balance'] ?? "";
+        // $res = $this->login();
+        // return $res['balance'] ?? "";
+        return "0.0";
     }
 
      public function verifyTransaction(string $tx_ref): array

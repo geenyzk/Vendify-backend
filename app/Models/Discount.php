@@ -3,84 +3,69 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class Discount extends Model
 {
-    //
     protected $hidden = ["created_at", "updated_at"];
-    protected $appends = ["price"];
+
+    protected $fillable = ["id", "name", "category", "type", "min", "max", "active"];
+
     protected $casts = [
-        "isActive" => 'boolean'
+        "active" => 'boolean',
     ];
-    protected static function booted()
+
+    /**
+     * Per-role discount percentages for this network/discount record.
+     */
+    public function roleDiscounts(): HasMany
     {
-        static::retrieved(function ($model) {
-            $model->network =$model->name;
-            if (env('APP_TYPE', "standalone") === 'affiliate') {
-                foreach (range(2, 5) as $i) {
-                    unset(
-                        $model->{"adex_server_$i"},
-                        $model->{"spurs_server_$i"},
-                        $model->{"msorg_server_$i"}
-                    );
-                }
-
-                unset($model->spurs_server_1, $model->msorg_server_1, $model->vtpass, $model->payscribe);
-            }
-        });
+        return $this->hasMany(DiscountRole::class, 'discount_id');
     }
-
 
     public function toArray()
     {
         $array = parent::toArray();
-        $array['network'] =$array['name'];
-
-        if (env('APP_TYPE', "standalone") === 'affiliate') {
-            // Keep only adex_server_1, remove others
-            foreach (range(2, 5) as $i) {
-                unset(
-                    $array["adex_server_$i"],
-                    $array["spurs_server_$i"],
-                    $array["msorg_server_$i"]
-                );
-            }
-
-            unset($array["spurs_server_1"], $array["msorg_server_1"], $array["vtupass"], $array["payscribe"]);
-        }
+        $array['network'] = $array['name'];
 
         return $array;
     }
 
-
-    function scopeAirtime(){
+    function scopeAirtime()
+    {
         return $this->where("type", "airtime")
-        ->get()->map(function($airtime){
+        ->get()->map(function ($airtime) {
             $airtime->network = $airtime->name;
             return $airtime;
         });
     }
 
-
-    public function getPriceAttribute(){
+    public function getPriceAttribute()
+    {
         $user = Auth::user();
-        return $this->{$user?->user_type . "_discount"};
+        if (!$user?->role_id) {
+            return 0;
+        }
+
+        return $this->roleDiscounts()->where('role_id', $user->role_id)->value('discount') ?? 0;
     }
 
-    function scopeGetElectricity($query, $name){
+    function scopeGetElectricity($query, $name)
+    {
+        Log::info(["name: " => $name]);
         return $query->where("name", $name)
         ->first();
     }
 
-    function scopeGetAllElectricity(){
+    function scopeGetAllElectricity()
+    {
         return $this->where("type", "electricity")
         ->get();
     }
 
-
-   public static function getAmountRangeError(float $amount, string $category): ?string
+    public static function getAmountRangeError(float $amount, string $category): ?string
     {
         $discount = self::where("category", $category)->first();
 
@@ -95,22 +80,30 @@ class Discount extends Model
         return null; // no error
     }
 
-
     /**
- * Calculate the discounted amount based on the original amount.
- */
+     * Calculate the discounted amount based on the original amount.
+     * Returns the final amount AFTER discount is applied.
+     */
     static public function getDiscountedAmount(float $amount, string $name): float
     {
-        $discount = self::
-        where("name", $name)
-        ->orWhere("category", $name)
-        ->first();
+        $discount = self::where("name", $name)
+            ->orWhere("category", $name)
+            ->first();
+
+        // If no discount found, return original amount
+        if (!$discount) {
+            return $amount;
+        }
+
         $user = Auth::user();
-        $user_discount_percent = $discount->{$user?->user_type . "_discount"};
+        $percent = 0;
+        if ($user?->role_id) {
+            $percent = $discount->roleDiscounts()->where('role_id', $user->role_id)->value('discount') ?? 0;
+        }
 
-        return round($amount - (($user_discount_percent / 100) * $amount), 2);
+        // Calculate final amount after discount
+        $finalAmount = $amount - (($percent / 100) * $amount);
+
+        return round($finalAmount, 2);
     }
-
-
-
 }
