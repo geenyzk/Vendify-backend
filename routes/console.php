@@ -18,3 +18,13 @@ Schedule::command('vendors:check-balances')
         \Illuminate\Support\Facades\Log::error('vendors:check-balances scheduled run failed.');
     });
 
+// Prunes old success/fail transactions per Settings > Transaction — the
+// command itself checks the enabled toggle and no-ops if it's off, so this
+// runs daily regardless but only deletes anything when an admin opted in.
+Schedule::command('transactions:prune')
+    ->daily()
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('transactions:prune scheduled run failed.');
+    });
+

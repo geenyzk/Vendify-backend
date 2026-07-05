@@ -15,6 +15,7 @@ class Setting extends Model
         'mail_mailer', 'mail_host', 'mail_port', 'mail_username',
         'mail_password', 'mail_encryption', 'mail_from_address', 'mail_from_name',
         'registrations_open', 'signup_bonus_amount', 'min_wallet_funding_amount',
+        'prune_transactions_enabled', 'prune_transactions_after_days', 'transactions_last_pruned_at',
     ];
 
     protected $casts = [
@@ -27,6 +28,9 @@ class Setting extends Model
         'notify_admin_on_large_transaction' => 'boolean',
         'notify_admin_on_failed_transaction' => 'boolean',
         'registrations_open' => 'boolean',
+        'prune_transactions_enabled' => 'boolean',
+        'prune_transactions_after_days' => 'integer',
+        'transactions_last_pruned_at' => 'datetime',
     ];
 
     // Mail password is sensitive but admin-only (mirrors how provider

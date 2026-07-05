@@ -74,6 +74,8 @@ class TransactionService
             // Optional: Commission distribution (based on final amount user paid)
             self::distributeCommission($user, $finalAmount, $transactionType);
 
+            AdminNotifier::notifyTransaction($transaction);
+
             SendTransactionCallback::dispatch($user, $transaction);
 
             // Enrich transaction response with discount info
@@ -91,7 +93,11 @@ class TransactionService
 
     public static function generateTransactionReference(): string
     {
-        return 'TXN-' . now()->format('YmdHis') . '-' . strtoupper(Str::random(6));
+        $settings = Setting::first();
+        $prefix = $settings?->invoice_prefix ?: 'TXN-';
+        $suffix = $settings?->invoice_suffix ?: '';
+
+        return $prefix . now()->format('YmdHis') . '-' . strtoupper(Str::random(6)) . $suffix;
     }
 
     protected static function calculateServiceFee(float $amount): float

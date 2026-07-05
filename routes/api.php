@@ -82,6 +82,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Transaction status override & refund (money-moving, admin-only).
         Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
         Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
+        Route::get('/transactions/prune-preview', [TransactionController::class, 'prunePreview']);
+        Route::post('/transactions/prune', [TransactionController::class, 'pruneNow']);
 
         // Notification/message templates (e.g. the "welcome message" sent on
         // registration is the template with event=register).

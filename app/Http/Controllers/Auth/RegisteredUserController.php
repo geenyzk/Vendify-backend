@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Classes\AdminNotifier;
 use App\Classes\Payment\Payment;
+use App\Classes\TransactionService;
 use App\Http\Controllers\Controller;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
@@ -54,6 +57,11 @@ class RegisteredUserController extends Controller
     {
         // Log::info($request->all());
         try {
+            $settings = Setting::first();
+
+            if ($settings && !$settings->registrations_open) {
+                return $this->fail([], 'New registrations are currently closed.', 403);
+            }
 
             $request->validate([
                 'fullname' => ['string', 'max:255'],
@@ -65,12 +73,17 @@ class RegisteredUserController extends Controller
                 'password' => ['required', Rules\Password::defaults()],
             ]);
 
+            $referrer = $request->referral_code
+                ? User::where('referral_code', $request->referral_code)->first()
+                : null;
+
             $user = User::create([
                 'fullname' => $request->fullname ?? 'Anonymous',
                 'username' => $request->username,
                 'phone' => $request->phone,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
+                'referred_by' => $referrer?->id,
             ]);
 
             Auth::login($user);
@@ -78,6 +91,13 @@ class RegisteredUserController extends Controller
             Payment::generateAccount($user);
             $user->loginStamp();
             $user->assignRole('user');
+
+            $bonus = floatval($settings?->signup_bonus_amount ?? 0);
+            if ($bonus > 0) {
+                TransactionService::fundUser($user, $bonus, 'credit', 'Signup bonus');
+            }
+
+            AdminNotifier::notifySignup($user);
 
             // Send email verification notification
             event(new Registered($user));

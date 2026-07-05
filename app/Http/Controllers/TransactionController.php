@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 
+use App\Classes\TransactionPruner;
 use App\Classes\TransactionService;
 use App\Http\Resources\TransactionResource;
 use App\HttpResponse;
@@ -154,6 +155,28 @@ class TransactionController extends Controller
         }
 
         return $this->success(new TransactionResource($transaction->fresh('user')), 'Transaction refunded and wallet credited');
+    }
+
+    /**
+     * How many success/fail transactions are older than the configured
+     * retention window right now — for the "Prune now" confirmation, so an
+     * admin sees the impact before deleting anything.
+     */
+    public function prunePreview()
+    {
+        return $this->success(['count' => TransactionPruner::previewCount()]);
+    }
+
+    /**
+     * Delete old success/fail transactions immediately. Clicking this is
+     * itself the opt-in, so it runs regardless of the "automatically prune"
+     * toggle in Settings > Transaction.
+     */
+    public function pruneNow()
+    {
+        $count = TransactionPruner::run(force: true);
+
+        return $this->success(['pruned' => $count], "Pruned {$count} transaction(s)");
     }
 
 }

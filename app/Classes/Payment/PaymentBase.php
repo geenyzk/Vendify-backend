@@ -2,6 +2,7 @@
 
 namespace App\Classes\Payment;
 
+use App\Classes\AdminNotifier;
 use App\Classes\Payment\Interface\PaymentInterface;
 use App\Models\Bank;
 use App\Models\Provider;
@@ -62,10 +63,14 @@ abstract class PaymentBase implements PaymentInterface
 
             Log::info('Webhook received.', ['transaction_reference' => $callback['transaction_reference']]);
 
-            Transaction::updateOrCreate(
+            $transaction = Transaction::updateOrCreate(
                 ['transaction_reference' => $callback['transaction_reference']],
                 $callback
             );
+
+            if ($transaction->status === 'success') {
+                AdminNotifier::notifyFunding($transaction);
+            }
 
         } catch (\Exception $e) {
             Log::error('Webhook processing failed.', [
