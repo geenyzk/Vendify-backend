@@ -6,9 +6,12 @@
 /storage/*.key
 /storage/pail
 /vendor
+<<<<<<< HEAD
+=======
 .git
 /.github
 .github
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
 .env
 .env.backup
 .env.production

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Classes;
+namespace App\Class;
 
 use App\Jobs\SendTransactionCallback;
 use App\Models\Transaction;
@@ -18,73 +18,29 @@ class TransactionService
         return DB::transaction(function () use ($apiData, $user) {
             $transactionType = $apiData['transaction_type'];
 
-            // Extract discount and pricing information
-            $discountAmount = floatval($apiData['discount_amount'] ?? 0);
-            $promotionId = $apiData['promotion_id'] ?? null;
-
-            // Get the final amount to charge user (after discount) from apiData
-            // Priority: final_amount > (amount - discount_amount) > amount
-            $finalAmount = floatval(
-                $apiData['final_amount'] ?? 
-                (($apiData['amount'] ?? 0) - $discountAmount) ??
-                ($apiData['amount'] ?? 0)
-            );
-
-            // Get the original/API amount (before discount)
-            $originalAmount = floatval($apiData['amount'] ?? 0);
-
-            // Calculate balance changes based on final amount (what user actually pays)
+            $amount = floatval($apiData['discount_amount'] ?? $apiData['amount']);
             $balanceBefore = floatval($user->wallet_balance);
-            $balanceAfter = $apiData["status"] === "success" ? $balanceBefore - $finalAmount : $user->wallet_balance;
+            $balanceAfter = $apiData["status"] === "success"? $balanceBefore - floatval($apiData['amount']): $user->wallet_balance;
 
-            // Deduct wallet only if transaction is successful
-            if ($apiData["status"] === "success") {
-                $user->wallet_balance = $balanceAfter;
-                $user->save();
-            }
+            // Optional: Deduct wallet (if not done via API balance already)
+            $user->wallet_balance = $balanceAfter;
+            $user->save();
 
-            // Log the transaction details for debugging
-            Log::info("Transaction Processing", [
-                'user_id' => $user->id,
-                'original_amount' => $originalAmount,
-                'discount_amount' => $discountAmount,
-                'final_amount' => $finalAmount,
-                'balance_before' => $balanceBefore,
-                'balance_after' => $balanceAfter,
-                'promotion_id' => $promotionId,
-                'status' => $apiData["status"]
-            ]);
-
-            // Create the transaction with proper discount and promotion tracking
+            // Create the transaction
             $tx_data = array_merge($apiData, [
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
                 'user_id' => $user->id,
-                'amount' => $finalAmount,           // Final amount user paid (after discount)
-                'discount_amount' => $discountAmount,  // Track discount separately
-                'promotion_id' => $promotionId,     // Link to promotion used
+                "amount" => $amount,
             ]);
-
-            // Remove final_amount from tx_data to avoid storage conflicts
-            unset($tx_data['final_amount']);
-
             $transaction = Transaction::create($tx_data);
 
-            // Optional: Commission distribution (based on final amount user paid)
-            self::distributeCommission($user, $finalAmount, $transactionType);
+            // Optional: Commission distribution
+            self::distributeCommission($user, $amount, $transactionType);
 
             SendTransactionCallback::dispatch($user, $transaction);
 
-            // Enrich transaction response with discount info
-            $transactionArray = $transaction->toArray();
-            $transactionArray['discount_applied'] = [
-                'discount_amount' => $discountAmount,
-                'original_amount' => $originalAmount,
-                'final_amount' => $finalAmount,
-                'promotion_id' => $promotionId,
-            ];
-
-            return $transactionArray;
+            return $transaction->toArray();
         });
     }
 
@@ -143,7 +99,6 @@ class TransactionService
             'balance_after' => $balanceAfter,
             'response_message' => ucfirst($type) . ' by admin',
             'platform' => 'web',
-            "receiver" => $user->username,
         ]);
 
         return $transaction->toArray();

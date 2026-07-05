@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Classes\Vendor\Providers;
+namespace App\Class\Vendor\Providers;
 
-use App\Classes\Vendor\VendorBase;
+use App\Class\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\CablePlan;
 use App\Models\DataPlan;

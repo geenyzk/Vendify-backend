@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Classes\Payment;
+namespace App\Class\Payment;
 
 use App\Models\Provider;
 use App\Models\User;
@@ -9,8 +9,6 @@ use Illuminate\Support\Facades\Log;
 
 class Payment
 {
-
-
     /**
      * Create a new class instance.
      */
@@ -22,9 +20,16 @@ class Payment
 
     static function generateAccount(User $user){
         $providers = Provider::getPaymentProviders()->get();
+        Log::info($providers);
         $providers->map(function ($provider) use($user){
+
+
+            Log::info($provider);
+
             PaymentFactory::make($provider)->generateAccount($user);
         });
+
+
     }
 
      static function webhook(Request $request, $identifier){

@@ -2,152 +2,34 @@
 
 namespace App\Http\Controllers;
 
-use App\Classes\SerivceControl\ServiceControlService;
-use App\Classes\VTUServices\VTUServiceFactory;
+use App\Class\SerivceControl\ServiceControlService;
+use App\Class\VTUServices\VTUServiceFactory;
 use App\Http\Requests\ServiceRequest;
 use App\Models\Discount;
 use App\Models\Transaction;
-use App\Services\PromotionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class VTUServicesController extends Controller
 {
-
-
-  private $baseUrl;
-    private $token;
-
-    public function __construct()
-    {
-        $this->baseUrl = env('VTU_API_BASE');
-        $this->token = env('VTU_API_TOKEN');
-    }
-
-    private function makeRequest($method, $endpoint, $data = [])
-    {
-        $response = Http::withHeaders([
-            'Authorization' => 'Token ' . $this->token,
-            'Content-Type' => 'application/json',
-        ])->{$method}($this->baseUrl . $endpoint, $data);
-
-        return response()->json($response->json(), $response->status());
-    }
-
-    public function getUser()
-    {
-        return $this->makeRequest('get', 'user/');
-    }
-
-    public function getNetworks()
-    {
-        return $this->makeRequest('get', 'get/network/');
-    }
-
-    public function getNetworkPlans()
-    {
-        return $this->makeRequest('get', 'network/');
-    }
-
-    public function getDataPlans()
-    {
-        return $this->makeRequest('get', 'data/');
-    }
-
-    public function getDataPlanById($id)
-    {
-        return $this->makeRequest('get', "data/{$id}");
-    }
-
-    public function validateIUC(Request $request)
-    {
-        return $this->makeRequest('get', 'validateiuc', [
-            'smart_card_number' => $request->smart_card_number,
-            'cablename' => $request->cablename,
-        ]);
-    }
-
-    public function validateMeter(Request $request)
-    {
-        return $this->makeRequest('get', 'validatemeter', [
-            'meternumber' => $request->meternumber,
-            'disconame' => $request->disconame,
-            'mtype' => $request->mtype,
-        ]);
-    }
-
-    public function airtimeFunding(Request $request)
-    {
-        return $this->makeRequest('post', 'Airtime_funding/', $request->all());
-    }
-
-    public function airtimeTopup(Request $request)
-    {
-        return $this->makeRequest('post', 'topup/', $request->all());
-    }
-
-    public function dataPurchase(Request $request)
-    {
-        return $this->makeRequest('post', 'data/', $request->all());
-    }
-
-    public function cableSubscription(Request $request)
-    {
-        return $this->makeRequest('post', 'cablesub/', $request->all());
-    }
-
-    public function electricityPayment(Request $request)
-    {
-        return $this->makeRequest('post', 'billpayment/', $request->all());
-    }
-
-
-       /**
-     * Handle VTU service requests like airtime, data, etc.
+    /**
+     * Handle a VTU request.
      *
-     * @group VTU Services
-     *
-     * @authenticated
-     *
-     * Handles a VTU service request after validating pin and user balance.
-     *
-     * @urlParam service string required The service type (e.g. airtime, data, cable). Example: airtime
-     *
-     * @bodyParam network_type string required The network type. Example: mtn
-     * @bodyParam amount numeric required The amount for the transaction. Example: 100
-     * @bodyParam phone string required The phone number. Example: 08012345678
-     * @bodyParam pin string required The user transaction pin. Example: 1234
-     *
-     * @response 200 {
-     *    "status": "success",
-     *    "message": "Transaction successful",
-     *    "data": { ... }
-     * }
-     *
-     * @response 402 {
-     *    "status": "error",
-     *    "message": "Insufficient balance to complete this transaction."
-     * }
-     *
-     * @response 422 {
-     *    "status": "fail",
-     *    "errors": {
-     *       "pin": ["Invalid pin"]
-     *    }
-     * }
+     * @param Request $request
+     * @return JsonResponse
      */
-
-
     public function handle(ServiceRequest $request, string $service): JsonResponse
     {
 
         $validated = $request->validated();
-        // Amount validation now done in ServiceRequest rules for airtime (min:50, max:5000)
-        // No need to check Discount table for airtime since all discounts are now promo-based
+        if(in_array($service, ['airtime'])){
+            if (($error = Discount::getAmountRangeError($validated['amount'], $validated['network_type']))) {
+                return $this->fail([], $error, 422);
+            }
+        }
+
 
         $isVerifiable = ServiceControlService::verify(Auth::id(),$validated['pin']??'');
         if (!$isVerifiable) {
@@ -158,144 +40,37 @@ class VTUServicesController extends Controller
         // $validated['tx_ref'] = Transaction::generateTransactionId();
 
         $user = Auth::user();
+        if ($user->wallet_balance < $validated['amount']) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Insufficient balance to complete this transaction.',
+            ], 402);
+        }
 
-        return DB::transaction(function () use ($service, $validated, $user) {
-            $originalAmount = (float) $validated['amount'];
-            $totalDiscountAmount = 0;
-            $promotionId = null;
+        $serviceType =$service;
 
-            // Step 1: Apply base discount from Discount model (automatic, network-based)
-            $baseDiscountAmount = 0;
-            if (in_array($service, ['airtime', 'data'])) {
-                $network = $validated['network'] ?? $validated['provider'] ?? null;
-                $category = $validated['network_type'] ?? null;
+        $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type']);
 
-                if ($network && $category) {
-                    try {
-                        // Get final amount after base discount
-                        $baseDiscountedAmount = Discount::getDiscountedAmount($originalAmount, $network);
-                        $baseDiscountAmount = $originalAmount - $baseDiscountedAmount;
-                        $totalDiscountAmount += $baseDiscountAmount;
+        if (!$handler) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unsupported or unconfigured service.',
+            ], 400);
+        }
 
-                        Log::info("Base discount applied", [
-                            'original_amount' => $originalAmount,
-                            'base_discounted_amount' => $baseDiscountedAmount,
-                            'base_discount_amount' => $baseDiscountAmount,
-                            'network' => $network,
-                            'category' => $category,
-                            'user_type' => $user?->user_type
-                        ]);
-                    } catch (\Exception $e) {
-                        Log::error("Error calculating base discount: " . $e->getMessage());
-                        // Continue without base discount if there's an error
-                    }
-                }
-            }
-
-            // Step 2: Apply promotion if code is provided (additional discount on top of base)
-            $promotionDiscount = 0;
-            if (!empty($validated['code'] ?? '')) {
-                // Apply promotion on top of base-discounted amount
-                $baseDiscountedAmount = $originalAmount - $baseDiscountAmount;
-
-                $promotionResult = PromotionService::applyPromotion(
-                    $validated['code'],
-                    $baseDiscountedAmount, // Use amount after base discount
-                    $validated['product'] ?? ($service === 'airtime' ? 'airtime' : $service),
-                    $validated['network'] ?? $validated['provider'] ?? null,
-                    $user
-                );
-
-                if (!$promotionResult['success']) {
-                    // Invalid promo code
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => $promotionResult['message'],
-                    ], 422);
-                }
-
-                $promotionDiscount = $promotionResult['discount_amount'];
-                $promotionId = $promotionResult['promotion_id'];
-                $totalDiscountAmount += $promotionDiscount;
-
-                Log::info("Promotion discount applied", [
-                    'promotion_discount' => $promotionDiscount,
-                    'promotion_id' => $promotionId,
-                    'base_discounted_amount' => $baseDiscountedAmount
-                ]);
-            }
-
-            // Calculate final amount after all discounts
-            $finalAmount = $originalAmount - $totalDiscountAmount;
-            $finalAmount = max(0, $finalAmount); // Ensure no negative amounts
-
-            Log::info("Final amount calculation", [
-                'original_amount' => $originalAmount,
-                'base_discount_amount' => $baseDiscountAmount,
-                'promotion_discount' => $promotionDiscount,
-                'total_discount_amount' => $totalDiscountAmount,
-                'final_amount' => $finalAmount,
-                'user_balance' => $user->wallet_balance
-            ]);
-
-            // Step 3: Check balance against final amount
-            if ($user->wallet_balance < $finalAmount) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Insufficient balance to complete this transaction.',
-                ], 402);
-            }
-
-            // Step 4: Add all discount details to validated data for processing
-            $validated['amount'] = $originalAmount;                 // Original amount for API (what to buy)
-            $validated['final_amount'] = $finalAmount;              // Final amount user pays (after discounts)
-            $validated['promotion_id'] = $promotionId;              // Link to promotion if used
-            $validated['discount_amount'] = $totalDiscountAmount;   // Total discount applied
-
-            $serviceType = $service;
-
-            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType);
-
-            if (!$handler) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Unsupported or unconfigured service.',
-                ], 400);
-            }
-
-            try {
-                Log::info(["validated" => $validated]);
-                return $handler->process($service, $validated);
-            } catch (\Throwable $e) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Failed to process VTU request.',
-                    'error' => $e->getMessage(),
-                ], 500);
-            }
-        });
+        try {
+            // Log::info($validated);
+            return  $handler->process($service, $validated);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to process VTU request.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
-    /**
-     * Get plans for data, cable, exam, etc.
-     *
-     * @group VTU Services
-        } catch (\Throwable $th) {
-            //throw $th;
-            Log::info($th);
-        } {
-     *
-     * @authenticated
-     *
-     * @urlParam service string required The service type (e.g. data, cable). Example: data
-     *
-     * @response 200 {
-     *   "plans": [...]
-     * }
-     */
-
     public function plan(Request $request, string $service){
-        Log::info($request);
         $servicePlansObject = [
             "data" => "data_plans",
             "cable" => "cable_plans",
@@ -309,52 +84,22 @@ class VTUServicesController extends Controller
        ]);
     }
 
-     /**
-     * Verify user service info (like smartcard number, meter, etc.)
-     *
-     * @group VTU Services
-     *
-     * @authenticated
-     *
-     * @urlParam service string required The service type (e.g. cable, bill). Example: cable
-     *
-     * @bodyParam identifier string required The value to verify (e.g. smartcard or meter number). Example: 12345678901
-     * @bodyParam cable_network string required If service is cable. Example: dstv
-     * @bodyParam meter_type string required If service is bill. Example: prepaid
-     *
-     * @response 200 {
-     *    "status": "success",
-     *    "message": "User verified",
-     *    "data": {...}
-     * }
-     */
     function verify(Request $request, string $service){
-        // try{
-        try {
-            //code...
-            $val = [];
-            if($service == "cable"){
-                $val = [
-                'cable_network' => 'required|string',
-                ];
-            }elseif ($service == 'electricity') {
-                $val = [
-                'meter_type' => 'required|string',
-                'disco' => 'required|string',
-                ];
-            }
-            $payload = $request->validate(array_merge([
-                'identifier' => 'required|string',
-            ], $val));
-            $handler = VTUServiceFactory::make($service, $request->cable_network??"");
-            return $handler->verifyUser($service, $request->identifier, $payload);
-        } catch (\Throwable $th) {
-            //throw $th;
-            Log::info($th);
+        $val = [];
+        if($service == "cable"){
+            $val = [
+            'cable_network' => 'required|string',
+            ];
+        }elseif ($service == 'bill') {
+            $val = [
+            'meter_type' => 'required|string',
+
+            ];
         }
-
-        // }Except(e){
-
-        // }
+        $payload = $request->validate(array_merge([
+            'identifier' => 'required|string',
+        ], $val));
+        $handler = VTUServiceFactory::make($service, $request->cable_network??"");
+        return $handler->verifyUser($service, $request->identifier, $payload);
     }
 }

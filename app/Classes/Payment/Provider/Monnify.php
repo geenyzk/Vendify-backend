@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Classes\Payment\Provider;
+namespace App\Class\Payment\Provider;
 
-use App\Classes\Payment\PaymentBase;
+use App\Class\Payment\PaymentBase;
 use App\Models\Bank;
 use App\Models\General;
 use App\Models\Transaction;
@@ -32,7 +32,7 @@ class Monnify extends PaymentBase
         try {
             $payloadResponse = $this->formatPayload($payload);
             $response = Http::withHeaders($this->getHeaders())
-                ->post($this->provider->base_url . "/bank-transfer/reserved-accounts", $payloadResponse);
+                ->post($this->provider->base_url . "/virtual-account-numbers", $payloadResponse);
 
             Log::info("Generating virtual account for {$payload->email}...", [
                 'response' => $response->json()
@@ -80,12 +80,13 @@ class Monnify extends PaymentBase
         $gen = General::first();
 
         return [
-            "accountReference" => $txRef,
-            "accountName" => "Wallet - {$txRef}",
-            "currencyCode" => "NGN",
-            "contractCode" => $this->provider->username,
+            "walletReference" => $txRef,
+            "walletName" => "Wallet - {$txRef}",
             "customerName" => $fullName,
-            "bvn" => $sessionUser->bvn ?? $gen->bvn,
+            "bvnDetails" => [
+                "bvn" => $sessionUser->bvn ?? $gen->bvn,
+                // "bvnDateOfBirth" => $sessionUser->dob ?? '1990-01-01', // Make sure this exists
+            ],
             "customerEmail" => $sessionUser->email,
         ];
     }
@@ -105,34 +106,6 @@ class Monnify extends PaymentBase
             'tx_ref' => $data['walletReference'],
             'expired_at' => now()->addYears(1),
         ];
-    }
-
-    // Monnify does not expose a transfer/payout API in the current integration.
-    // Override this when Monnify payout support is added.
-
-    /**
-     * Fetch the list of banks supported by Monnify for transfers.
-     */
-    public function getBanks(): array
-    {
-        try {
-            $response = Http::withHeaders($this->getHeaders())
-                ->get($this->provider->base_url . '/banks');
-
-            if ($response->successful()) {
-                $banks = $response->json('responseBody') ?? [];
-                return collect($banks)->map(fn($bank) => [
-                    'code' => $bank['code'],
-                    'name' => $bank['name'],
-                ])->values()->all();
-            }
-
-            Log::error('Monnify: failed to fetch banks', ['error' => $response->body()]);
-            return [];
-        } catch (\Throwable $e) {
-            Log::error('Monnify: getBanks exception', ['error' => $e->getMessage()]);
-            return [];
-        }
     }
 
     protected function callback(Request $request): array

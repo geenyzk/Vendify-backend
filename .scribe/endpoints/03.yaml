@@ -48,11 +48,7 @@ endpoints:
   -
     httpMethods:
       - GET
-<<<<<<< HEAD
-    uri: api/transactions/report
-=======
     uri: api/admin/users
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
@@ -96,103 +92,6 @@ endpoints:
   -
     httpMethods:
       - POST
-<<<<<<< HEAD
-    uri: 'api/customer/{id}/convert-referral'
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters:
-      id:
-        name: id
-        description: 'The ID of the customer.'
-        required: true
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-    cleanUrlParameters:
-      id: consequatur
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - POST
-    uri: api/customer/account/upgrade
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters:
-      upgrade_to:
-        name: upgrade_to
-        description: ''
-        required: true
-        example: agent
-        type: string
-        enumValues:
-          - user
-          - agent
-          - bonanza
-          - api
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-    cleanBodyParameters:
-      upgrade_to: agent
-    fileParameters: []
-    responses: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - POST
-=======
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     uri: api/admin/users
     metadata:
       groupName: Endpoints
@@ -202,110 +101,7 @@ endpoints:
       title: 'Store a newly created resource in storage.'
       description: ''
       authenticated: true
-<<<<<<< HEAD
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters:
-      username:
-        name: username
-        description: 'Must not be greater than 255 characters.'
-        required: true
-        example: vmqeopfuudtdsufvyvddq
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      fullname:
-        name: fullname
-        description: 'Must not be greater than 255 characters.'
-        required: true
-        example: amniihfqcoynlazghdtqt
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      email:
-        name: email
-        description: 'Must be a valid email address.'
-        required: true
-        example: andreanne00@example.org
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      phone:
-        name: phone
-        description: ''
-        required: true
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      password:
-        name: password
-        description: 'Must be at least 6 characters.'
-        required: true
-        example: '[2UZ5ij-e/dl4'
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      user_type:
-        name: user_type
-        description: ''
-        required: true
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-    cleanBodyParameters:
-      username: vmqeopfuudtdsufvyvddq
-      fullname: amniihfqcoynlazghdtqt
-      email: andreanne00@example.org
-      phone: consequatur
-      password: '[2UZ5ij-e/dl4'
-      user_type: consequatur
-    fileParameters: []
-    responses: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - GET
-    uri: api/admin/users
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-=======
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -318,20 +114,7 @@ endpoints:
     bodyParameters: []
     cleanBodyParameters: []
     fileParameters: []
-<<<<<<< HEAD
-    responses:
-      -
-        status: 401
-        content: '{"message":"Unauthenticated."}'
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-=======
     responses: []
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     responseFields: []
     auth:
       - headers
@@ -353,10 +136,7 @@ endpoints:
       title: 'Display the specified resource.'
       description: ''
       authenticated: true
-<<<<<<< HEAD
-=======
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -412,10 +192,7 @@ endpoints:
       title: 'Update the specified resource in storage.'
       description: ''
       authenticated: true
-<<<<<<< HEAD
-=======
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -436,175 +213,8 @@ endpoints:
       id: consequatur
     queryParameters: []
     cleanQueryParameters: []
-<<<<<<< HEAD
-    bodyParameters:
-      username:
-        name: username
-        description: 'Must not be greater than 255 characters.'
-        required: false
-        example: vmqeopfuudtdsufvyvddq
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      fullname:
-        name: fullname
-        description: ''
-        required: false
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      email:
-        name: email
-        description: 'Must be a valid email address.'
-        required: false
-        example: carolyne.luettgen@example.org
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      phone:
-        name: phone
-        description: ''
-        required: false
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      password:
-        name: password
-        description: 'Must be at least 6 characters.'
-        required: false
-        example: '[2UZ5ij-e/dl4'
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      user_type:
-        name: user_type
-        description: ''
-        required: false
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      wallet_balance:
-        name: wallet_balance
-        description: ''
-        required: false
-        example: null
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      referral_balance:
-        name: referral_balance
-        description: ''
-        required: false
-        example: null
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      is_active:
-        name: is_active
-        description: ''
-        required: false
-        example: false
-        type: boolean
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      is_verified:
-        name: is_verified
-        description: ''
-        required: false
-        example: false
-        type: boolean
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      pin:
-        name: pin
-        description: ''
-        required: false
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      status:
-        name: status
-        description: ''
-        required: false
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      referral_code:
-        name: referral_code
-        description: ''
-        required: false
-        example: consequatur
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      referred_by:
-        name: referred_by
-        description: ''
-        required: false
-        example: 17
-        type: integer
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-      last_login_at:
-        name: last_login_at
-        description: ''
-        required: false
-        example: null
-        type: string
-        enumValues: []
-        exampleWasSpecified: false
-        nullable: false
-        custom: []
-    cleanBodyParameters:
-      username: vmqeopfuudtdsufvyvddq
-      fullname: consequatur
-      email: carolyne.luettgen@example.org
-      phone: consequatur
-      password: '[2UZ5ij-e/dl4'
-      user_type: consequatur
-      is_active: false
-      is_verified: false
-      pin: consequatur
-      status: consequatur
-      referral_code: consequatur
-      referred_by: 17
-=======
     bodyParameters: []
     cleanBodyParameters: []
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     fileParameters: []
     responses: []
     responseFields: []
@@ -628,10 +238,7 @@ endpoints:
       title: 'Remove the specified resource from storage.'
       description: ''
       authenticated: true
-<<<<<<< HEAD
-=======
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -668,103 +275,7 @@ endpoints:
   -
     httpMethods:
       - GET
-<<<<<<< HEAD
-    uri: api/vtu/user
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses:
-      -
-        status: 500
-        content: |-
-          {
-              "message": "Server Error"
-          }
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - GET
-    uri: api/vtu/networks
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses:
-      -
-        status: 500
-        content: |-
-          {
-              "message": "Server Error"
-          }
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - GET
-    uri: api/vtu/network/plans
-=======
     uri: api/admin/controls
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
@@ -773,10 +284,7 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
-<<<<<<< HEAD
-=======
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -810,28 +318,17 @@ endpoints:
     custom: []
   -
     httpMethods:
-<<<<<<< HEAD
-      - GET
-    uri: api/vtu/data
-=======
       - POST
     uri: api/admin/controls
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
       subgroup: ''
       subgroupDescription: ''
-<<<<<<< HEAD
-      title: ''
-      description: ''
-      authenticated: true
-=======
       title: 'Store a newly created resource in storage.'
       description: ''
       authenticated: true
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -844,23 +341,7 @@ endpoints:
     bodyParameters: []
     cleanBodyParameters: []
     fileParameters: []
-<<<<<<< HEAD
-    responses:
-      -
-        status: 500
-        content: |-
-          {
-              "message": "Server Error"
-          }
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-=======
     responses: []
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     responseFields: []
     auth:
       - headers
@@ -873,26 +354,16 @@ endpoints:
   -
     httpMethods:
       - GET
-<<<<<<< HEAD
-    uri: 'api/vtu/data/{id}'
-=======
     uri: 'api/admin/controls/{id}'
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
       subgroup: ''
       subgroupDescription: ''
-<<<<<<< HEAD
-      title: ''
-      description: ''
-      authenticated: true
-=======
       title: 'Display the specified resource.'
       description: ''
       authenticated: true
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -901,11 +372,7 @@ endpoints:
     urlParameters:
       id:
         name: id
-<<<<<<< HEAD
-        description: 'The ID of the data.'
-=======
         description: 'The ID of the control.'
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
         required: true
         example: consequatur
         type: string
@@ -922,16 +389,8 @@ endpoints:
     fileParameters: []
     responses:
       -
-<<<<<<< HEAD
-        status: 500
-        content: |-
-          {
-              "message": "Server Error"
-          }
-=======
         status: 401
         content: '{"message":"Unauthenticated."}'
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
         headers:
           cache-control: 'no-cache, private'
           content-type: application/json
@@ -949,102 +408,23 @@ endpoints:
     custom: []
   -
     httpMethods:
-<<<<<<< HEAD
-      - GET
-    uri: api/vtu/validate/iuc
-=======
       - PUT
       - PATCH
     uri: 'api/admin/controls/{id}'
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
       subgroup: ''
       subgroupDescription: ''
-<<<<<<< HEAD
-      title: ''
-      description: ''
-      authenticated: true
-=======
       title: 'Update the specified resource in storage.'
       description: ''
       authenticated: true
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
-<<<<<<< HEAD
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses:
-      -
-        status: 500
-        content: |-
-          {
-              "message": "Server Error"
-          }
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - GET
-    uri: api/vtu/validate/meter
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses:
-      -
-        status: 500
-        content: |-
-          {
-              "message": "Server Error"
-          }
-        headers:
-          cache-control: 'no-cache, private'
-          content-type: application/json
-          vary: Origin
-        description: null
-        custom: []
-=======
     urlParameters:
       id:
         name: id
@@ -1075,7 +455,6 @@ endpoints:
       isActive: false
     fileParameters: []
     responses: []
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     responseFields: []
     auth:
       - headers
@@ -1087,173 +466,22 @@ endpoints:
     custom: []
   -
     httpMethods:
-<<<<<<< HEAD
-      - POST
-    uri: api/vtu/airtime/funding
-=======
       - DELETE
     uri: 'api/admin/controls/{id}'
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     metadata:
       groupName: Endpoints
       groupDescription: ''
       subgroup: ''
       subgroupDescription: ''
-<<<<<<< HEAD
-      title: ''
-      description: ''
-      authenticated: true
-=======
       title: 'Remove the specified resource from storage.'
       description: ''
       authenticated: true
       deprecated: false
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
       Content-Type: application/json
       Accept: application/json
-<<<<<<< HEAD
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - POST
-    uri: api/vtu/airtime/topup
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - POST
-    uri: api/vtu/data/purchase
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - POST
-    uri: api/vtu/cable
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-    queryParameters: []
-    cleanQueryParameters: []
-    bodyParameters: []
-    cleanBodyParameters: []
-    fileParameters: []
-    responses: []
-    responseFields: []
-    auth:
-      - headers
-      - Authorization
-      - 'Bearer 1'
-    controller: null
-    method: null
-    route: null
-    custom: []
-  -
-    httpMethods:
-      - POST
-    uri: api/vtu/electricity
-    metadata:
-      groupName: Endpoints
-      groupDescription: ''
-      subgroup: ''
-      subgroupDescription: ''
-      title: ''
-      description: ''
-      authenticated: true
-      custom: []
-    headers:
-      Authorization: 'Bearer {YOUR_AUTH_KEY}'
-      Content-Type: application/json
-      Accept: application/json
-    urlParameters: []
-    cleanUrlParameters: []
-=======
     urlParameters:
       id:
         name: id
@@ -1267,7 +495,6 @@ endpoints:
         custom: []
     cleanUrlParameters:
       id: consequatur
->>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     queryParameters: []
     cleanQueryParameters: []
     bodyParameters: []

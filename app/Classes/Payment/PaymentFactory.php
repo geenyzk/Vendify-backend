@@ -1,13 +1,15 @@
 <?php
 
-namespace App\Classes\Payment;
+namespace App\Class\Payment;
 
-use App\Classes\Payment\Provider\FlutterWave;
-use App\Classes\Payment\Provider\Monnify;
-use App\Classes\Payment\Provider\PaymentPoint;
+use App\Class\Payment\Provider\FlutterWave;
+use App\Class\Payment\Provider\Monnify;
+
+use App\Class\Payment\Provider\PaymentPoint;
 
 
 use App\Models\Provider;
+use Illuminate\Support\Facades\Log;
 
 class PaymentFactory
 {
@@ -19,13 +21,11 @@ class PaymentFactory
         //
     }
     static function make(Provider $provider){
-        $providerName = strtolower(trim((string) $provider->name));
-
-        return match($providerName){
+        Log::info($provider->name);
+        return match($provider->name){
             "flutterwave" => new FlutterWave($provider),
             "monnify" => new Monnify($provider),
-            "payment point", "paymentpoint" => new PaymentPoint($provider),
-            default => throw new \InvalidArgumentException("Unsupported payment provider: {$provider->name}"),
+            "payment point" => new PaymentPoint($provider),
         };
     }
 }

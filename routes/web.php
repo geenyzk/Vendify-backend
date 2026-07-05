@@ -1,59 +1,31 @@
 <?php
 
-use App\Http\Controllers\AdminController;
-use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\CustomerController;
-use App\Http\Controllers\ServiceControlController;
-use App\Http\Controllers\TransactionController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\VTUServicesController;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
-Route::get("/", function(){
-    return view("welcome");
+Route::get('/', function () {
+    return view('scribe.index');
 });
 
-Route::middleware(['auth:sanctum'])->group(function () {
-    // Route::get("/user", [AuthenticatedSessionController::class, 'index']);
-    // SPA clients should POST to /logout, but we accept GET too for browser hits.
-    Route::match(['get', 'post'], "/logout", [AuthenticatedSessionController::class, 'destroy']);
-    Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
-    Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
-    Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
-    Route::get('/transactions/report', [TransactionController::class, 'report']);
+Route::get('/docs.postman', function () {
+    abort_unless(Storage::disk('local')->exists('scribe/collection.json'), 404);
 
+    return Response::download(storage_path('app/scribe/collection.json'));
+})->name('scribe.postman');
 
-    Route::prefix("customer")->group(function(){
+Route::get('/docs.openapi', function () {
+    abort_unless(Storage::disk('local')->exists('scribe/openapi.yaml'), 404);
 
-        Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
-        Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);
-    });
+    return Response::file(storage_path('app/scribe/openapi.yaml'), [
+        'Content-Type' => 'application/yaml',
+    ]);
+})->name('scribe.openapi');
 
-
-
-    Route::prefix("admin")->group(function () {
-        Route::resource('users', UserController::class)
-            ->withoutMiddleware('auth:sanctum')
-            ->only(['store']);
-
-        Route::resource('users', UserController::class)
-            ->only(['show', 'update', 'destroy', 'index']);
-
-        Route::resource('controls', ServiceControlController::class);
-
-        Route::get('/stats', [AdminController::class, 'stats']);
-        Route::post('/broadcast', [AdminController::class, 'broadcast']);
-        Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
-
-        Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
-
-        Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
-    });
-
-
-    Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
+Route::get('/cache', function () {
+    return Cache::flush();
 });
 
 require __DIR__.'/auth.php';
 require __DIR__.'/admin.php';
-

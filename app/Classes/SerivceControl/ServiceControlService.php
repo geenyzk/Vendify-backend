@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Classes\SerivceControl;
+namespace App\Class\SerivceControl;
 
 use App\Models\ServiceControl;
 use App\Models\User;

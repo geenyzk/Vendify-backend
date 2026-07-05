@@ -15,6 +15,8 @@ class StockVendingSeeder extends Seeder
     public function run(): void
     {
 
-         StockVending::create([]);
+         StockVending::create([
+
+         ]);
     }
 }

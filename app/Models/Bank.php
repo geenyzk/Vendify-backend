@@ -15,7 +15,6 @@ class Bank extends Model
         'user_id',
         'account_type',
         'bank_account',
-        'account_name',
         'bank_name',
         'provider',
         'status',
@@ -31,6 +30,6 @@ class Bank extends Model
 
     function getChargeAttribute(){
         $provider = Provider::whereName($this->provider)->first(['charge_fee', 'charge_type']);
-        return $provider?->charge_type == 'fiat' ?"NGN" . $provider->charge_fee :$provider?->charge_fee ?? "0.00" ."%";
+        return $provider->charge_type == 'fiat' ?"NGN" . $provider->charge_fee :$provider->charge_fee ."%";
     }
 }

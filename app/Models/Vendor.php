@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Classes\Vendor\VendorFactory;
+use App\Class\Vendor\VendorFactory;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -13,23 +13,7 @@ class Vendor extends Model
     //
     protected $table = 'providers';
 
-    protected $appends = ['connection', 'balance', 'webhook'];
-
-    protected $fillable = [
-        'name', 'base_url', 'username', 'password', 'api_key',
-        'auth_type', 'identifier', 'category', 'sub_category',
-        'charge_fee', 'charge_type', 'webhook_access', 'active',
-        'auto_fund_enabled', 'auto_fund_threshold', 'auto_fund_amount',
-        'account_number', 'account_name', 'bank_code', 'bank_name',
-        'funding_provider_id',
-    ];
-
-    protected $casts = [
-        'auto_fund_enabled'  => 'boolean',
-        'auto_fund_threshold' => 'float',
-        'auto_fund_amount'   => 'float',
-        'active'             => 'boolean',
-    ];
+    protected $appends = ['connection', 'balance', "webhook"];
 
     protected static function booted()
     {
@@ -53,17 +37,16 @@ class Vendor extends Model
 
     public function getConnectionAttribute()
     {
-        $key = md5($this->base_url . $this->username . $this->password."-123");
+        $key = md5($this->base_url . $this->username . $this->password." connect");
         $provider = VendorFactory::make($this);
-        return Cache::remember($key, now()->addMinutes(5), function() use($provider) {
+        return Cache::remember($key, now()->addMinutes(60), function() use($provider) {
             return $provider->isHealthy();
         });
     }
 
     public function getBalanceAttribute()
     {
-        $key = md5($this->base_url . $this->username . $this->password ."_balance");
-        Log:info(["key" => $key]);
+        $key = md5($this->base_url . $this->username . $this->password ." balance");
         $provider = VendorFactory::make($this);
         return Cache::remember($key, now()->addMinutes(60), function() use($provider) {
             return $provider->checkBalance();
@@ -87,31 +70,6 @@ class Vendor extends Model
 
     function getWebhookAttribute(){
         return $this->identifier ?url("/api/webhook/" . $this->sub_category ."/" . $this->identifier): '';
-    }
-
-    public function fundingProvider()
-    {
-        return $this->belongsTo(Provider::class, 'funding_provider_id');
-    }
-
-    public function vendorFundings()
-    {
-        return $this->hasMany(VendorFunding::class, 'vendor_id');
-    }
-
-    public function networkServices()
-    {
-        return $this->hasMany(NetworkType::class, 'provider_id');
-    }
-
-    /**
-     * Data plans supplied by this vendor (same table as providers)
-     */
-    public function dataPlans()
-    {
-        return $this->morphedByMany(DataPlan::class, 'providerable', 'providerables', 'provider_id', 'providerable_id')
-            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id'])
-            ->withTimestamps();
     }
 }
 

@@ -15,7 +15,7 @@ return new class extends Migration
     $table->id();
     $table->timestamps();
     $table->string('name');
-    $table->enum('type', ['airtime','exam','airtimeToCash','user_upgrade','bulksms','airtimePin','electricity', 'airtime2cash'])->nullable();
+    $table->enum('type', ['airtime','exam','airtimeToCash','user_upgrade','bulksms','airtimePin','electricity'])->nullable();
     $table->string('category')->nullable();
     $table->decimal('user_discount', 10, 2);
     $table->decimal('bonanza_discount', 10, 2)->nullable();

@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Classes\Vendor\Providers;
+namespace App\Class\Vendor\Providers;
 
 
-use App\Classes\Vendor\VendorBase;
+use App\Class\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
@@ -22,26 +22,21 @@ class Adex extends VendorBase
 
     function sendRequest(string $service, array $payload): array
     {
-        Log::info($payload);
         $response = Http::withHeaders($this->getAuthHeaders())
         ->post($this->buildEndpoint($service), $payload)->json();
-
-        Log::info($response);
         return $response;
     }
 
     public function checkBalance(): string
     {
-        try {
-            $res = $this->login();
-             $cleaned = preg_replace('/[^\d.]/', '', $res['balance']);
-            return (float) $cleaned;
-        } catch (\Throwable $th) {
-            // Log the exception if needed: error_log($th->getMessage());
-            return 0;
-        }
+       try {
+         $res = $this->login();
+        return (float) $res['balance'] ?? "0.00";
+       } catch (\Throwable $th) {
+        //throw $th;
+        return (float) 0;
+       }
     }
-
 
      public function verifyTransaction(string $tx_ref): array
     {
@@ -68,8 +63,8 @@ class Adex extends VendorBase
 
      function login(): array
     {
-        $key = md5($this->baseUrl() . $this->provider->username . $this->provider->password);
-        return Cache::remember($key, now()->addMinutes(5), function (){
+        $key = md5($this->provider->baseUrl . $this->provider->username . $this->provider->password);
+        return Cache::remember($key, now()->addDay(), function (){
                 try {
                     $response = Http::withHeaders([
                         'Authorization' => 'Basic ' . base64_encode(
@@ -121,8 +116,7 @@ class Adex extends VendorBase
             default => throw new \InvalidArgumentException("No endpoint mapped for service [$service]")
             };
     }
-    
-    protected function buildEndpoint(string $service): string
+     protected function buildEndpoint(string $service): string
     {
         return $this->baseUrl() . $this->endpoint($service);
     }
@@ -365,8 +359,6 @@ class Adex extends VendorBase
         } elseif ($service == 'electricity') {
             $disco = Discount::getElectricity($payload['disco']);
             $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
-            Log::info($disco);
-            Log::info($discoId);
             $meterType = $options['meter_type'] ?? 'prepaid';
             if (!$discoId) {
             return $this->fail([], "Service type not given");
@@ -377,24 +369,20 @@ class Adex extends VendorBase
         }
 
         try {
-
             $response = Http::get($url);
-            Log::info(["response: " => $response]);
 
             if ($response->ok() && $response->json('status') === 'success') {
                 return $this->success(['name' => $response->json('name')], ucfirst($service) . ' verification successful.', 201);
             }
             return $this->fail([], $response->json('message') ?? 'Verification failed.');
         } catch (\Exception $e) {
-            Log::info(["ERROR: " => $e]);
             return $this->fail([], $e->getMessage());
         }
     }
 
     protected function getPlans(?array $payload = null): JsonResponse
     {
-        $adminController = new AdminController();
-        return $adminController->universalGet($payload['request'], $payload['table']);
+        return  AdminController::universalGet($payload['request'], $payload['table']);
     }
 
     function callback(Request $request): array

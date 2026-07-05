@@ -3,14 +3,12 @@
 // use Knuckles\Scribe\Extracting\Strategies;
 // use Knuckles\Scribe\Config\Defaults;
 // use Knuckles\Scribe\Config\AuthIn;
-
 use function Knuckles\Scribe\Config\{removeStrategies, configureStrategy};
 
 // Only the most common configs are shown. See the https://scribe.knuckles.wtf/laravel/reference/config for all.
 
 return [
     // The HTML <title> for the generated documentation.
-
     'title' => config('app.name') . ' API Documentation',
 
     // A short description of your API. Will be included in the docs webpage, Postman collection and OpenAPI spec.
@@ -23,7 +21,6 @@ return [
         <aside>As you scroll, you'll see code examples for working with the API in different programming languages in the dark area to the right (or as part of the content on mobile).
         You can switch the language used with the tabs at the top right (or from the nav menu at the top left on mobile).</aside>
     INTRO,
-
 
     // The base URL displayed in the docs.
     // If you're using `laravel` type, you can set this to a dynamic string, like '{{ config("app.tenant_url") }}' to get a dynamic base URL.
@@ -110,7 +107,6 @@ return [
 
         // Set this to true if your API should be authenticated by default. If so, you must also set `enabled` (above) to true.
         // You can then use @unauthenticated or @authenticated on individual endpoints to change their status from the default.
-
         'default' => false,
 
         // Where is the auth value meant to be sent in a request?
@@ -121,27 +117,15 @@ return [
 
         // The value of the parameter to be used by Scribe to authenticate response calls.
         // This will NOT be included in the generated documentation. If empty, Scribe will use a random value.
-
-        'use_value' => true,
+        'use_value' => env('SCRIBE_AUTH_KEY'),
 
         // Placeholder your users will see for the auth parameter in the example requests.
         // Set this to null if you want Scribe to use a random value as placeholder instead.
         'placeholder' => '{YOUR_AUTH_KEY}',
 
-        'value' => 'Bearer 1|example-sample-sanctum-token',
-
         // Any extra authentication-related info for your users. Markdown and HTML are supported.
         'extra_info' => 'You can retrieve your token by visiting your dashboard and clicking <b>Generate API token</b>.',
     ],
-
-
-    // Text to place in the "Introduction" section, right after the `description`. Markdown and HTML are supported.
-    'intro_text' => <<<INTRO
-        This documentation aims to provide all the information you need to work with our API.
-
-        <aside>As you scroll, you'll see code examples for working with the API in different programming languages in the dark area to the right (or as part of the content on mobile).
-        You can switch the language used with the tabs at the top right (or from the nav menu at the top left on mobile).</aside>
-    INTRO,
 
     // Example requests for each endpoint will be shown in each of these languages.
     // Supported options are: bash, javascript, php, python
@@ -158,7 +142,6 @@ return [
     // Setting `laravel.add_routes` to true (above) will also add a route for the collection.
     'postman' => [
         'enabled' => true,
-
 
         'overrides' => [
             // 'info.version' => '2.0.0',
@@ -222,7 +205,6 @@ return [
     // The strategies Scribe will use to extract information about your routes at each stage.
     // Use configureStrategy() to specify settings for a strategy in the list.
     // Use removeStrategies() to remove an included strategy.
-
     'strategies' => [],
 
     // For response calls, API resource responses and transformer responses,

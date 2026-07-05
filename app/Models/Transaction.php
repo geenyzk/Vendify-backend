@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use App\Models\Promotion;
 
 class Transaction extends Model
 {
@@ -15,23 +14,15 @@ class Transaction extends Model
         'user_id', 'transaction_type', 'provider', 'account_or_phone', 'amount',
         'quantity', 'status', 'transaction_reference', 'payment_reference',
         'funding_method', 'balance_before', 'balance_after', 'completed_at',
-        'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token',
-        'promotion_id', 'discount_amount',
+        'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token'
     ];
 
-    /**
-     * Get the promotion associated with this transaction.
-     */
-    public function promotion()
-    {
-        return $this->belongsTo(Promotion::class, 'promotion_id');
-    }
 
     public static function generateTransactionId(): string
     {
         return strtoupper('TXN-' . now()->format('YmdHis') . '-' . Str::random(6));
     }
-
+    
     public static function calculateSummary(Carbon $startDate, Carbon $endDate, ?int $userId = null): array
     {
         $allTypes = [

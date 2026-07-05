@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Classes\Payment;
+namespace App\Class\Payment;
 
-use App\Classes\Payment\Interface\PaymentInterface;
+use App\Class\Payment\Interface\PaymentInterface;
 use App\Models\Bank;
 use App\Models\Provider;
 use App\Models\Transaction;
@@ -37,7 +37,9 @@ abstract class PaymentBase implements PaymentInterface
                 ->first();
             if (!$existing) {
                 Bank::create($response);
-
+                Log::info("Virtual account saved successfully for user {$user->id}.");
+            } else {
+                Log::info("User {$user->id} already has a virtual account with {$response['bank_name']}.");
             }
         } catch (\Throwable $th) {
             //throw $th;
@@ -76,34 +78,12 @@ abstract class PaymentBase implements PaymentInterface
     }
 
 
-    /**
-     * Initiate a bank transfer to a vendor's account.
-     * Payment gateways that support outbound transfers must override this.
-     *
-     * @param  array{account_bank: string, account_number: string, amount: float, narration: string, reference: string}  $payload
-     * @return array{status: string, message: string, data: array}
-     */
-    public function transfer(array $payload): array
-    {
-        throw new \RuntimeException(class_basename($this) . ' does not support outbound transfers.');
-    }
-
-    /**
-     * Fetch the list of banks supported by this gateway for outbound transfers.
-     * Payment gateways that support bank lookups must override this.
-     *
-     * @return array<int, array{code: string, name: string}>
-     */
-    public function getBanks(): array
-    {
-        throw new \RuntimeException(class_basename($this) . ' does not support fetching banks.');
-    }
-
     protected function creditedAmount($amount)
     {
         $amount = floatval($amount);
 
         $v = Provider::whereName($this->providerName)->first(["charge_fee", "charge_type"]);
+        Log::info(["provider" => $v]);
         if (!$v) {
             return $amount; // fallback if provider not found
         }
