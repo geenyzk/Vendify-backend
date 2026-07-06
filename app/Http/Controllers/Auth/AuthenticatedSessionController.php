@@ -48,11 +48,14 @@ class AuthenticatedSessionController extends Controller
         try {
             $request->authenticate();
             $user = Auth::user();
-            // $token = $user->createToken($user->username)->plainTextToken;
+            $token = $user->createToken($user->username)->plainTextToken;
             Payment::generateAccount($user);
             $user->loginStamp();
             $user->role = $user->user_type;
-            return $this->redirect($user->user_type !== "admin" ?"/customer" :'/admin');
+            return $this->success([
+                'user' => $user->load('role.permissions'),
+                'token' => $token,
+            ]);
         } catch (ValidationException $e) {
             error_log($e);
             return $this->fail($e->errors(), "Validation Error", 422);
@@ -103,4 +106,3 @@ class AuthenticatedSessionController extends Controller
         return $this->success(null, 'Logged out');
     }
 }
-
