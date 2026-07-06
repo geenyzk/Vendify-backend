@@ -23,7 +23,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'referral_code', 'referred_by', 'last_login_at', 'email_verified_at',
     ];
 
-    protected $appends  = ["transactions", "banks", "stats", "referrals", "joined_at", "badges"];
+    protected $appends  = ["transactions", "banks", "stats", "referrals", "joined_at", "badges", "has_pin"];
     protected $hidden = [
         'password',
         'pin',
@@ -57,6 +57,16 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getReferralsAttribute()
     {
         return User::whereReferredBy($this->id)->get();
+    }
+
+    /**
+     * Whether a transaction PIN has been set — safe to expose even though
+     * the hashed `pin` column itself stays hidden, so the frontend can force
+     * new/existing users without one into the PIN-setup flow.
+     */
+    public function getHasPinAttribute(): bool
+    {
+        return !is_null($this->pin);
     }
 
     /**
