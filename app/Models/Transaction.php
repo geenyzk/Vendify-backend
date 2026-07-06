@@ -14,9 +14,29 @@ class Transaction extends Model
         'user_id', 'transaction_type', 'provider', 'account_or_phone', 'amount',
         'quantity', 'status', 'transaction_reference', 'payment_reference',
         'funding_method', 'balance_before', 'balance_after', 'completed_at',
-        'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token'
+        'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token',
+        'discount_amount', 'related_reference',
     ];
 
+    // Transaction types where the wallet was actually charged, and a
+    // refund can therefore credit money back. Funding types move money
+    // in, not out, so "refunding" one makes no sense here.
+    // wallet_withdrawal is included (a single-user debit, same shape as the
+    // rest) — wallet_transfer_out/_in are deliberately excluded, since
+    // crediting one side back here wouldn't reverse the other side of the
+    // pair and would create/destroy money.
+    public const REFUNDABLE_TYPES = [
+        'airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill',
+        'exam', 'betting_funding', 'airtime_pin', 'data_pin', 'bulksms', 'wallet_withdrawal',
+    ];
+
+    /**
+     * Get the user who owns this transaction.
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
 
     public static function generateTransactionId(): string
     {

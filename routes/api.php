@@ -173,8 +173,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);
         Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'myRequests']);
         Route::post('/airtime-to-cash', [AirtimeToCashController::class, 'submit']);
+
+        // Wallet-to-wallet — instant, PIN-gated, no admin review (an
+        // internal ledger move, no real money leaves the platform).
         Route::get('/wallet-transfer/lookup', [WalletTransferController::class, 'lookup']);
         Route::post('/wallet-transfer', [WalletTransferController::class, 'send']);
+
+        // Wallet-to-bank — real money leaves the platform, so it's reserved
+        // (debited) on submit and only actually paid out once approved (see
+        // Setting::wallet_withdrawal_auto_approve / WalletWithdrawalController).
         Route::get('/wallet-withdrawals/banks', [WalletWithdrawalController::class, 'banks']);
         Route::get('/wallet-withdrawals', [WalletWithdrawalController::class, 'myRequests']);
         Route::post('/wallet-withdrawals', [WalletWithdrawalController::class, 'submit']);
@@ -214,6 +221,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::middleware('permission:wallets')->group(function () {
             Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
+
             Route::get('/wallet-withdrawals', [WalletWithdrawalController::class, 'adminIndex']);
             Route::post('/wallet-withdrawals/{withdrawal}/approve', [WalletWithdrawalController::class, 'approve']);
             Route::post('/wallet-withdrawals/{withdrawal}/reject', [WalletWithdrawalController::class, 'reject']);

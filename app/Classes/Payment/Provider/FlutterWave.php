@@ -104,11 +104,66 @@ class FlutterWave extends PaymentBase
     }
 
 
-    // Parsing only — no wallet credit / no $user->save() here. Centralized
-    // in PaymentBase::webhook() so it happens exactly once, only after
-    // signature verification + idempotency checks pass. This used to
-    // credit the wallet unconditionally right here, before the
-    // success/fail status below was even evaluated.
+    /**
+     * Push funds to a vendor's bank account via Flutterwave Transfers API.
+     */
+    public function transfer(array $payload): array
+    {
+        try {
+            $response = Http::withHeaders($this->getHeaders())
+                ->post($this->provider->base_url . '/transfers', [
+                    'account_bank'    => $payload['account_bank'],
+                    'account_number'  => $payload['account_number'],
+                    'amount'          => $payload['amount'],
+                    'narration'       => $payload['narration'],
+                    'currency'        => 'NGN',
+                    'reference'       => $payload['reference'],
+                    'debit_currency'  => 'NGN',
+                ]);
+
+            $body = $response->json();
+
+            Log::info('Flutterwave vendor transfer initiated', [
+                'reference' => $payload['reference'],
+                'response'  => $body,
+            ]);
+
+            return [
+                'status'  => ($body['status'] ?? '') === 'success' ? 'success' : 'failed',
+                'message' => $body['message'] ?? 'Unknown response',
+                'data'    => $body['data'] ?? [],
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Flutterwave transfer failed', ['error' => $e->getMessage()]);
+            return ['status' => 'failed', 'message' => $e->getMessage(), 'data' => []];
+        }
+    }
+
+    /**
+     * Fetch the list of Nigerian banks supported by Flutterwave for transfers.
+     */
+    public function getBanks(): array
+    {
+        try {
+            $response = Http::withHeaders($this->getHeaders())
+                ->get($this->provider->base_url . '/banks/NG');
+
+            if ($response->successful()) {
+                $banks = $response->json('data') ?? [];
+                return collect($banks)->map(fn($bank) => [
+                    'code' => $bank['code'],
+                    'name' => $bank['name'],
+                ])->values()->all();
+            }
+
+            Log::error('Flutterwave: failed to fetch banks', ['error' => $response->body()]);
+            return [];
+        } catch (\Throwable $e) {
+            Log::error('Flutterwave: getBanks exception', ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
     protected function callback(HttpRequest $request): array
     {
         $payload = $request->all();

@@ -4,16 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Discount;
 use App\Models\Role;
-<<<<<<< HEAD
-=======
 use App\Models\Setting;
 use App\Models\Transaction;
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class CustomerController extends Controller
 {
@@ -169,8 +167,6 @@ class CustomerController extends Controller
             'user' => $user,
         ]);
     }
-<<<<<<< HEAD
-=======
 
     /**
      * List the account tiers (roles) a user can upgrade to, with their cost.
@@ -289,5 +285,4 @@ class CustomerController extends Controller
             ]
         ]);
     }
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 }

@@ -1,8 +1,9 @@
 <?php
 
-namespace App\Class;
+namespace App\Classes;
 
 use App\Jobs\SendTransactionCallback;
+use App\Models\Setting;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\AppNotification;
@@ -36,38 +37,22 @@ class TransactionService
             ]);
             $transaction = Transaction::create($tx_data);
 
-<<<<<<< HEAD
-            // Optional: Commission distribution
-            self::distributeCommission($user, $amount, $transactionType);
-=======
-            // Cashback: a flat, per-service-type wallet credit — replaces
-            // the old per-role Discount pricing. Only on success, and keyed
-            // off the same transaction_type stored on the row above (e.g.
-            // 'airtime_recharge'), not the Discount model's own "type".
+            // Referral commission — only on a transaction that actually
+            // went through (previously fired unconditionally, so a
+            // failed purchase still paid the referrer).
             if ($apiData['status'] === 'success') {
-                // Referral commission — only on a transaction that actually
-                // went through (previously fired unconditionally, so a
-                // failed purchase still paid the referrer).
-                self::distributeCommission($user, $finalAmount, $transactionType);
-
-                self::creditCashback($user, $finalAmount, $transactionType);
-
-                // Event rewards keyed off purchase/funding volume — computed
-                // fresh from Transaction data each time, so this is safe to
-                // call on every successful transaction (see EventService).
-                EventService::checkAndAward($user);
+                self::distributeCommission($user, $amount, $transactionType);
             }
 
             AdminNotifier::notifyTransaction($transaction);
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 
             $label = ucwords(str_replace('_', ' ', $transactionType));
             $user->notify(new AppNotification(
                 $apiData['status'] === 'success' ? 'transaction_success' : 'transaction_failed',
                 $apiData['status'] === 'success' ? "{$label} successful" : "{$label} failed",
                 $apiData['status'] === 'success'
-                    ? "Your {$label} purchase of ₦{$finalAmount} was successful. Ref: {$transaction->transaction_reference}"
-                    : "Your {$label} purchase of ₦{$finalAmount} could not be completed.",
+                    ? "Your {$label} purchase of ₦{$amount} was successful. Ref: {$transaction->transaction_reference}"
+                    : "Your {$label} purchase of ₦{$amount} could not be completed.",
             ));
 
             SendTransactionCallback::dispatch($user, $transaction);
@@ -88,16 +73,12 @@ class TransactionService
 
     protected static function distributeCommission(User $user, float $amount, string $transactionType): void
     {
-        // Implement your logic here. Example:
-        if ($user->referrer_id) {
-            $referrer = User::find($user->referrer_id);
-            $commission = round($amount * 0.02, 2); // 2% commission
-            $referrer->wallet_balance += $commission;
-            $referrer->save();
+        if ($user->referred_by) {
+            $referrer = User::find($user->referred_by);
+            if (!$referrer) {
+                return;
+            }
 
-<<<<<<< HEAD
-            // Optionally log it or create a commission record
-=======
             $rate = floatval(Setting::first()?->referral_commission_rate ?? 2.00);
             $commission = round($amount * ($rate / 100), 2);
             if ($commission <= 0) {
@@ -117,13 +98,21 @@ class TransactionService
                 'Referral commission earned',
                 "You earned ₦{$commission} from @{$user->username}'s purchase — added to your referral balance.",
             ));
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
         }
     }
 
-    public static function fundUser(User $user, float $amount, string $type = 'credit'): array
+    public static function fundUser(
+        User $user,
+        float $amount,
+        string $type = 'credit',
+        ?string $note = null,
+        string $transactionType = 'manual_funding',
+        string $provider = 'admin',
+        ?string $receiver = null,
+        ?string $relatedReference = null,
+    ): array
 {
-    return DB::transaction(function () use ($user, $amount, $type) {
+    return DB::transaction(function () use ($user, $amount, $type, $note, $transactionType, $provider, $receiver, $relatedReference) {
         $balanceBefore = $user->wallet_balance;
 
         if ($type === 'credit') {
@@ -141,18 +130,20 @@ class TransactionService
 
         $transaction = Transaction::create([
             'user_id' => $user->id,
-            'transaction_type' => 'manual_funding',
-            'provider' => 'admin',
+            'transaction_type' => $transactionType,
+            'provider' => $provider,
             'account_or_phone' => $user->phone,
             'amount' => $amount,
             "plan_type" => $type,
             'status' => 'success',
             'transaction_reference' => self::generateTransactionReference(),
+            'related_reference' => $relatedReference,
             'funding_method' => "manual",
             'balance_before' => $balanceBefore,
             'balance_after' => $balanceAfter,
-            'response_message' => ucfirst($type) . ' by admin',
+            'response_message' => $note ?? (ucfirst($type) . ' by admin'),
             'platform' => 'web',
+            "receiver" => $receiver ?? $user->username,
         ]);
 
         return $transaction->toArray();

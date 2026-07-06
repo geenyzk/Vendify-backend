@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Class\ChildSync;
+namespace App\Classes\ChildSync;
 
 use App\Models\ChildInstance;
 use Illuminate\Http\Request;

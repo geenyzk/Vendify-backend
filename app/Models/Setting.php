@@ -6,9 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 
 class Setting extends Model
 {
-<<<<<<< HEAD
-    //
-=======
     protected $fillable = [
         'referral_commission_rate',
         'invoice_prefix', 'invoice_suffix',
@@ -51,5 +48,4 @@ class Setting extends Model
     // from any accidental non-admin serialization path, expose explicitly
     // only via the admin settings resource/service instead.
     protected $hidden = ['mail_password'];
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 }

@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Class\TemplateParser;
-use App\Class\TransactionService;
-use App\Class\Vendor\VendorFactory;
+use App\Classes\TemplateParser;
+use App\Classes\TransactionService;
+use App\Classes\Vendor\VendorFactory;
 use App\Models\Discount;
 use App\Models\General;
 use App\Models\Provider;
@@ -383,7 +383,6 @@ class AdminController extends Controller
         return $this->success(['secret' => $instance->shared_secret]);
     }
 
-<<<<<<< HEAD
     function regenerateChildInstanceSecret(string $id)
     {
         $instance = \App\Models\ChildInstance::find($id);
@@ -501,6 +500,4 @@ class AdminController extends Controller
     }
 
     }
-=======
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 }
