@@ -2,6 +2,17 @@
 
 namespace App\Models;
 
+<<<<<<< HEAD
+=======
+use Carbon\Carbon;
+use App\Models\Transaction;
+use App\Traits\HasRole;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -11,9 +22,16 @@ class User extends Authenticatable
     use HasApiTokens, Notifiable;
 
     protected $fillable = [
+<<<<<<< HEAD
         'username', 'fullname', 'email', 'phone', 'password', 'status',
         'user_type', 'role_id', 'wallet_balance', 'is_active', 'is_verified',
         'referral_code', 'referred_by', 'last_login_at',
+=======
+        'username', 'fullname', 'email', 'phone', 'password', 'pin',
+        'user_type', 'role_id', 'wallet_balance', 'is_active', 'is_verified', 'status',
+        'referral_code', 'referred_by', 'last_login_at', 'email_verified_at',
+        'referral_balance', 'total_referral_earnings',
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
     ];
 
     protected $appends  = ["transactions", "banks", "stats", "referrals"];
@@ -24,11 +42,38 @@ class User extends Authenticatable
 
     protected $casts = [
         'wallet_balance' => 'decimal:2',
+        'referral_balance' => 'decimal:2',
+        'total_referral_earnings' => 'decimal:2',
         'is_active' => 'boolean',
         'is_verified' => 'boolean',
         'last_login_at' => 'datetime',
     ];
 
+<<<<<<< HEAD
+=======
+    protected static function booted(): void
+    {
+        static::creating(function (User $user) {
+            if (empty($user->referral_code)) {
+                $user->referral_code = self::generateUniqueReferralCode();
+            }
+        });
+    }
+
+    public static function generateUniqueReferralCode(): string
+    {
+        do {
+            $code = strtoupper(Str::random(8));
+        } while (static::where('referral_code', $code)->exists());
+
+        return $code;
+    }
+
+    // User status constants
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_BANNED = 'banned';
+    public const STATUS_SUSPENDED = 'suspended';
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 
 
     public function getReferralsAttribute()
@@ -36,6 +81,39 @@ class User extends Authenticatable
         return User::whereReferredBy($this->id)->get();
     }
 
+<<<<<<< HEAD
+=======
+    /**
+     * Queryable version of the same relationship as getReferralsAttribute()
+     * (kept alongside it rather than replacing it — a relation method and an
+     * accessor of the same name don't conflict: `$user->referrals` still
+     * hits the accessor, `$user->referrals()` builds a query). Used to
+     * compute referral stats without loading every referral eagerly.
+     */
+    public function referrals(): HasMany
+    {
+        return $this->hasMany(User::class, 'referred_by');
+    }
+
+    /**
+     * Queryable counterpart to getTransactionsAttribute() — same
+     * coexistence rule as referrals()/getReferralsAttribute() above.
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class, 'user_id');
+    }
+
+    /**
+     * Whether a transaction PIN has been set — safe to expose even though
+     * the hashed `pin` column itself stays hidden, so the frontend can force
+     * new/existing users without one into the PIN-setup flow.
+     */
+    public function getHasPinAttribute(): bool
+    {
+        return !is_null($this->pin);
+    }
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 
     function getTransactionsAttribute(){
         return Transaction::where("user_id", $this->id)->get();

@@ -4,6 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Discount;
 use App\Models\Role;
+<<<<<<< HEAD
+=======
+use App\Models\Setting;
+use App\Models\Transaction;
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -164,4 +169,125 @@ class CustomerController extends Controller
             'user' => $user,
         ]);
     }
+<<<<<<< HEAD
+=======
+
+    /**
+     * List the account tiers (roles) a user can upgrade to, with their cost.
+     *
+     * @group Customer
+     * @authenticated
+     */
+    public function upgradeTiers(Request $request)
+    {
+        $user = Auth::user();
+
+        $tiers = Role::where('upgradable', true)
+            ->where('is_active', true)
+            ->get(['id', 'name', 'slug', 'upgrade_cost'])
+            ->map(fn ($r) => [
+                'id' => $r->id,
+                'name' => $r->name,
+                'slug' => $r->slug,
+                'cost' => (float) $r->upgrade_cost,
+            ]);
+
+        return $this->success([
+            'current_tier' => $user->role?->slug ?? $user->user_type,
+            'current_tier_name' => $user->role?->name ?? ucfirst($user->user_type),
+            'tiers' => $tiers,
+        ]);
+    }
+
+    /**
+     * Referral program summary for the authenticated user — their own code,
+     * how many people they've referred, how many of those are still
+     * "pending" (never completed a successful transaction, so no commission
+     * has been earned from them yet), and their earnings. See
+     * TransactionService::distributeCommission() for how referral_balance /
+     * total_referral_earnings actually get credited.
+     *
+     * @group Customer
+     * @authenticated
+     */
+    public function referralStats(Request $request)
+    {
+        $user = Auth::user();
+
+        $totalReferrals = $user->referrals()->count();
+        $pendingReferrals = $user->referrals()
+            ->whereDoesntHave('transactions', fn ($q) => $q->where('status', 'success'))
+            ->count();
+
+        return $this->success([
+            'referral_code' => $user->referral_code,
+            'total_referrals' => $totalReferrals,
+            'pending_referrals' => $pendingReferrals,
+            'active_referrals' => $totalReferrals - $pendingReferrals,
+            'referral_balance' => (float) $user->referral_balance,
+            'total_earnings' => (float) $user->total_referral_earnings,
+            'commission_rate' => (float) (Setting::first()?->referral_commission_rate ?? 2.00),
+        ]);
+    }
+
+
+    /**
+     * Return monthly transaction status counts for the authenticated user.
+     *
+     * @group Customer
+     * @authenticated
+     */
+    public function stats(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return $this->fail([], 'Unauthenticated', 401);
+        }
+
+        $now = Carbon::now();
+
+        $baseQuery = Transaction::where('user_id', $user->id)
+            ->whereYear('created_at', $now->year)
+            ->whereMonth('created_at', $now->month);
+
+        // Build a simple 5-day transactions chart for this user
+        $days = collect();
+        for ($i = 4; $i >= 0; $i--) {
+            $days->push(Carbon::today()->subDays($i)->format('Y-m-d'));
+        }
+
+        $txData = Transaction::select(
+            DB::raw('DATE(created_at) as date'),
+            DB::raw('count(*) as total')
+        )
+            ->where('user_id', $user->id)
+            ->whereDate('created_at', '>=', $days->first())
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->orderBy('date')
+            ->get()
+            ->keyBy('date');
+
+        $labels = [];
+        $values = [];
+        foreach ($days as $day) {
+            $labels[] = Carbon::parse($day)->format('D');
+            $values[] = $txData[$day]->total ?? 0;
+        }
+
+        return $this->success([
+            'monthly_successful' => (clone $baseQuery)->where('status', 'success')->count(),
+            'monthly_pending' => (clone $baseQuery)->where('status', 'pending')->count(),
+            'tx_chart' => [
+                'labels' => $labels,
+                'datasets' => [
+                    [
+                        'label' => 'Transactions',
+                        'data' => $values,
+                        'backgroundColor' => '#36A2EB',
+                    ]
+                ]
+            ]
+        ]);
+    }
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 }

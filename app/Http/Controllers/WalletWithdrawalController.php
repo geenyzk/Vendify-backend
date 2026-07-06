@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\AdminNotifier;
 use App\Classes\Payment\PaymentFactory;
 use App\Classes\SerivceControl\ServiceControlService;
 use App\Classes\TransactionService;
@@ -9,6 +10,7 @@ use App\HttpResponse;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\WalletWithdrawal;
+use App\Notifications\AppNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -95,6 +97,8 @@ class WalletWithdrawalController extends Controller
         if ($settings?->wallet_withdrawal_auto_approve) {
             $this->processPayout($withdrawal);
             $withdrawal->refresh();
+        } else {
+            AdminNotifier::notifyWalletWithdrawalPending($withdrawal);
         }
 
         return $this->success($withdrawal, 'Withdrawal request submitted', 201);
@@ -155,6 +159,12 @@ class WalletWithdrawalController extends Controller
                 'reviewed_by' => Auth::id(),
                 'reviewed_at' => now(),
             ]);
+
+            $user->notify(new AppNotification(
+                'wallet_withdrawal_rejected',
+                'Withdrawal rejected',
+                "Your ₦{$withdrawal->amount} withdrawal was rejected and refunded: {$validated['reason']}",
+            ));
         });
 
         return $this->success($withdrawal->fresh(), 'Withdrawal rejected and wallet refunded');
@@ -194,6 +204,12 @@ class WalletWithdrawalController extends Controller
                 'status' => 'completed',
                 'gateway_reference' => $response['data']['reference'] ?? $response['data']['id'] ?? null,
             ]);
+
+            User::find($withdrawal->user_id)?->notify(new AppNotification(
+                'wallet_withdrawal_completed',
+                'Withdrawal sent',
+                "₦{$withdrawal->amount} was sent to your {$withdrawal->bank_name} account.",
+            ));
             return;
         }
 
@@ -219,6 +235,12 @@ class WalletWithdrawalController extends Controller
                 'status' => 'failed',
                 'rejection_reason' => $reason,
             ]);
+
+            $user->notify(new AppNotification(
+                'wallet_withdrawal_failed',
+                'Withdrawal failed',
+                "Your ₦{$withdrawal->amount} withdrawal could not be completed and has been refunded to your wallet.",
+            ));
         });
     }
 }

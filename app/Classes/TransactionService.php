@@ -5,6 +5,7 @@ namespace App\Class;
 use App\Jobs\SendTransactionCallback;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Notifications\AppNotification;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -35,8 +36,39 @@ class TransactionService
             ]);
             $transaction = Transaction::create($tx_data);
 
+<<<<<<< HEAD
             // Optional: Commission distribution
             self::distributeCommission($user, $amount, $transactionType);
+=======
+            // Cashback: a flat, per-service-type wallet credit — replaces
+            // the old per-role Discount pricing. Only on success, and keyed
+            // off the same transaction_type stored on the row above (e.g.
+            // 'airtime_recharge'), not the Discount model's own "type".
+            if ($apiData['status'] === 'success') {
+                // Referral commission — only on a transaction that actually
+                // went through (previously fired unconditionally, so a
+                // failed purchase still paid the referrer).
+                self::distributeCommission($user, $finalAmount, $transactionType);
+
+                self::creditCashback($user, $finalAmount, $transactionType);
+
+                // Event rewards keyed off purchase/funding volume — computed
+                // fresh from Transaction data each time, so this is safe to
+                // call on every successful transaction (see EventService).
+                EventService::checkAndAward($user);
+            }
+
+            AdminNotifier::notifyTransaction($transaction);
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
+
+            $label = ucwords(str_replace('_', ' ', $transactionType));
+            $user->notify(new AppNotification(
+                $apiData['status'] === 'success' ? 'transaction_success' : 'transaction_failed',
+                $apiData['status'] === 'success' ? "{$label} successful" : "{$label} failed",
+                $apiData['status'] === 'success'
+                    ? "Your {$label} purchase of ₦{$finalAmount} was successful. Ref: {$transaction->transaction_reference}"
+                    : "Your {$label} purchase of ₦{$finalAmount} could not be completed.",
+            ));
 
             SendTransactionCallback::dispatch($user, $transaction);
 
@@ -63,7 +95,29 @@ class TransactionService
             $referrer->wallet_balance += $commission;
             $referrer->save();
 
+<<<<<<< HEAD
             // Optionally log it or create a commission record
+=======
+            $rate = floatval(Setting::first()?->referral_commission_rate ?? 2.00);
+            $commission = round($amount * ($rate / 100), 2);
+            if ($commission <= 0) {
+                return;
+            }
+
+            // Credited to referral_balance (a separate, spendable-on-demand
+            // pot the user converts to wallet_balance themselves — see
+            // CustomerController::convertReferralToWallet), not
+            // wallet_balance directly. total_referral_earnings is a
+            // lifetime counter that never drains, unlike referral_balance.
+            $referrer->increment('referral_balance', $commission);
+            $referrer->increment('total_referral_earnings', $commission);
+
+            $referrer->notify(new AppNotification(
+                'referral_commission',
+                'Referral commission earned',
+                "You earned ₦{$commission} from @{$user->username}'s purchase — added to your referral balance.",
+            ));
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
         }
     }
 

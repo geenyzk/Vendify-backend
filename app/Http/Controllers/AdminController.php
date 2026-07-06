@@ -383,6 +383,7 @@ class AdminController extends Controller
         return $this->success(['secret' => $instance->shared_secret]);
     }
 
+<<<<<<< HEAD
     function regenerateChildInstanceSecret(string $id)
     {
         $instance = \App\Models\ChildInstance::find($id);
@@ -500,4 +501,6 @@ class AdminController extends Controller
     }
 
     }
+=======
+>>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 }
