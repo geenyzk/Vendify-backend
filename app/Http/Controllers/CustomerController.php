@@ -2,7 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Discount;
+use App\Classes\SerivceControl\ServiceControlService;
+use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -83,10 +84,10 @@ class CustomerController extends Controller
  *
  * @group Customer
  *
- * This endpoint allows an authenticated user to upgrade their account type (e.g., user, agent, bonanza, api).
- * The system checks for sufficient wallet balance, deducts the upgrade cost, and updates the user type.
+ * This endpoint allows an authenticated user to upgrade their account into
+ * any Role the admin has marked upgradable (Customers > Roles & Permissions).
  *
- * @bodyParam upgrade_to string required The user level to upgrade to. Must be one of: user, agent, bonanza, api. Example: agent
+ * @bodyParam upgrade_to string required The target role's slug. Example: agent
  *
  * @response 200 {
  *   "message": "Successfully upgraded your account to agent.",
@@ -112,7 +113,7 @@ class CustomerController extends Controller
  * }
  *
  * @response 404 {
- *   "error": "Discount info not found."
+ *   "error": "This role is not available for upgrade."
  * }
  *
  * @authenticated
@@ -125,42 +126,82 @@ class CustomerController extends Controller
         $user = Auth::user();
 
         $validator = Validator::make($request->all(), [
-            'upgrade_to' => 'required|string|in:user,agent,bonanza,api',
+            'upgrade_to' => 'required|string',
+            'pin' => 'required|string',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['error' => 'Invalid upgrade option'], 422);
         }
 
+        // This moves real money out of the wallet, same as any other
+        // purchase — require the transaction PIN like every other spend.
+        if (!ServiceControlService::verify($user->id, $request->input('pin'))) {
+            return response()->json(['error' => 'Invalid pin'], 422);
+        }
+
         $upgradeTo = $request->input('upgrade_to');
 
         // Check if user already at this level
-        if ($user->user_type === $upgradeTo) {
+        if ($user->role?->slug === $upgradeTo) {
             return response()->json(['error' => 'You are already at this user level.'], 400);
         }
 
-        // Reuses the Discount table under service_type "user_upgrade": the
-        // upgrade tier name lives in `network`, and the flat cost lives in
-        // `value` (expected discount_type "fixed").
-        $discount = Discount::where('service_type', 'user_upgrade')->where('network', $upgradeTo)->first();
-        if (!$discount) {
-            return response()->json(['error' => 'Discount info not found.'], 404);
+        // The admin marks which roles are self-upgradable, and at what cost,
+        // directly on the Role itself (Customers > Roles & Permissions) —
+        // no more separate, disconnected Discount(service_type=user_upgrade)
+        // rows duplicating the tier name as free text.
+        $role = Role::where('slug', $upgradeTo)->where('upgradable', true)->where('is_active', true)->first();
+        if (!$role) {
+            return response()->json(['error' => 'This role is not available for upgrade.'], 404);
         }
 
-        $cost = (float) $discount->value;
+        $cost = (float) $role->upgrade_cost;
 
         if ($user->wallet_balance < $cost) {
             return response()->json(['error' => 'Insufficient wallet balance. Please fund your wallet.'], 402);
         }
 
-        // Deduct the cost from the user's wallet
+        // Deduct the cost from the user's wallet and move them onto the new
+        // role — role_id is the real relationship (permissions, role.name
+        // shown in the UI); user_type is a legacy string kept in sync
+        // alongside it so both stay consistent.
         $user->wallet_balance -= $cost;
-        $user->user_type = $upgradeTo;
+        $user->role_id = $role->id;
+        $user->user_type = $role->slug;
         $user->save();
+        $user->setRelation('role', $role);
 
         return response()->json([
-            'message' => "Successfully upgraded your account to {$upgradeTo}.",
+            'message' => "Successfully upgraded your account to {$role->name}.",
             'user' => $user,
+        ]);
+    }
+
+    /**
+     * List the account tiers (roles) a user can upgrade to, with their cost.
+     *
+     * @group Customer
+     * @authenticated
+     */
+    public function upgradeTiers(Request $request)
+    {
+        $user = Auth::user();
+
+        $tiers = Role::where('upgradable', true)
+            ->where('is_active', true)
+            ->get(['id', 'name', 'slug', 'upgrade_cost'])
+            ->map(fn ($r) => [
+                'id' => $r->id,
+                'name' => $r->name,
+                'slug' => $r->slug,
+                'cost' => (float) $r->upgrade_cost,
+            ]);
+
+        return $this->success([
+            'current_tier' => $user->role?->slug ?? $user->user_type,
+            'current_tier_name' => $user->role?->name ?? ucfirst($user->user_type),
+            'tiers' => $tiers,
         ]);
     }
 

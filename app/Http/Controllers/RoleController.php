@@ -44,6 +44,8 @@ class RoleController extends Controller
             'slug' => 'required|string|unique:roles',
             'description' => 'nullable|string',
             'is_active' => 'boolean',
+            'upgradable' => 'boolean',
+            'upgrade_cost' => 'nullable|numeric|min:0|required_if:upgradable,true',
             'permission_ids' => 'array',
             'permission_ids.*' => 'exists:permissions,id',
         ]);
@@ -75,6 +77,8 @@ class RoleController extends Controller
             'slug' => 'string|unique:roles,slug,' . $id,
             'description' => 'nullable|string',
             'is_active' => 'boolean',
+            'upgradable' => 'boolean',
+            'upgrade_cost' => 'nullable|numeric|min:0|required_if:upgradable,true',
             'permission_ids' => 'array',
             'permission_ids.*' => 'exists:permissions,id',
         ]);

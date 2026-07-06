@@ -11,9 +11,13 @@ class CablePlan extends Model
     //
     use HasServers;
 
-    protected $appends = ["status", "price", "servers", "price_ngn"];
+    protected $appends = [
+        "status", "price", "servers", "price_ngn", "charge_fee_amount",
+        "provider", "use_provider_as_providerable",
+    ];
     protected $casts = [
-        "active" => "boolean"
+        "active" => "boolean",
+        "charge_fee" => "array",
     ];
 
     protected function getPriceNgnAttribute()
@@ -41,8 +45,7 @@ class CablePlan extends Model
 
 
      protected $fillable = [
-        'cable_network', 'plan_name', 'active', 'user_price', 'bonanza_price',
-        'agent_price', 'api_price',
+        'cable_network', 'plan_name', 'active', 'charge_fee',
         'adex_server_1', 'adex_server_2', 'adex_server_3', 'adex_server_4', 'adex_server_5',
         'spurs_server_1', 'spurs_server_2', 'spurs_server_3', 'spurs_server_4', 'spurs_server_5',
         'msorg_server_1', 'msorg_server_2', 'msorg_server_3', 'msorg_server_4', 'msorg_server_5',
@@ -53,10 +56,78 @@ class CablePlan extends Model
         return $this->active ? "active": 'inactive';
     }
 
+    /**
+     * Providers (vendors) that supply this cable plan, with pivot fields
+     * Pivot contains: cost_price, margin_value, margin_type, server_id.
+     * Same polymorphic relation DataPlan uses — see AdminController::
+     * syncModelRelations, which is generic over any model exposing this.
+     */
+    public function providers()
+    {
+        return $this->morphToMany(Provider::class, 'providerable', 'providerables', 'providerable_id', 'provider_id')
+            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id'])
+            ->withTimestamps();
+    }
 
-    public function getPriceAttribute(){
+    public function getProviderAttribute()
+    {
+        return $this->providers()->first();
+    }
+
+    public function getUseProviderAsProviderableAttribute()
+    {
+        if ($this->relationLoaded('providers')) {
+            return !empty($this->getRelation('providers'));
+        }
+
+        return $this->providers()->exists();
+    }
+
+    /**
+     * The subscription cost the cable company charges — always resolved
+     * from the attached provider's pivot, never a plan-level column (the
+     * platform doesn't set this itself, unlike a data plan's markup price).
+     */
+    protected function resolveCostPrice(): float
+    {
+        $pivotCost = $this->providers()->first()?->pivot?->cost_price;
+        if ($pivotCost !== null) {
+            return (float) $pivotCost;
+        }
+
+        $row = \Illuminate\Support\Facades\DB::table('providerables')
+            ->where('providerable_id', $this->id)
+            ->where('providerable_type', self::class)
+            ->first();
+
+        return (float) ($row->cost_price ?? 0);
+    }
+
+    /**
+     * The role-specific service charge added on top of the provider's
+     * subscription cost — never a full replacement price, since the cable
+     * company (not the platform) sets what the subscription itself costs.
+     */
+    public function getChargeFeeAmountAttribute(): float
+    {
         $user = Auth::user();
-        return $this->{$user->user_type . "_price"};
+        $role = $user?->role->name ?? "user";
+
+        if (!is_array($this->charge_fee) || !array_key_exists($role, $this->charge_fee)) {
+            return 0.0;
+        }
+
+        $entry = $this->charge_fee[$role];
+        $value = (float) ($entry['value'] ?? 0);
+
+        return ($entry['type'] ?? 'fiat') === 'percentage'
+            ? round($this->resolveCostPrice() * ($value / 100), 2)
+            : $value;
+    }
+
+    public function getPriceAttribute(): float
+    {
+        return round($this->resolveCostPrice() + $this->charge_fee_amount, 2);
     }
 
 }

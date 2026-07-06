@@ -13,10 +13,14 @@ class Role extends Model
         'slug',
         'description',
         'is_active',
+        'upgradable',
+        'upgrade_cost',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'upgradable' => 'boolean',
+        'upgrade_cost' => 'decimal:2',
     ];
 
     /**

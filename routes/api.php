@@ -27,6 +27,13 @@ use App\Http\Controllers\TemplateController;
 use App\Http\Controllers\WelcomeMessageController;
 use App\Http\Controllers\ServiceCostMarginController;
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\BrandingController;
+use App\Http\Controllers\GeneralController;
+
+// Public — read before login (landing page, auth screens) so they can show
+// the real configured brand name/logo/page-title instead of a hardcoded
+// default. Deliberately excludes everything else on General (bank/BVN etc).
+Route::get('/branding', [BrandingController::class, 'show']);
 
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
@@ -55,6 +62,10 @@ Route::middleware(['auth:sanctum', 'user_type:admin'])->group(function () {
     Route::put('/table/{table}/bulk', [AdminController::class, 'universalBulkCreateOrUpdate']);
     Route::delete('/table/{table}/{id}', [AdminController::class, 'universalDelete']);
     Route::delete('/table/{table}', [AdminController::class, 'universalBulkDelete']);
+
+    // File upload — not reachable via the generic Universal Table API,
+    // which only accepts a JSON body, not multipart form data.
+    Route::post('/general/logo', [GeneralController::class, 'uploadLogo']);
 });
 
 
@@ -87,6 +98,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix("customer")->group(function(){
         Route::get('/stats', [CustomerController::class, 'stats']);
         Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
+        Route::get('/account/upgrade-tiers', [CustomerController::class, 'upgradeTiers']);
         Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);
     });
 

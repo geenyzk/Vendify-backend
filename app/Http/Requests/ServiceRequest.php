@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\AirtimePlan;
+use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Rules\ValidPhoneForNetwork;
 use Illuminate\Foundation\Http\FormRequest;
@@ -137,10 +138,27 @@ class ServiceRequest extends FormRequest
                 $rules['phone'] = $phoneRules;
                 return $rules;
             case "cable":
+                // Cable's own network field is `cable_network`, not the
+                // `network` used by airtime/data — read it directly rather
+                // than relying on the generic $network passed in.
+                $cableNetwork = $this->input('cable_network');
                 return [
-                    "cable_network" => "required",
+                    "cable_network" => "required|string",
                     "iuc" => "required|string",
-                    "cable_plan" => "required|numeric",
+                    "cable_plan" => [
+                        'required',
+                        'exists:cable_plans,id',
+                        function ($attribute, $value, $fail) use ($cableNetwork) {
+                            $plan = CablePlan::find($value);
+                            if (!$plan || !$plan->active) {
+                                $fail('This cable plan is currently unavailable.');
+                                return;
+                            }
+                            if ($cableNetwork && strtolower($plan->cable_network) !== strtolower($cableNetwork)) {
+                                $fail('This cable plan does not belong to the selected provider.');
+                            }
+                        },
+                    ],
                 ];
             case "exam":
                 return [

@@ -9,6 +9,7 @@ class General extends Model
     protected $fillable = [
         'app_name', 'app_phone', 'app_address', 'app_email',
         'bvn', 'bankName', 'accountName', 'accountNumber', 'logo',
+        'meta_title', 'meta_description',
     ];
 
     protected $appends = ["app_type", "app_url", "app_logo"];

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Classes\SerivceControl\ServiceControlService;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Http\Requests\ServiceRequest;
+use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\Discount;
 use App\Models\Transaction;
@@ -149,15 +150,22 @@ class VTUServicesController extends Controller
         $validated = $request->validated();
         // Amount validation now done in ServiceRequest rules for airtime (min:50, max:5000)
 
-        // Data is a fixed-price catalog item — the vendor call derives the
-        // actual bundle delivered from data_plan alone, so trusting a
-        // client-submitted amount here would let it diverge from what's
-        // really being charged. Always resolve the real (role-aware) price
-        // server-side and ignore whatever the client sent.
+        // Data and Cable are both fixed-price catalog items — the vendor
+        // call derives the actual bundle/subscription delivered from the
+        // plan id alone, so trusting a client-submitted amount here would
+        // let it diverge from what's really being charged. Always resolve
+        // the real (role-aware) price server-side and ignore whatever the
+        // client sent.
         if ($service === 'data' && !empty($validated['data_plan'])) {
             $dataPlan = DataPlan::find($validated['data_plan']);
             if ($dataPlan) {
                 $validated['amount'] = (float) $dataPlan->price;
+            }
+        }
+        if ($service === 'cable' && !empty($validated['cable_plan'])) {
+            $cablePlan = CablePlan::find($validated['cable_plan']);
+            if ($cablePlan) {
+                $validated['amount'] = (float) $cablePlan->price;
             }
         }
 
