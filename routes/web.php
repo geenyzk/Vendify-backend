@@ -42,7 +42,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::resource('controls', ServiceControlController::class);
 
         Route::get('/stats', [AdminController::class, 'stats']);
-        Route::post('/broadcast', [AdminController::class, 'broadcast']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
 
         Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);

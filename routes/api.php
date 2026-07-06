@@ -32,6 +32,7 @@ use App\Http\Controllers\AirtimeToCashController;
 use App\Http\Controllers\WalletTransferController;
 use App\Http\Controllers\WalletWithdrawalController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\BroadcastController;
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
@@ -173,7 +174,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         Route::middleware('permission:support')->group(function () {
-            Route::post('/broadcast', [AdminController::class, 'broadcast']);
+            Route::post('/broadcast', [BroadcastController::class, 'send']);
+            Route::post('/broadcast/audience-count', [BroadcastController::class, 'audienceCount']);
+            Route::get('/broadcast/users-search', [BroadcastController::class, 'searchUsers']);
+            Route::get('/broadcast/history', [BroadcastController::class, 'history']);
         });
 
         // Airtime to cash review queue — a distinct reviewer capability from

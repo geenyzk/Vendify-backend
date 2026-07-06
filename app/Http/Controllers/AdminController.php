@@ -2,17 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Classes\TemplateParser;
 use App\Classes\TransactionService;
 use App\Classes\Vendor\VendorFactory;
-use App\Models\Broadcast;
 use App\Models\Discount;
 use App\Models\General;
 use App\Models\Provider;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
-use App\Notifications\BroadcastNotification;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
@@ -20,7 +17,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -161,7 +157,7 @@ class AdminController extends Controller
     // other users' PII (phone numbers, proof uploads, submitted amounts,
     // bank account details) needs its own permission-gated controller
     // instead — see AirtimeToCashController / WalletWithdrawalController.
-    private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'wallet_withdrawals'];
+    private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'wallet_withdrawals', 'broadcasts'];
 
     public function universalGet(Request $request, $modelSlug)
     {

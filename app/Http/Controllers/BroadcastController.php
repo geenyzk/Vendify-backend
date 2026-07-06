@@ -14,9 +14,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Full audience-targeting broadcast messaging: who (user types, real roles,
- * specific individuals, or conditional criteria like "new users" / wallet
- * balance range / transaction volume range / referral count range), what
+ * Full audience-targeting broadcast messaging: who (real roles, specific
+ * individuals, or conditional criteria like "new users" / wallet balance
+ * range / transaction volume range / referral count range), what
  * (per-channel content), how (email/sms/in-app), and when (now or
  * scheduled — see SendScheduledBroadcasts for the "when" half).
  */
@@ -30,8 +30,6 @@ class BroadcastController extends Controller
             'audience_mode' => 'required|in:criteria,individuals',
             'user_ids' => 'required_if:audience_mode,individuals|array',
             'user_ids.*' => 'integer',
-            'user_types' => 'nullable|array',
-            'user_types.*' => 'in:user,agent,api,admin,bonanza',
             'role_ids' => 'nullable|array',
             'role_ids.*' => 'integer|exists:roles,id',
             'signed_up_within_days' => 'nullable|integer|min:1',
@@ -75,10 +73,6 @@ class BroadcastController extends Controller
         }
 
         $query = User::query();
-
-        if (!empty($filters['user_types'])) {
-            $query->whereIn('user_type', $filters['user_types']);
-        }
 
         if (!empty($filters['role_ids'])) {
             $query->whereIn('role_id', $filters['role_ids']);
@@ -138,9 +132,6 @@ class BroadcastController extends Controller
         }
 
         $parts = [];
-        if (!empty($filters['user_types'])) {
-            $parts[] = implode('/', $filters['user_types']);
-        }
         if (!empty($filters['role_ids'])) {
             $names = Role::whereIn('id', $filters['role_ids'])->pluck('name')->all();
             $parts[] = 'role: ' . implode('/', $names);
@@ -192,7 +183,18 @@ class BroadcastController extends Controller
                 ->orWhere('fullname', 'like', "%{$q}%");
         })->limit(20)->get(['id', 'username', 'fullname', 'email']);
 
-        return $this->success($users);
+        // User::$appends forces transactions/banks/stats/referrals/etc. to
+        // serialize on every instance regardless of which columns were
+        // selected above — map to a plain array so this stays the
+        // lightweight autocomplete payload it's meant to be.
+        $result = $users->map(fn (User $u) => [
+            'id' => $u->id,
+            'username' => $u->username,
+            'fullname' => $u->fullname,
+            'email' => $u->email,
+        ]);
+
+        return $this->success($result);
     }
 
     public function history(): JsonResponse

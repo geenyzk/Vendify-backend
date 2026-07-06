@@ -28,3 +28,12 @@ Schedule::command('transactions:prune')
         \Illuminate\Support\Facades\Log::error('transactions:prune scheduled run failed.');
     });
 
+// Sends any admin broadcast scheduled for "later" once its time is due —
+// see BroadcastController::send()'s sendNow=false path.
+Schedule::command('broadcasts:send-scheduled')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('broadcasts:send-scheduled scheduled run failed.');
+    });
+
