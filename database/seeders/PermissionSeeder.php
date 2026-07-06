@@ -20,6 +20,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'Support', 'slug' => 'support', 'description' => 'Handle support tickets and messages'],
             ['name' => 'Settings', 'slug' => 'settings', 'description' => 'Manage platform settings'],
             ['name' => 'Switch Account', 'slug' => 'switch_account', 'description' => 'Switch between the admin panel and the customer-facing view'],
+            ['name' => 'Airtime to Cash', 'slug' => 'airtime_to_cash', 'description' => 'Review and approve or reject airtime-to-cash conversion requests'],
         ];
 
         $ids = [];

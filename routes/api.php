@@ -28,6 +28,7 @@ use App\Http\Controllers\ServiceCostMarginController;
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\GeneralController;
+use App\Http\Controllers\AirtimeToCashController;
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
@@ -99,6 +100,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
         Route::get('/account/upgrade-tiers', [CustomerController::class, 'upgradeTiers']);
         Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);
+
+        // Airtime to cash — manually reviewed, not an instant purchase (see
+        // AirtimeToCashController), so it's not routed through /vtu/{service}.
+        Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'myRequests']);
+        Route::post('/airtime-to-cash', [AirtimeToCashController::class, 'submit']);
     });
 
 
@@ -141,6 +147,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::middleware('permission:support')->group(function () {
             Route::post('/broadcast', [AdminController::class, 'broadcast']);
+        });
+
+        // Airtime to cash review queue — a distinct reviewer capability from
+        // "transactions" (which covers status overrides/refunds on already-
+        // completed purchases), so it gets its own permission slug.
+        Route::middleware('permission:airtime_to_cash')->group(function () {
+            Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'adminIndex']);
+            Route::post('/airtime-to-cash/{atc}/approve', [AirtimeToCashController::class, 'approve']);
+            Route::post('/airtime-to-cash/{atc}/reject', [AirtimeToCashController::class, 'reject']);
         });
 
         // Not clearly owned by any single permission slug — gated by

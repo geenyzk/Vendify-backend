@@ -63,7 +63,7 @@ class Discount extends Model
      * null, i.e. applies to every network) for the same service type. Only
      * rows currently live (see isCurrentlyActive) are considered.
      */
-    protected static function findApplicable(string $serviceType, ?string $network): ?self
+    public static function findApplicable(string $serviceType, ?string $network): ?self
     {
         $candidates = static::where('service_type', $serviceType)
             ->where(function ($q) use ($network) {

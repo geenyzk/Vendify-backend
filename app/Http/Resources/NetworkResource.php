@@ -21,6 +21,10 @@ class NetworkResource extends JsonResource
             'data_api_id' => $this->data_api_id,
             'airtime_recharge_api_id' => $this->airtime_recharge_api_id,
             'data_recharge_api_id' => $this->data_recharge_api_id,
+            'airtime_to_cash_destination_number' => $this->airtime_to_cash_destination_number,
+            'airtime_to_cash_min' => $this->airtime_to_cash_min,
+            'airtime_to_cash_max' => $this->airtime_to_cash_max,
+            'airtime_to_cash_active' => $this->airtime_to_cash_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             // Include the eager-loaded relationship with pivot data

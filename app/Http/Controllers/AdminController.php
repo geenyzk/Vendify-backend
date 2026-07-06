@@ -156,8 +156,19 @@ class AdminController extends Controller
      * Get records from a table with filtering and eager loading.
      * Supports ?with=relation1,relation2 and ?sort=column,desc
      */
+    // Tables the generic reader must never serve: GET /table/{table} is
+    // reachable by any logged-in user (not just admins), so anything holding
+    // other users' PII (phone numbers, proof uploads, submitted amounts)
+    // needs its own permission-gated controller instead — see
+    // AirtimeToCashController.
+    private const RESTRICTED_TABLES = ['airtime_to_cash_requests'];
+
     public function universalGet(Request $request, $modelSlug)
     {
+        if (in_array($modelSlug, self::RESTRICTED_TABLES, true)) {
+            return $this->fail([], 'This resource is not available via the generic table API.', 403);
+        }
+
         $modelClass = $this->getModelClassFromTable($modelSlug);
         if (!$modelClass || !class_exists($modelClass)) {
             return $this->fail([], "Model not found for slug: $modelSlug", 404);
@@ -213,6 +224,10 @@ class AdminController extends Controller
      */
     public function universalShow(Request $request, $table, $id)
     {
+        if (in_array($table, self::RESTRICTED_TABLES, true)) {
+            return $this->fail([], 'This resource is not available via the generic table API.', 403);
+        }
+
         $modelClass = $this->getModelClassFromTable($table);
         if (!class_exists($modelClass)) {
             return $this->fail([], 'Model not found', 404);
@@ -247,6 +262,10 @@ class AdminController extends Controller
     public static function universalBulkCreateOrUpdate(Request $request, $table)
     {
         $self = new self();
+
+        if (in_array($table, self::RESTRICTED_TABLES, true)) {
+            return $self->fail([], 'This resource is not available via the generic table API.', 403);
+        }
 
         // `$table` is the route slug, which for aliases like "vendors" (→
         // App\Models\Vendor, mapped onto the real `providers` table) is not
@@ -396,6 +415,10 @@ class AdminController extends Controller
 
     public function universalBulkDelete(Request $request, $table)
     {
+        if (in_array($table, self::RESTRICTED_TABLES, true)) {
+            return $this->fail([], 'This resource is not available via the generic table API.', 403);
+        }
+
         $modelClass = $this->getModelClassFromTable($table);
         $hasModel = $modelClass && class_exists($modelClass);
         $realTable = $hasModel ? (new $modelClass())->getTable() : $table;
