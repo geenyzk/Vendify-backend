@@ -14,6 +14,8 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\VerifyEmailController;
+use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\NewPasswordController;
 
 use App\Http\Controllers\PromotionController;
 use App\Http\Controllers\EventController;
@@ -28,6 +30,10 @@ use App\Http\Controllers\AccountController;
 
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
+Route::post("/forgot-password", [PasswordResetLinkController::class, 'apiStore'])
+    ->middleware('throttle:6,1');
+Route::post("/reset-password", [NewPasswordController::class, 'apiStore'])
+    ->middleware('throttle:6,1');
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
 
 // Universal Table API reads: any logged-in user (the customer dashboard's
@@ -62,10 +68,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // "Settings" pages alike, scoped to whoever is logged in (no role gate).
     Route::put('/account/profile', [AccountController::class, 'updateProfile']);
     Route::put('/account/password', [AccountController::class, 'updatePassword']);
+    Route::put('/account/pin', [AccountController::class, 'updatePin']);
+    Route::post('/account/virtual-accounts', [AccountController::class, 'generateVirtualAccounts']);
 
     Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
+    Route::get('/vtu/{service}/discount', [VTUServicesController::class, 'discountPreview']);
     Route::post('/transactions/report', [TransactionController::class, 'report']);
 
     Route::get('/welcome-message', [WelcomeMessageController::class, 'show']);

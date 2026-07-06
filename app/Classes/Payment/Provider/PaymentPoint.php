@@ -12,6 +12,11 @@ use Illuminate\Support\Facades\Log;
 
 class PaymentPoint extends PaymentBase
 {
+    // See Monnify.php for why this is required — creditedAmount() reads
+    // this property and throws if it's left uninitialized, silently
+    // breaking wallet crediting for every successful payment.
+    protected string $providerName = 'paymentpoint';
+
     public function connect(): mixed
     {
         return '';
@@ -65,7 +70,6 @@ class PaymentPoint extends PaymentBase
     protected function formatPayload(array|User $payload, ?User $user = null): array
     {
         $user = $payload instanceof User ? $payload : $user;
-        General::where("",  ">", 1);
         return [
             'email'       => $user->email,
             'name'        => $user->username,
@@ -103,11 +107,27 @@ class PaymentPoint extends PaymentBase
         if($payload['transaction_status'] !== 'success') return [];
         $data = $payload['data'];
         $customer = $payload['customer'];
-        $creditedAmount = $this->creditedAmount($payload['amount_paid']);
         $user = User::where('email', $customer['email'])->first();
-        $user->wallet_balance += $creditedAmount;
-        $user->save();
+        if (!$user) {
+            Log::warning('PaymentPoint webhook: no user found for email', ['email' => $customer['email'] ?? null]);
+            return [];
+        }
+
+        $creditedAmount = $this->creditedAmount($payload['amount_paid']);
+
+        // Gateways retry webhooks (missed 200, network hiccup, etc.) — only
+        // credit the wallet the first time this tx_ref is seen as
+        // successful, otherwise a retry double-credits the user.
+        $alreadyCredited = Transaction::where('transaction_reference', $data['tx_ref'])
+            ->where('status', 'success')
+            ->exists();
+        if (!$alreadyCredited) {
+            $user->wallet_balance += $creditedAmount;
+            $user->save();
+        }
+
         return [
+            'user_id' => $user->id,
             'provider' => $this->providerName,
             'transaction_reference' =>  $data['tx_ref'] ,
             'payment_reference' => $data['flw_ref'] ?? null,

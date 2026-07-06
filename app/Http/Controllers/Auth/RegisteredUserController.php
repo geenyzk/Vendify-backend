@@ -69,7 +69,6 @@ class RegisteredUserController extends Controller
                 'username' => ['required', 'string', 'max:255', 'unique:'.User::class],
                 'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
                 'phone' => ['required', 'string', 'max:255', 'unique:'.User::class],
-                'pin' => ['required', 'digits:4'],
                 'referral_code' => ['string', 'nullable', 'max:255', 'exists:users,referral_code'],
                 'password' => ['required', Rules\Password::defaults()],
             ]);
@@ -106,9 +105,19 @@ class RegisteredUserController extends Controller
 
             AdminNotifier::notifySignup($user);
 
-            // Send email verification notification
-            event(new Registered($user));
-            $user->sendEmailVerificationNotification();
+            // A failed send (bad SMTP config, provider outage, etc.) must
+            // never break registration itself — the account already exists
+            // and is logged in at this point regardless of whether the
+            // verification email goes out.
+            try {
+                event(new Registered($user));
+                $user->sendEmailVerificationNotification();
+            } catch (\Throwable $e) {
+                Log::warning('Failed to send email verification notification', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             // Return user data with unverified email status
             return $this->success(

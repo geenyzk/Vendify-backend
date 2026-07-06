@@ -13,6 +13,12 @@ use Illuminate\Support\Facades\Log;
 
 class Monnify extends PaymentBase
 {
+    // Without this, creditedAmount()'s Provider::whereName($this->providerName)
+    // lookup reads an uninitialized typed property and throws, which — since
+    // creditedAmount() runs before the wallet_balance credit in callback() —
+    // meant a real successful Monnify payment would silently never be
+    // credited (the exception is swallowed by PaymentBase::webhook()'s catch).
+    protected string $providerName = 'monnify';
 
 
     function connect(): mixed
@@ -143,10 +149,24 @@ class Monnify extends PaymentBase
         $data = $payload['eventData'];
         $customer = $data['customer'] ?? [];
         $source = $data['paymentSourceInformation'][0] ?? [];
-        $creditedAmount = $this->creditedAmount($data['amountPaid']);
         $user = User::where('email', $customer['email'] ?? '')->first();
-        $user->wallet_balance += $creditedAmount;
-        $user->save();
+        if (!$user) {
+            Log::warning('Monnify webhook: no user found for email', ['email' => $customer['email'] ?? null]);
+            return [];
+        }
+
+        $creditedAmount = $this->creditedAmount($data['amountPaid']);
+
+        // Gateways retry webhooks (missed 200, network hiccup, etc.) — only
+        // credit the wallet the first time this transaction_reference is
+        // seen as successful, otherwise a retry double-credits the user.
+        $alreadyCredited = Transaction::where('transaction_reference', $data['transactionReference'])
+            ->where('status', 'success')
+            ->exists();
+        if (!$alreadyCredited) {
+            $user->wallet_balance += $creditedAmount;
+            $user->save();
+        }
 
         return [
             "user_id" => $user->id,
@@ -155,7 +175,12 @@ class Monnify extends PaymentBase
             'payment_reference' => $data['paymentReference'],
             'response_message' => $data['paymentStatus'],
             'completed_at' => $data['paidOn'] ?? now(),
-            'funding_method' => $data['paymentMethod'] ?? 'bank_transfer',
+            // `funding_method` is a fixed DB enum (bank_transfer/credit_card/
+            // manual/other) — Monnify's own paymentMethod string (e.g.
+            // "ACCOUNT_TRANSFER") isn't one of those and would fail the
+            // insert, so this is always a bank transfer, same as
+            // FlutterWave/PaymentPoint's callbacks.
+            'funding_method' => 'bank_transfer',
             'service_fee' => (float) $data['totalPayable'] - (float) $data['settlementAmount'],
             'platform' => 'web',
             'transaction_type' => 'wallet_funding',

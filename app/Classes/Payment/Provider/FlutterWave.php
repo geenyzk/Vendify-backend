@@ -168,10 +168,26 @@ class FlutterWave extends PaymentBase
         $payload = $request->all();
         $data = $payload['data'];
         $customer = $data['customer'];
-        $creditedAmount = $this->creditedAmount($data['amount']);
         $user = User::where('email', $customer['email'])->first();
-        $user->wallet_balance += $creditedAmount;
-        $user->save();
+        if (!$user) {
+            Log::warning('FlutterWave webhook: no user found for email', ['email' => $customer['email'] ?? null]);
+            return [];
+        }
+
+        $creditedAmount = $this->creditedAmount($data['amount']);
+        $isSuccess = $data['status'] == "successful";
+
+        // Gateways retry webhooks (missed 200, network hiccup, etc.) — only
+        // credit the wallet the first time this tx_ref is seen as
+        // successful, otherwise a retry double-credits the user.
+        $alreadyCredited = Transaction::where('transaction_reference', $data['tx_ref'])
+            ->where('status', 'success')
+            ->exists();
+        if ($isSuccess && !$alreadyCredited) {
+            $user->wallet_balance += $creditedAmount;
+            $user->save();
+        }
+
         return [
             "user_id" => $user->id,
             'provider' => $this->providerName,
@@ -185,7 +201,7 @@ class FlutterWave extends PaymentBase
             'transaction_type' => 'wallet_funding',
             'account_or_phone' => $customer['phone_number'] ?? null,
             'amount' => $creditedAmount ?? 0.00,
-            'status' => $data['status'] =="successful" ?"success" :"fail" ,
+            'status' => $isSuccess ? "success" : "fail",
             'receiver' => $customer['phone_number'] ?? null,
         ];
     }

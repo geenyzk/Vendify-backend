@@ -18,7 +18,7 @@ class User extends Authenticatable implements MustVerifyEmail
     use HasApiTokens, Notifiable, SoftDeletes, HasRole;
 
     protected $fillable = [
-        'username', 'fullname', 'email', 'phone', 'password',
+        'username', 'fullname', 'email', 'phone', 'password', 'pin',
         'user_type', 'role_id', 'wallet_balance', 'is_active', 'is_verified', 'status',
         'referral_code', 'referred_by', 'last_login_at', 'email_verified_at',
     ];
@@ -26,6 +26,7 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $appends  = ["transactions", "banks", "stats", "referrals", "joined_at", "badges"];
     protected $hidden = [
         'password',
+        'pin',
         'remember_token',
     ];
 
@@ -36,7 +37,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'last_login_at' => 'datetime',
         'email_verified_at' => 'datetime',
         'deleted_at' => 'datetime',
-        'password' => 'hashed'
+        'password' => 'hashed',
+        'pin' => 'hashed',
     ];
 
     // User status constants

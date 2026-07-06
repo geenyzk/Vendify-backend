@@ -3,13 +3,18 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\HttpResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\View\View;
 
 class PasswordResetLinkController extends Controller
 {
+    use HttpResponse;
+
     /**
      * Display the password reset link request view.
      */
@@ -40,5 +45,32 @@ class PasswordResetLinkController extends Controller
                     ? back()->with('status', __($status))
                     : back()->withInput($request->only('email'))
                         ->withErrors(['email' => __($status)]);
+    }
+
+    /**
+     * JSON counterpart of store() for the SPA — same broker call, just a
+     * JSON response instead of a redirect. Always reports success even when
+     * the email isn't found, so this can't be used to enumerate accounts.
+     */
+    public function apiStore(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        // The status (sent / throttled / user not found) is intentionally
+        // not surfaced — always report success so this can't be used to
+        // enumerate which emails are registered. A transport failure (bad
+        // SMTP config, provider outage) must not surface as a 500 either.
+        try {
+            Password::sendResetLink($request->only('email'));
+        } catch (\Throwable $e) {
+            Log::warning('Failed to send password reset link', [
+                'email' => $request->input('email'),
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $this->success(null, 'If an account exists for that email, a reset link has been sent.');
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\Payment\Payment;
 use App\HttpResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -49,5 +50,51 @@ class AccountController extends Controller
         $user->update(['password' => Hash::make($validated['password'])]);
 
         return $this->success(null, 'Password updated successfully.');
+    }
+
+    /**
+     * Set or change the authenticated user's transaction PIN. Only requires
+     * the current PIN if one is already set (so the post-registration
+     * "create your PIN" step doesn't need a current_pin field).
+     */
+    public function updatePin(Request $request)
+    {
+        $user = $request->user();
+
+        $rules = [
+            'pin' => ['required', 'digits:4'],
+            'pin_confirmation' => ['required', 'same:pin'],
+        ];
+        if ($user->pin) {
+            $rules['current_pin'] = ['required', 'digits:4'];
+        }
+
+        $validated = $request->validate($rules);
+
+        if ($user->pin && !Hash::check($validated['current_pin'], $user->pin)) {
+            return $this->fail(['current_pin' => ['Current PIN is incorrect.']], 'Current PIN is incorrect.', 422);
+        }
+
+        $user->update(['pin' => $validated['pin']]);
+
+        return $this->success(null, 'Transaction PIN updated successfully.');
+    }
+
+    /**
+     * (Re)generate the authenticated user's virtual account(s) — one per
+     * currently active payment provider. Normally done automatically at
+     * register/login, but generation can fail silently (provider outage, no
+     * active provider at the time) or a provider can be activated later, so
+     * the wallet page offers this as a manual retry. Safe to call
+     * repeatedly: PaymentBase::generateAccount() skips any provider a Bank
+     * row already exists for.
+     */
+    public function generateVirtualAccounts(Request $request)
+    {
+        $user = $request->user();
+
+        Payment::generateAccount($user);
+
+        return $this->success(['user' => $user->fresh()->load('role.permissions')]);
     }
 }

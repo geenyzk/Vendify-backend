@@ -72,8 +72,6 @@ class DiscountController extends Controller
             'network' => 'nullable|string|max:255',
             'discount_type' => 'required|in:percentage,fixed',
             'value' => 'required|numeric|min:0',
-            'min' => 'nullable|numeric|min:0',
-            'max' => 'nullable|numeric|min:0',
             'active' => 'sometimes|boolean',
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',

@@ -2,9 +2,12 @@
 
 namespace App\Http\Requests;
 
+use App\Models\AirtimePlan;
+use App\Models\DataPlan;
 use App\Rules\ValidPhoneForNetwork;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class ServiceRequest extends FormRequest
 {
@@ -26,12 +29,7 @@ class ServiceRequest extends FormRequest
         // Base rules for other services (airtime, data, etc.)
         $rules = $this->baseRules();
 
-
-        if ($service === 'airtime' && !empty($network)) {
-            $rules['network_type'] = 'required|string|in:vtu,sns,sme,gifting,cooperate-gifting';
-        }
-
-        $rules = array_merge($rules, $this->ruleMaker($service, $bypass));
+        $rules = array_merge($rules, $this->ruleMaker($service, $bypass, $network));
         return $rules;
 
     }
@@ -67,19 +65,69 @@ class ServiceRequest extends FormRequest
         ];
     }
 
-    private function ruleMaker(string $service, bool $bypass = false) {
+    private function ruleMaker(string $service, bool $bypass = false, ?string $network = null) {
         switch($service){
             case "data":
+                // `cooperate_gifting` (underscore) is the real value stored
+                // on data_plans.plan_type — the old "cooperate gifting"
+                // (space) here never matched a real row, so that plan type
+                // was permanently unpurchasable.
                 return [
                     'network' => 'required|string|in:mtn,airtel,glo,9mobile',
-                    'plan_type' => 'required|string|in:sme,gifting,cooperate gifting',
-                    'data_plan' => 'required|exists:data_plans,id',
-                    "phone" => ['required', 'string', 'regex:/^\+?[0-9]{10,15}$/']
+                    'plan_type' => 'required|string|in:sme,gifting,cooperate_gifting',
+                    'data_plan' => [
+                        'required',
+                        'exists:data_plans,id',
+                        function ($attribute, $value, $fail) use ($network) {
+                            $plan = DataPlan::find($value);
+                            if (!$plan || !$plan->active) {
+                                $fail('This data plan is currently unavailable.');
+                                return;
+                            }
+                            if ($network && strtolower($plan->network) !== strtolower($network)) {
+                                $fail('This data plan does not belong to the selected network.');
+                                return;
+                            }
+                            $planType = $this->input('plan_type');
+                            if ($planType && $plan->plan_type !== $planType) {
+                                $fail('This data plan does not belong to the selected plan type.');
+                            }
+                        },
+                    ],
+                    "phone" => ['required', 'string', 'regex:/^\+?[0-9]{10,15}$/'],
                 ];
             case "airtime":
+                // The admin-configured Airtime Plan (Products > Airtime &
+                // Data) is the sole source of truth for both whether a
+                // network can be purchased at all AND which plan
+                // types/categories (vtu, sns, ...) it currently offers — a
+                // network can have several active rows, one per category,
+                // each with its own min/max (e.g. 9mobile is capped lower).
+                $activePlans = $network
+                    ? AirtimePlan::where('name', $network)->where('active', true)->get()
+                    : collect();
+                $hasActivePlan = $activePlans->isNotEmpty();
+                // A plan with no category set (nullable) still needs a
+                // valid enum value to submit — normalize it to "vtu".
+                $categories = $activePlans->map(fn ($p) => $p->category ?: 'vtu')->unique()->values()->all();
+                if (empty($categories)) {
+                    $categories = ['vtu'];
+                }
+
+                $networkType = $this->input('network_type');
+                $plan = $activePlans->first(fn ($p) => ($p->category ?: 'vtu') === $networkType) ?? $activePlans->first();
+
                 $rules = [
-                    'network' => 'required|string|in:mtn,airtel,glo,9mobile',
-                    'amount' => 'required|numeric|min:50|max:5000',
+                    'network' => [
+                        'required', 'string', 'in:mtn,airtel,glo,9mobile',
+                        function ($attribute, $value, $fail) use ($hasActivePlan, $network) {
+                            if ($network && !$hasActivePlan) {
+                                $fail('Airtime purchases are currently unavailable for this network.');
+                            }
+                        },
+                    ],
+                    'network_type' => ['required', 'string', Rule::in($categories)],
+                    'amount' => 'required|numeric|min:' . ($plan->min ?? 50) . '|max:' . ($plan->max ?? 5000),
                 ];
                 $phoneRules = ['required', 'string', 'regex:/^\+?[0-9]{10,15}$/'];
                 if (!empty($network) && !$bypass) {

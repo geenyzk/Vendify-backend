@@ -10,7 +10,7 @@ class Discount extends Model
 
     protected $fillable = [
         "name", "service_type", "network", "discount_type", "value",
-        "min", "max", "active", "starts_at", "ends_at",
+        "active", "starts_at", "ends_at",
     ];
 
     protected $casts = [
@@ -43,7 +43,7 @@ class Discount extends Model
      */
     public static function getDiscountedAmount(float $amount, string $serviceType, ?string $network = null): float
     {
-        $discount = static::findApplicable($serviceType, $network, $amount);
+        $discount = static::findApplicable($serviceType, $network);
 
         if (!$discount) {
             return $amount;
@@ -61,10 +61,9 @@ class Discount extends Model
      * Pick the best-matching active discount for a purchase: a rule scoped
      * to this exact network wins over a network-agnostic rule (network is
      * null, i.e. applies to every network) for the same service type. Only
-     * rows currently live (see isCurrentlyActive) and within the amount's
-     * min/max range (if set) are considered.
+     * rows currently live (see isCurrentlyActive) are considered.
      */
-    protected static function findApplicable(string $serviceType, ?string $network, float $amount): ?self
+    protected static function findApplicable(string $serviceType, ?string $network): ?self
     {
         $candidates = static::where('service_type', $serviceType)
             ->where(function ($q) use ($network) {
@@ -74,12 +73,7 @@ class Discount extends Model
                 }
             })
             ->get()
-            ->filter(fn (self $d) => $d->isCurrentlyActive())
-            ->filter(function (self $d) use ($amount) {
-                if ($d->min !== null && $amount < $d->min) return false;
-                if ($d->max !== null && $amount > $d->max) return false;
-                return true;
-            });
+            ->filter(fn (self $d) => $d->isCurrentlyActive());
 
         if ($candidates->isEmpty()) {
             return null;

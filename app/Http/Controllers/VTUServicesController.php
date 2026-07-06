@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Classes\SerivceControl\ServiceControlService;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Http\Requests\ServiceRequest;
+use App\Models\DataPlan;
 use App\Models\Discount;
 use App\Models\Transaction;
 use App\Services\PromotionService;
@@ -148,6 +149,18 @@ class VTUServicesController extends Controller
         $validated = $request->validated();
         // Amount validation now done in ServiceRequest rules for airtime (min:50, max:5000)
 
+        // Data is a fixed-price catalog item — the vendor call derives the
+        // actual bundle delivered from data_plan alone, so trusting a
+        // client-submitted amount here would let it diverge from what's
+        // really being charged. Always resolve the real (role-aware) price
+        // server-side and ignore whatever the client sent.
+        if ($service === 'data' && !empty($validated['data_plan'])) {
+            $dataPlan = DataPlan::find($validated['data_plan']);
+            if ($dataPlan) {
+                $validated['amount'] = (float) $dataPlan->price;
+            }
+        }
+
         $isVerifiable = ServiceControlService::verify(Auth::id(),$validated['pin']??'');
         if (!$isVerifiable) {
             return $this->fail([
@@ -290,6 +303,37 @@ class VTUServicesController extends Controller
      *   "plans": [...]
      * }
      */
+
+    /**
+     * Preview the automatic Discount (if any) that would apply to a
+     * purchase, without actually charging anything. Mirrors exactly what
+     * handle()'s Step 1 computes, so the confirm screen can show the real
+     * figure instead of guessing at it client-side.
+     *
+     * @group VTU Services
+     * @authenticated
+     *
+     * @urlParam service string required The service type (e.g. airtime). Example: airtime
+     * @queryParam amount numeric required The amount before any discount. Example: 1000
+     * @queryParam network string The network/provider to scope the discount to. Example: mtn
+     */
+    public function discountPreview(Request $request, string $service): JsonResponse
+    {
+        $amount = (float) $request->query('amount', 0);
+        $network = $request->query('network');
+
+        if ($amount <= 0) {
+            return $this->success(['original_amount' => 0, 'discounted_amount' => 0, 'discount_amount' => 0]);
+        }
+
+        $discountedAmount = Discount::getDiscountedAmount($amount, $service, $network);
+
+        return $this->success([
+            'original_amount' => $amount,
+            'discounted_amount' => $discountedAmount,
+            'discount_amount' => round($amount - $discountedAmount, 2),
+        ]);
+    }
 
     public function plan(Request $request, string $service){
         Log::info($request);

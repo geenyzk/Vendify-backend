@@ -97,12 +97,17 @@ class VerifyEmailController extends Controller
         Log::info("All request data: ", $request->all());
 
         try {
-            // Validate the signed URL
-            // if (!URL::hasValidSignature($request, false)) {
-            //     Log::warning("Invalid email verification signature for user ID: $id");
-            //     Log::warning("Signature check failed for URL: " . $request->fullUrl());
-            //     return redirect(rtrim($frontendUrl, '/') . '/email-verification-failed?reason=invalid');
-            // }
+            // Validate the signed URL — without this, the sha1(email) hash
+            // below is the only gate, and it's guessable from a known
+            // email/ID with no secret involved. Must check in absolute
+            // mode: the default VerifyEmail notification generates the
+            // link via temporarySignedRoute() with no $absolute argument,
+            // which defaults to true, so the signature was computed over
+            // the full absolute URL.
+            if (!URL::hasValidSignature($request, true)) {
+                Log::warning("Invalid email verification signature for user ID: $id");
+                return redirect(rtrim($frontendUrl, '/') . '/email-verification-failed?reason=invalid');
+            }
 
             $user = User::find($id);
 
