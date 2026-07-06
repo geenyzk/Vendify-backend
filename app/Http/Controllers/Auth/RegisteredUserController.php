@@ -84,6 +84,7 @@ class RegisteredUserController extends Controller
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'referred_by' => $referrer?->id,
+                'status' => 'active',
             ]);
 
             // Referral-count Events (e.g. "refer 5 friends") key off the
@@ -93,7 +94,7 @@ class RegisteredUserController extends Controller
             }
 
             Auth::login($user);
-            // $token = $user->createToken($user->username);
+            $token = $user->createToken($user->username)->plainTextToken;
             Payment::generateAccount($user);
             $user->loginStamp();
             $user->assignRole('user');
@@ -122,7 +123,8 @@ class RegisteredUserController extends Controller
             // Return user data with unverified email status
             return $this->success(
                 [
-                    'user' => $user,
+                    'user' => $user->fresh()->load('role.permissions'),
+                    'token' => $token,
                     'message' => 'Registration successful! Please verify your email.',
                     'email_verified_at' => $user->email_verified_at,
                 ],
