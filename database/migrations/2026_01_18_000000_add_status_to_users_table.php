@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('users', 'status')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             // Add a status column to track whether a user is active, banned or suspended
             $table->string('status')->default('active')->after('is_verified');
@@ -22,6 +26,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (!Schema::hasColumn('users', 'status')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             $table->dropColumn('status');
         });

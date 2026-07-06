@@ -70,7 +70,7 @@ class RegisteredUserController extends Controller
                 'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
                 'phone' => ['required', 'string', 'max:255', 'unique:'.User::class],
                 'referral_code' => ['string', 'nullable', 'max:255', 'exists:users,referral_code'],
-                'password' => ['required', Rules\Password::defaults()],
+                'password' => ['required', 'confirmed', Rules\Password::defaults()],
             ]);
 
             $referrer = $request->referral_code
@@ -90,21 +90,67 @@ class RegisteredUserController extends Controller
             // Referral-count Events (e.g. "refer 5 friends") key off the
             // referrer's referred-user count, which just changed.
             if ($referrer) {
-                EventService::checkAndAward($referrer);
+                try {
+                    EventService::checkAndAward($referrer);
+                } catch (\Throwable $e) {
+                    Log::warning('Referral event award check failed during registration', [
+                        'user_id' => $user->id,
+                        'referrer_id' => $referrer->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             Auth::login($user);
             $token = $user->createToken($user->username)->plainTextToken;
-            Payment::generateAccount($user);
-            $user->loginStamp();
-            $user->assignRole('user');
+
+            try {
+                Payment::generateAccount($user);
+            } catch (\Throwable $e) {
+                Log::warning('Virtual account generation failed during registration', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $user->loginStamp();
+            } catch (\Throwable $e) {
+                Log::warning('Login timestamp update failed during registration', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $user->assignRole('user');
+            } catch (\Throwable $e) {
+                Log::warning('Role assignment failed during registration', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             $bonus = floatval($settings?->signup_bonus_amount ?? 0);
             if ($bonus > 0) {
-                TransactionService::fundUser($user, $bonus, 'credit', 'Signup bonus');
+                try {
+                    TransactionService::fundUser($user, $bonus, 'credit', 'Signup bonus');
+                } catch (\Throwable $e) {
+                    Log::warning('Signup bonus funding failed during registration', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
-            AdminNotifier::notifySignup($user);
+            try {
+                AdminNotifier::notifySignup($user);
+            } catch (\Throwable $e) {
+                Log::warning('Admin signup notification failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             // A failed send (bad SMTP config, provider outage, etc.) must
             // never break registration itself — the account already exists

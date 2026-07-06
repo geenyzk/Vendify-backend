@@ -6,7 +6,6 @@ use App\Classes\Payment\Payment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\HttpResponse;
-use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -49,8 +48,25 @@ class AuthenticatedSessionController extends Controller
             $request->authenticate();
             $user = Auth::user();
             $token = $user->createToken($user->username)->plainTextToken;
-            Payment::generateAccount($user);
-            $user->loginStamp();
+
+            try {
+                Payment::generateAccount($user);
+            } catch (\Throwable $e) {
+                Log::warning('Virtual account generation failed during login', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $user->loginStamp();
+            } catch (\Throwable $e) {
+                Log::warning('Login timestamp update failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             $user->role = $user->user_type;
             return $this->success([
                 'user' => $user->load('role.permissions'),
@@ -59,8 +75,12 @@ class AuthenticatedSessionController extends Controller
         } catch (ValidationException $e) {
             error_log($e);
             return $this->fail($e->errors(), "Validation Error", 422);
-        }catch (\Exception $e){
-                Log::info($e);
+        } catch (\Throwable $e) {
+            Log::error('Login failed after credential validation', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->fail([], 'Unable to sign in right now. Please try again.', 500);
         }
     }
 
