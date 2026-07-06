@@ -8,6 +8,7 @@ use App\HttpResponse;
 use App\Models\Setting;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Notifications\AppNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -122,6 +123,12 @@ class WalletTransferController extends Controller
         } catch (\Throwable $e) {
             return $this->fail([], 'Could not complete this transfer. Please try again.', 500);
         }
+
+        $recipient->notify(new AppNotification(
+            'wallet_transfer_in',
+            'Money received',
+            "You received ₦{$validated['amount']} from @{$sender->username}.",
+        ));
 
         return $this->success($result, 'Transfer successful');
     }

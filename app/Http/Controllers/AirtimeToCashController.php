@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\AdminNotifier;
 use App\Classes\TransactionService;
 use App\HttpResponse;
 use App\Models\AirtimeToCashRequest;
 use App\Models\Discount;
 use App\Models\Network;
 use App\Models\User;
+use App\Notifications\AppNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -71,6 +73,8 @@ class AirtimeToCashController extends Controller
             'transaction_reference' => TransactionService::generateTransactionReference(),
         ]);
 
+        AdminNotifier::notifyAirtimeToCashPending($atc);
+
         return $this->success($atc, 'Request submitted for review', 201);
     }
 
@@ -127,6 +131,12 @@ class AirtimeToCashController extends Controller
             'payout_transaction_reference' => $result['transaction_reference'],
         ]);
 
+        $user->notify(new AppNotification(
+            'airtime_to_cash_approved',
+            'Airtime to cash approved',
+            "Your {$atc->network} airtime-to-cash request was approved — ₦{$atc->payout_amount} credited to your wallet.",
+        ));
+
         return $this->success($atc->fresh(), 'Request approved and wallet credited');
     }
 
@@ -144,6 +154,13 @@ class AirtimeToCashController extends Controller
             'reviewed_by' => Auth::id(),
             'reviewed_at' => now(),
         ]);
+
+        $user = User::find($atc->user_id);
+        $user?->notify(new AppNotification(
+            'airtime_to_cash_rejected',
+            'Airtime to cash rejected',
+            "Your {$atc->network} airtime-to-cash request was rejected: {$validated['reason']}",
+        ));
 
         return $this->success($atc->fresh(), 'Request rejected');
     }

@@ -12,16 +12,20 @@ class Broadcast extends Model
     protected $table = 'broadcasts';
 
     protected $fillable = [
+        'name',
         'title',
         'message',
         'channels',
+        'payload',
         'audience_label',
+        'recipient_count',
         'scheduled_at',
         'sent',
     ];
 
     protected $casts = [
         'channels' => 'array',
+        'payload' => 'array',
         'sent' => 'boolean',
         'scheduled_at' => 'datetime',
     ];

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Classes\SerivceControl\ServiceControlService;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -202,6 +203,37 @@ class CustomerController extends Controller
             'current_tier' => $user->role?->slug ?? $user->user_type,
             'current_tier_name' => $user->role?->name ?? ucfirst($user->user_type),
             'tiers' => $tiers,
+        ]);
+    }
+
+    /**
+     * Referral program summary for the authenticated user — their own code,
+     * how many people they've referred, how many of those are still
+     * "pending" (never completed a successful transaction, so no commission
+     * has been earned from them yet), and their earnings. See
+     * TransactionService::distributeCommission() for how referral_balance /
+     * total_referral_earnings actually get credited.
+     *
+     * @group Customer
+     * @authenticated
+     */
+    public function referralStats(Request $request)
+    {
+        $user = Auth::user();
+
+        $totalReferrals = $user->referrals()->count();
+        $pendingReferrals = $user->referrals()
+            ->whereDoesntHave('transactions', fn ($q) => $q->where('status', 'success'))
+            ->count();
+
+        return $this->success([
+            'referral_code' => $user->referral_code,
+            'total_referrals' => $totalReferrals,
+            'pending_referrals' => $pendingReferrals,
+            'active_referrals' => $totalReferrals - $pendingReferrals,
+            'referral_balance' => (float) $user->referral_balance,
+            'total_earnings' => (float) $user->total_referral_earnings,
+            'commission_rate' => (float) (Setting::first()?->referral_commission_rate ?? 2.00),
         ]);
     }
 

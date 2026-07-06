@@ -31,6 +31,7 @@ use App\Http\Controllers\GeneralController;
 use App\Http\Controllers\AirtimeToCashController;
 use App\Http\Controllers\WalletTransferController;
 use App\Http\Controllers\WalletWithdrawalController;
+use App\Http\Controllers\NotificationController;
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
@@ -93,12 +94,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/welcome-message', [WelcomeMessageController::class, 'show']);
     Route::post('/welcome-message/seen', [WelcomeMessageController::class, 'markSeen']);
 
+    // Own in-app notifications — shared by admin and customer alike (both
+    // are just Users), scoped to whoever is logged in (no role gate).
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+
         // Promotion routes
         Route::post('/promotions/validate', [PromotionController::class, 'validate']);
         Route::post('/promotions/apply', [PromotionController::class, 'apply']);
 
     Route::prefix("customer")->group(function(){
         Route::get('/stats', [CustomerController::class, 'stats']);
+        Route::get('/referral-stats', [CustomerController::class, 'referralStats']);
         Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
         Route::get('/account/upgrade-tiers', [CustomerController::class, 'upgradeTiers']);
         Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);

@@ -2,8 +2,6 @@
 
 namespace App\Classes;
 
-use Illuminate\Support\Facades\Log;
-
 class TemplateParser
 {
     protected array $context = [];
@@ -33,7 +31,6 @@ class TemplateParser
     {
         $segments = explode('.', $keyPath);
         $value = $this->context;
-        Log::info($value);
 
         foreach ($segments as $segment) {
             if (is_array($value) && isset($value[$segment])) {

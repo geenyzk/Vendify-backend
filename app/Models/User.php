@@ -6,8 +6,10 @@ use Carbon\Carbon;
 use App\Models\Transaction;
 use App\Traits\HasRole;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Notifications\Notifiable;
@@ -21,6 +23,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'username', 'fullname', 'email', 'phone', 'password', 'pin',
         'user_type', 'role_id', 'wallet_balance', 'is_active', 'is_verified', 'status',
         'referral_code', 'referred_by', 'last_login_at', 'email_verified_at',
+        'referral_balance', 'total_referral_earnings',
     ];
 
     protected $appends  = ["transactions", "banks", "stats", "referrals", "joined_at", "badges", "has_pin"];
@@ -32,6 +35,8 @@ class User extends Authenticatable implements MustVerifyEmail
 
     protected $casts = [
         'wallet_balance' => 'decimal:2',
+        'referral_balance' => 'decimal:2',
+        'total_referral_earnings' => 'decimal:2',
         'is_active' => 'boolean',
         'is_verified' => 'boolean',
         'last_login_at' => 'datetime',
@@ -40,6 +45,24 @@ class User extends Authenticatable implements MustVerifyEmail
         'password' => 'hashed',
         'pin' => 'hashed',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (User $user) {
+            if (empty($user->referral_code)) {
+                $user->referral_code = self::generateUniqueReferralCode();
+            }
+        });
+    }
+
+    public static function generateUniqueReferralCode(): string
+    {
+        do {
+            $code = strtoupper(Str::random(8));
+        } while (static::where('referral_code', $code)->exists());
+
+        return $code;
+    }
 
     // User status constants
     public const STATUS_ACTIVE = 'active';
@@ -57,6 +80,27 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getReferralsAttribute()
     {
         return User::whereReferredBy($this->id)->get();
+    }
+
+    /**
+     * Queryable version of the same relationship as getReferralsAttribute()
+     * (kept alongside it rather than replacing it — a relation method and an
+     * accessor of the same name don't conflict: `$user->referrals` still
+     * hits the accessor, `$user->referrals()` builds a query). Used to
+     * compute referral stats without loading every referral eagerly.
+     */
+    public function referrals(): HasMany
+    {
+        return $this->hasMany(User::class, 'referred_by');
+    }
+
+    /**
+     * Queryable counterpart to getTransactionsAttribute() — same
+     * coexistence rule as referrals()/getReferralsAttribute() above.
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class, 'user_id');
     }
 
     /**

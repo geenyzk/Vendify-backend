@@ -7,6 +7,7 @@ use App\Models\CashbackRate;
 use App\Models\Setting;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Notifications\AppNotification;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -72,14 +73,16 @@ class TransactionService
 
             $transaction = Transaction::create($tx_data);
 
-            // Optional: Commission distribution (based on final amount user paid)
-            self::distributeCommission($user, $finalAmount, $transactionType);
-
             // Cashback: a flat, per-service-type wallet credit — replaces
             // the old per-role Discount pricing. Only on success, and keyed
             // off the same transaction_type stored on the row above (e.g.
             // 'airtime_recharge'), not the Discount model's own "type".
             if ($apiData['status'] === 'success') {
+                // Referral commission — only on a transaction that actually
+                // went through (previously fired unconditionally, so a
+                // failed purchase still paid the referrer).
+                self::distributeCommission($user, $finalAmount, $transactionType);
+
                 self::creditCashback($user, $finalAmount, $transactionType);
 
                 // Event rewards keyed off purchase/funding volume — computed
@@ -89,6 +92,15 @@ class TransactionService
             }
 
             AdminNotifier::notifyTransaction($transaction);
+
+            $label = ucwords(str_replace('_', ' ', $transactionType));
+            $user->notify(new AppNotification(
+                $apiData['status'] === 'success' ? 'transaction_success' : 'transaction_failed',
+                $apiData['status'] === 'success' ? "{$label} successful" : "{$label} failed",
+                $apiData['status'] === 'success'
+                    ? "Your {$label} purchase of ₦{$finalAmount} was successful. Ref: {$transaction->transaction_reference}"
+                    : "Your {$label} purchase of ₦{$finalAmount} could not be completed.",
+            ));
 
             SendTransactionCallback::dispatch($user, $transaction);
 
@@ -129,7 +141,23 @@ class TransactionService
 
             $rate = floatval(Setting::first()?->referral_commission_rate ?? 2.00);
             $commission = round($amount * ($rate / 100), 2);
-            $referrer->increment('wallet_balance', $commission);
+            if ($commission <= 0) {
+                return;
+            }
+
+            // Credited to referral_balance (a separate, spendable-on-demand
+            // pot the user converts to wallet_balance themselves — see
+            // CustomerController::convertReferralToWallet), not
+            // wallet_balance directly. total_referral_earnings is a
+            // lifetime counter that never drains, unlike referral_balance.
+            $referrer->increment('referral_balance', $commission);
+            $referrer->increment('total_referral_earnings', $commission);
+
+            $referrer->notify(new AppNotification(
+                'referral_commission',
+                'Referral commission earned',
+                "You earned ₦{$commission} from @{$user->username}'s purchase — added to your referral balance.",
+            ));
         }
     }
 
