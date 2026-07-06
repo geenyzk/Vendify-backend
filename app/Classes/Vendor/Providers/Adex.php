@@ -7,7 +7,7 @@ use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
-use App\Models\Discount;
+use App\Models\DiscoProviderId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -160,7 +160,7 @@ class Adex extends VendorBase
                 ];
 
             case 'electricity':
-                $disco = Discount::getElectricity($payload['disco']);
+                $disco = DiscoProviderId::forDisco($payload['disco']);
                 $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
 
                 if (!$discoId) {
@@ -363,7 +363,7 @@ class Adex extends VendorBase
         }
         $url = $this->baseUrl() . "/cable/cable-validation?iuc={$identifier}&cable={$cableId}";
         } elseif ($service == 'electricity') {
-            $disco = Discount::getElectricity($payload['disco']);
+            $disco = DiscoProviderId::forDisco($payload['disco']);
             $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
             Log::info($disco);
             Log::info($discoId);

@@ -6,7 +6,7 @@ use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
-use App\Models\Discount;
+use App\Models\DiscoProviderId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -126,7 +126,7 @@ class Vtpass extends VendorBase
                 ];
 
             case 'electricity':
-                $disco = Discount::getElectricity($payload['disco']);
+                $disco = DiscoProviderId::forDisco($payload['disco']);
                 return [
                     'request_id' => $payload['tx_ref'],
                     'serviceID' => strtolower($payload['disco']),

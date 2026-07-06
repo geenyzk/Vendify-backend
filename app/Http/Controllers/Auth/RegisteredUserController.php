@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Classes\AdminNotifier;
+use App\Classes\EventService;
 use App\Classes\Payment\Payment;
 use App\Classes\TransactionService;
 use App\Http\Controllers\Controller;
@@ -85,6 +86,12 @@ class RegisteredUserController extends Controller
                 'password' => Hash::make($request->password),
                 'referred_by' => $referrer?->id,
             ]);
+
+            // Referral-count Events (e.g. "refer 5 friends") key off the
+            // referrer's referred-user count, which just changed.
+            if ($referrer) {
+                EventService::checkAndAward($referrer);
+            }
 
             Auth::login($user);
             // $token = $user->createToken($user->username);

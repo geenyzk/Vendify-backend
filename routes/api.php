@@ -16,6 +16,8 @@ use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 
 use App\Http\Controllers\PromotionController;
+use App\Http\Controllers\EventController;
+use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\AnalyticsController;
@@ -129,11 +131,25 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
         Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
 
-        // Promo codes — a separate concept from Discount (see Discount model):
-        // a Discount is an automatic, no-code, per-network role-priced
-        // percentage; a Promotion is an opt-in code (or admin-triggered
-        // "auto") reduction with its own eligibility/date/usage-limit rules.
+        // Discount — a flash-sale-style price cut the platform applies
+        // automatically (no code needed), scoped to a service type and
+        // optionally one network, for a flat percentage or fixed amount,
+        // optionally time-boxed. See Discount::getDiscountedAmount.
+        Route::apiResource('discounts', DiscountController::class)
+            ->except(['create', 'edit']);
+
+        // Promo codes — a separate concept from Discount: an opt-in code
+        // (or admin-triggered "auto") reduction with its own
+        // eligibility/date/usage-limit rules.
         Route::apiResource('promotions', PromotionController::class)
+            ->except(['create', 'edit']);
+
+        // Events — admin-defined conditions (e.g. "refer 5 friends", "spend
+        // ₦50,000 on data") a user must fulfil to earn a badge, cash, or
+        // both. See EventService for how each metric is computed and
+        // TransactionService::process()/RegisteredUserController::store()
+        // for where awarding is triggered.
+        Route::apiResource('events', EventController::class)
             ->except(['create', 'edit']);
     });
 

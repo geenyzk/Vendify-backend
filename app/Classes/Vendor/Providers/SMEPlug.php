@@ -5,7 +5,7 @@ namespace App\Classes\Vendor\Providers;
 use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\DataPlan;
-use App\Models\Discount;
+use App\Models\DiscoProviderId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -172,7 +172,7 @@ class SMEPlug extends VendorBase
         }
         $url = $this->baseUrl() . "/cable/cable-validation?iuc={$identifier}&cable={$cableId}";
         } elseif ($service === 'electricity') {
-            $disco = Discount::getElectricity($payload['serviceType']);
+            $disco = DiscoProviderId::forDisco($payload['serviceType']);
             $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
             $meterType = $options['meter_type'] ?? 'prepaid';
             if (!$discoId) {

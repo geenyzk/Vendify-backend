@@ -139,12 +139,15 @@ class CustomerController extends Controller
             return response()->json(['error' => 'You are already at this user level.'], 400);
         }
 
-        $discount = Discount::whereName($upgradeTo)->first();
+        // Reuses the Discount table under service_type "user_upgrade": the
+        // upgrade tier name lives in `network`, and the flat cost lives in
+        // `value` (expected discount_type "fixed").
+        $discount = Discount::where('service_type', 'user_upgrade')->where('network', $upgradeTo)->first();
         if (!$discount) {
             return response()->json(['error' => 'Discount info not found.'], 404);
         }
 
-        $cost = $discount->price;
+        $cost = (float) $discount->value;
 
         if ($user->wallet_balance < $cost) {
             return response()->json(['error' => 'Insufficient wallet balance. Please fund your wallet.'], 402);

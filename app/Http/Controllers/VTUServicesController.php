@@ -147,7 +147,6 @@ class VTUServicesController extends Controller
 
         $validated = $request->validated();
         // Amount validation now done in ServiceRequest rules for airtime (min:50, max:5000)
-        // No need to check Discount table for airtime since all discounts are now promo-based
 
         $isVerifiable = ServiceControlService::verify(Auth::id(),$validated['pin']??'');
         if (!$isVerifiable) {
@@ -164,32 +163,30 @@ class VTUServicesController extends Controller
             $totalDiscountAmount = 0;
             $promotionId = null;
 
-            // Step 1: Apply base discount from Discount model (automatic, network-based)
+            // Step 1: Apply base Discount (automatic flash-sale style price
+            // cut, scoped to this service and — if set on the network's
+            // discount — this exact network). Applies to every service, not
+            // just airtime/data; network is simply null for services that
+            // don't have one (exam, cable, electricity).
             $baseDiscountAmount = 0;
-            if (in_array($service, ['airtime', 'data'])) {
-                $network = $validated['network'] ?? $validated['provider'] ?? null;
-                $category = $validated['network_type'] ?? null;
+            $network = $validated['network'] ?? $validated['provider'] ?? null;
 
-                if ($network && $category) {
-                    try {
-                        // Get final amount after base discount
-                        $baseDiscountedAmount = Discount::getDiscountedAmount($originalAmount, $network);
-                        $baseDiscountAmount = $originalAmount - $baseDiscountedAmount;
-                        $totalDiscountAmount += $baseDiscountAmount;
+            try {
+                $baseDiscountedAmount = Discount::getDiscountedAmount($originalAmount, $service, $network);
+                $baseDiscountAmount = $originalAmount - $baseDiscountedAmount;
+                $totalDiscountAmount += $baseDiscountAmount;
 
-                        Log::info("Base discount applied", [
-                            'original_amount' => $originalAmount,
-                            'base_discounted_amount' => $baseDiscountedAmount,
-                            'base_discount_amount' => $baseDiscountAmount,
-                            'network' => $network,
-                            'category' => $category,
-                            'user_type' => $user?->user_type
-                        ]);
-                    } catch (\Exception $e) {
-                        Log::error("Error calculating base discount: " . $e->getMessage());
-                        // Continue without base discount if there's an error
-                    }
-                }
+                Log::info("Base discount applied", [
+                    'original_amount' => $originalAmount,
+                    'base_discounted_amount' => $baseDiscountedAmount,
+                    'base_discount_amount' => $baseDiscountAmount,
+                    'service' => $service,
+                    'network' => $network,
+                    'user_type' => $user?->user_type
+                ]);
+            } catch (\Exception $e) {
+                Log::error("Error calculating base discount: " . $e->getMessage());
+                // Continue without base discount if there's an error
             }
 
             // Step 2: Apply promotion if code is provided (additional discount on top of base)

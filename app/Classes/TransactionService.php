@@ -81,6 +81,11 @@ class TransactionService
             // 'airtime_recharge'), not the Discount model's own "type".
             if ($apiData['status'] === 'success') {
                 self::creditCashback($user, $finalAmount, $transactionType);
+
+                // Event rewards keyed off purchase/funding volume — computed
+                // fresh from Transaction data each time, so this is safe to
+                // call on every successful transaction (see EventService).
+                EventService::checkAndAward($user);
             }
 
             AdminNotifier::notifyTransaction($transaction);

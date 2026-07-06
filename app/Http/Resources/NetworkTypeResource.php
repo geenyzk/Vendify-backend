@@ -94,21 +94,16 @@ class NetworkTypeResource extends JsonResource
         }
 
         try {
-            $discount = Discount::where('category', $this->name)->first();
+            $discount = Discount::where('service_type', 'airtime')->where('network', $this->name)->first();
             if ($discount) {
                 return [
                     'id' => $discount->id,
-                    'network' => $discount->name,
-                    'category' => $discount->category,
-                    'type' => $discount->type,
+                    'network' => $discount->network,
+                    'discount_type' => $discount->discount_type,
+                    'value' => $discount->value,
                     'min' => $discount->min,
                     'max' => $discount->max,
-                    'adex_discount' => $discount->adex_discount,
-                    'spurs_discount' => $discount->spurs_discount,
-                    'msorg_discount' => $discount->msorg_discount,
-                    'vtpass_discount' => $discount->vtpass_discount,
-                    'payscribe_discount' => $discount->payscribe_discount,
-                    'isActive' => $discount->isActive,
+                    'active' => $discount->active,
                 ];
             }
         } catch (\Exception $e) {

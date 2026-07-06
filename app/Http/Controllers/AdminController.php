@@ -146,8 +146,8 @@ class AdminController extends Controller
 
     public function airtimeDiscount()
     {
-        $discount = Discount::airtime();
-        return $discount ? $this->success(['discount' => $discount]) : $this->fail([], 'Airtime discount not configured', 404);
+        $discounts = Discount::where('service_type', 'airtime')->get();
+        return $this->success(['discount' => $discounts]);
     }
 
     // --- Optimized Universal Methods ---
