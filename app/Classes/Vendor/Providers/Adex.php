@@ -222,7 +222,11 @@ class Adex extends VendorBase
             'payment_reference' => $response['reference'] ?? null,
             'response_message' => $response['message'] ?? 'Transaction failed',
             'completed_at' => now(),
-            'service_fee' => 0.00,
+            // $response is the raw vendor reply merged with the original
+            // $validated payload — pass through whatever
+            // VTUServicesController computed (e.g. the Bill Plan fee for
+            // electricity) instead of always zeroing it.
+            'service_fee' => (float) ($response['service_fee'] ?? 0),
             'platform' => 'api',
             "transaction_type" => "data_subscription"
         ];

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Classes\SerivceControl\ServiceControlService;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Http\Requests\ServiceRequest;
+use App\Models\BillPlan;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\Discount;
@@ -247,11 +248,26 @@ class VTUServicesController extends Controller
             $finalAmount = $originalAmount - $totalDiscountAmount;
             $finalAmount = max(0, $finalAmount); // Ensure no negative amounts
 
+            // Step 2.5: Add the Bill Plan service fee, if any — the reverse
+            // of a discount: the customer pays MORE than the token amount
+            // requested, not less. The disco still receives $originalAmount
+            // in full; only the wallet debit and the recorded transaction
+            // fee reflect this.
+            $serviceFeeAmount = 0;
+            if ($service === 'electricity' && !empty($validated['disco'])) {
+                $billPlan = BillPlan::where('disco', $validated['disco'])->where('active', true)->first();
+                if ($billPlan) {
+                    $serviceFeeAmount = $billPlan->resolveServiceFee($originalAmount);
+                    $finalAmount += $serviceFeeAmount;
+                }
+            }
+
             Log::info("Final amount calculation", [
                 'original_amount' => $originalAmount,
                 'base_discount_amount' => $baseDiscountAmount,
                 'promotion_discount' => $promotionDiscount,
                 'total_discount_amount' => $totalDiscountAmount,
+                'service_fee_amount' => $serviceFeeAmount,
                 'final_amount' => $finalAmount,
                 'user_balance' => $user->wallet_balance
             ]);
@@ -266,9 +282,10 @@ class VTUServicesController extends Controller
 
             // Step 4: Add all discount details to validated data for processing
             $validated['amount'] = $originalAmount;                 // Original amount for API (what to buy)
-            $validated['final_amount'] = $finalAmount;              // Final amount user pays (after discounts)
+            $validated['final_amount'] = $finalAmount;              // Final amount user pays (after discounts/fees)
             $validated['promotion_id'] = $promotionId;              // Link to promotion if used
             $validated['discount_amount'] = $totalDiscountAmount;   // Total discount applied
+            $validated['service_fee'] = $serviceFeeAmount;          // Bill Plan fee, on top of the amount
 
             $serviceType = $service;
 
@@ -331,15 +348,33 @@ class VTUServicesController extends Controller
         $network = $request->query('network');
 
         if ($amount <= 0) {
-            return $this->success(['original_amount' => 0, 'discounted_amount' => 0, 'discount_amount' => 0]);
+            return $this->success([
+                'original_amount' => 0, 'discounted_amount' => 0, 'discount_amount' => 0,
+                'service_fee' => 0, 'final_amount' => 0,
+            ]);
         }
 
         $discountedAmount = Discount::getDiscountedAmount($amount, $service, $network);
+        $discountAmount = round($amount - $discountedAmount, 2);
+
+        // Bill Plan's service fee (electricity only) is additive on top —
+        // mirrors the same computation handle() does, so the confirm
+        // screen shows the real total instead of guessing at it client-side.
+        $serviceFee = 0;
+        if ($service === 'electricity') {
+            $disco = $request->query('disco');
+            $billPlan = $disco ? BillPlan::where('disco', $disco)->where('active', true)->first() : null;
+            if ($billPlan) {
+                $serviceFee = $billPlan->resolveServiceFee($amount);
+            }
+        }
 
         return $this->success([
             'original_amount' => $amount,
             'discounted_amount' => $discountedAmount,
-            'discount_amount' => round($amount - $discountedAmount, 2),
+            'discount_amount' => $discountAmount,
+            'service_fee' => $serviceFee,
+            'final_amount' => round($discountedAmount + $serviceFee, 2),
         ]);
     }
 
@@ -378,9 +413,7 @@ class VTUServicesController extends Controller
      * }
      */
     function verify(Request $request, string $service){
-        // try{
         try {
-            //code...
             $val = [];
             if($service == "cable"){
                 $val = [
@@ -397,9 +430,14 @@ class VTUServicesController extends Controller
             ], $val));
             $handler = VTUServiceFactory::make($service, $request->cable_network??"");
             return $handler->verifyUser($service, $request->identifier, $payload);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Previously swallowed into a silent null response — the
+            // frontend would see {success:true, data:null} and have no
+            // idea verification actually failed validation.
+            return $this->fail($e->errors(), $e->getMessage(), 422);
         } catch (\Throwable $th) {
-            //throw $th;
-            Log::info($th);
+            Log::error($th);
+            return $this->fail([], 'Verification failed. Please try again.', 500);
         }
 
         // }Except(e){

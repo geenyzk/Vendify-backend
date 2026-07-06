@@ -156,7 +156,11 @@ class Vtpass extends VendorBase
             'payment_reference' => $response['transactionID'] ?? null,
             'response_message' => $response['response_description'] ?? '',
             'completed_at' => now(),
-            'service_fee' => 0.00,
+            // $response here is the vendor's raw API reply merged with the
+            // original $validated payload (see VendorBase::process) — pass
+            // through whatever VTUServicesController computed (e.g. the
+            // Bill Plan fee for electricity) instead of always zeroing it.
+            'service_fee' => (float) ($response['service_fee'] ?? 0),
             'platform' => 'api',
         ];
 
@@ -177,9 +181,17 @@ class Vtpass extends VendorBase
         }
 
         $url = $this->baseUrl() . '/merchant-verify';
+        // $payload comes straight from VTUServicesController::verify() —
+        // 'cable_network'/'disco', never a 'serviceID' key, so that always
+        // resolved to null here (verification would always fail against
+        // the real vtpass endpoint). Build it the same way formatPayload()
+        // does for the actual purchase, so verify checks the same billing ID.
+        $serviceId = $service === 'cable'
+            ? strtolower($payload['cable_network'] ?? '')
+            : strtolower($payload['disco'] ?? '');
         $data = [
             'billersCode' => $identifier,
-            'serviceID' => $payload['serviceID'],
+            'serviceID' => $serviceId,
         ];
 
         try {

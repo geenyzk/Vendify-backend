@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\AirtimePlan;
+use App\Models\BillPlan;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Rules\ValidPhoneForNetwork;
@@ -159,6 +160,28 @@ class ServiceRequest extends FormRequest
                             }
                         },
                     ],
+                ];
+            case "electricity":
+                // Bill Plan (Products > Bill) is the Airtime Plan equivalent
+                // for electricity: a per-disco amount range, whether the
+                // disco is currently purchasable at all, and its own
+                // service fee — electricity has no fixed catalog price, so
+                // there's no plan id to validate against, just the range.
+                $disco = $this->input('disco');
+                $billPlan = $disco ? BillPlan::where('disco', $disco)->where('active', true)->first() : null;
+
+                return [
+                    'disco' => [
+                        'required', 'string',
+                        function ($attribute, $value, $fail) use ($billPlan, $disco) {
+                            if ($disco && !$billPlan) {
+                                $fail('Bill payments are currently unavailable for this disco.');
+                            }
+                        },
+                    ],
+                    'meter_number' => 'required|string',
+                    'meter_type' => 'required|string|in:prepaid,postpaid',
+                    'amount' => 'required|numeric|min:' . ($billPlan->min ?? 500) . '|max:' . ($billPlan->max ?? 100000),
                 ];
             case "exam":
                 return [

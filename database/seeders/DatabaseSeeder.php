@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
             ServiceControlSeeder::class,
             DiscountsSeeder::class,
             DataPlanSeeder::class,
+            BillPlanSeeder::class,
             StockVendingSeeder::class,
             ProviderSeeder::class,
             MessageSeeder::class,
