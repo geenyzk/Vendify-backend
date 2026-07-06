@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\CustomerController;
@@ -41,6 +42,7 @@ Route::get('/test-mail', function () {
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get("/user", [AuthenticatedSessionController::class, 'index']);
     Route::get("/logout", [AuthenticatedSessionController::class, 'destroy']);
+    Route::put("/account/pin", [AccountController::class, 'updatePin']);
     Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
