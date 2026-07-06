@@ -149,9 +149,18 @@ class TransactionService
         }
     }
 
-    public static function fundUser(User $user, float $amount, string $type = 'credit', ?string $note = null): array
+    public static function fundUser(
+        User $user,
+        float $amount,
+        string $type = 'credit',
+        ?string $note = null,
+        string $transactionType = 'manual_funding',
+        string $provider = 'admin',
+        ?string $receiver = null,
+        ?string $relatedReference = null,
+    ): array
 {
-    return DB::transaction(function () use ($user, $amount, $type, $note) {
+    return DB::transaction(function () use ($user, $amount, $type, $note, $transactionType, $provider, $receiver, $relatedReference) {
         $balanceBefore = $user->wallet_balance;
 
         if ($type === 'credit') {
@@ -169,19 +178,20 @@ class TransactionService
 
         $transaction = Transaction::create([
             'user_id' => $user->id,
-            'transaction_type' => 'manual_funding',
-            'provider' => 'admin',
+            'transaction_type' => $transactionType,
+            'provider' => $provider,
             'account_or_phone' => $user->phone,
             'amount' => $amount,
             "plan_type" => $type,
             'status' => 'success',
             'transaction_reference' => self::generateTransactionReference(),
+            'related_reference' => $relatedReference,
             'funding_method' => "manual",
             'balance_before' => $balanceBefore,
             'balance_after' => $balanceAfter,
             'response_message' => $note ?? (ucfirst($type) . ' by admin'),
             'platform' => 'web',
-            "receiver" => $user->username,
+            "receiver" => $receiver ?? $user->username,
         ]);
 
         return $transaction->toArray();

@@ -104,6 +104,16 @@ abstract class PaymentBase implements PaymentInterface
         throw new \RuntimeException(class_basename($this) . ' does not support fetching banks.');
     }
 
+    /**
+     * Whether this gateway has a real transfer()/getBanks() implementation —
+     * used to pick the right gateway for wallet-to-bank withdrawals without
+     * hardcoding a provider name. See PaymentFactory::makeTransferCapable().
+     */
+    public function supportsTransfers(): bool
+    {
+        return false;
+    }
+
     protected function creditedAmount($amount)
     {
         $amount = floatval($amount);

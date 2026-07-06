@@ -16,6 +16,8 @@ class Setting extends Model
         'mail_password', 'mail_encryption', 'mail_from_address', 'mail_from_name',
         'registrations_open', 'signup_bonus_amount', 'min_wallet_funding_amount',
         'prune_transactions_enabled', 'prune_transactions_after_days', 'transactions_last_pruned_at',
+        'wallet_transfer_min', 'wallet_transfer_max',
+        'wallet_withdrawal_auto_approve', 'wallet_withdrawal_min', 'wallet_withdrawal_max',
     ];
 
     protected $casts = [
@@ -31,6 +33,11 @@ class Setting extends Model
         'prune_transactions_enabled' => 'boolean',
         'prune_transactions_after_days' => 'integer',
         'transactions_last_pruned_at' => 'datetime',
+        'wallet_transfer_min' => 'decimal:2',
+        'wallet_transfer_max' => 'decimal:2',
+        'wallet_withdrawal_auto_approve' => 'boolean',
+        'wallet_withdrawal_min' => 'decimal:2',
+        'wallet_withdrawal_max' => 'decimal:2',
     ];
 
     // Mail password is sensitive but admin-only (mirrors how provider

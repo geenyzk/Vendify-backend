@@ -29,6 +29,8 @@ use App\Http\Controllers\AccountController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\GeneralController;
 use App\Http\Controllers\AirtimeToCashController;
+use App\Http\Controllers\WalletTransferController;
+use App\Http\Controllers\WalletWithdrawalController;
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
@@ -105,6 +107,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // AirtimeToCashController), so it's not routed through /vtu/{service}.
         Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'myRequests']);
         Route::post('/airtime-to-cash', [AirtimeToCashController::class, 'submit']);
+
+        // Wallet-to-wallet — instant, PIN-gated, no admin review (an
+        // internal ledger move, no real money leaves the platform).
+        Route::get('/wallet-transfer/lookup', [WalletTransferController::class, 'lookup']);
+        Route::post('/wallet-transfer', [WalletTransferController::class, 'send']);
+
+        // Wallet-to-bank — real money leaves the platform, so it's reserved
+        // (debited) on submit and only actually paid out once approved (see
+        // Setting::wallet_withdrawal_auto_approve / WalletWithdrawalController).
+        Route::get('/wallet-withdrawals/banks', [WalletWithdrawalController::class, 'banks']);
+        Route::get('/wallet-withdrawals', [WalletWithdrawalController::class, 'myRequests']);
+        Route::post('/wallet-withdrawals', [WalletWithdrawalController::class, 'submit']);
     });
 
 
@@ -143,6 +157,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::middleware('permission:wallets')->group(function () {
             Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
+
+            Route::get('/wallet-withdrawals', [WalletWithdrawalController::class, 'adminIndex']);
+            Route::post('/wallet-withdrawals/{withdrawal}/approve', [WalletWithdrawalController::class, 'approve']);
+            Route::post('/wallet-withdrawals/{withdrawal}/reject', [WalletWithdrawalController::class, 'reject']);
         });
 
         Route::middleware('permission:support')->group(function () {

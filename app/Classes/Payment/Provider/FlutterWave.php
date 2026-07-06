@@ -138,6 +138,11 @@ class FlutterWave extends PaymentBase
         }
     }
 
+    public function supportsTransfers(): bool
+    {
+        return true;
+    }
+
     /**
      * Fetch the list of Nigerian banks supported by Flutterwave for transfers.
      */

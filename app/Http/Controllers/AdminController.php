@@ -158,10 +158,10 @@ class AdminController extends Controller
      */
     // Tables the generic reader must never serve: GET /table/{table} is
     // reachable by any logged-in user (not just admins), so anything holding
-    // other users' PII (phone numbers, proof uploads, submitted amounts)
-    // needs its own permission-gated controller instead — see
-    // AirtimeToCashController.
-    private const RESTRICTED_TABLES = ['airtime_to_cash_requests'];
+    // other users' PII (phone numbers, proof uploads, submitted amounts,
+    // bank account details) needs its own permission-gated controller
+    // instead — see AirtimeToCashController / WalletWithdrawalController.
+    private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'wallet_withdrawals'];
 
     public function universalGet(Request $request, $modelSlug)
     {
