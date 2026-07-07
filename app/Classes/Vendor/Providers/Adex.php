@@ -367,7 +367,10 @@ class Adex extends VendorBase
 
             case 'data_card':
                 $result = [
-                    'transaction_type' => 'data_card',
+                    // Was 'data_card' — not a real transactions.transaction_type
+                    // enum value; 'data_pin' already means exactly this
+                    // (a data PIN voucher) and is used that way elsewhere.
+                    'transaction_type' => 'data_pin',
                     'status' => $response['status'] ?? 'fail',
                     'message' => $response['message'] ?? '',
                     'amount' => $response['amount'] ?? 0,
@@ -384,7 +387,10 @@ class Adex extends VendorBase
 
             case 'recharge_card':
                 $result = [
-                    'transaction_type' => 'recharge_card',
+                    // Was 'recharge_card' — not a real transactions.transaction_type
+                    // enum value; 'airtime_pin' already means exactly this
+                    // (an airtime PIN voucher) and is used that way elsewhere.
+                    'transaction_type' => 'airtime_pin',
                     'account_or_phone' => null,
                     'amount' => $response['amount'] ?? 0.00,
                     'quantity' => (int) ($response['quantity'] ?? 1),
