@@ -6,8 +6,11 @@ use App\Models\ChildCustomer;
 use App\Models\ChildDirective;
 use App\Models\ChildSyncEvent;
 use App\Models\ChildTransaction;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,9 +21,12 @@ use Illuminate\Support\Facades\Log;
  * more method on AdminController) so an action this dangerous isn't easy
  * to miss in review.
  *
- * Wipes: non-admin users, transactions, notifications, and all synced
- * affiliate data (child_customers/transactions/directives/sync_events).
- * Kept: admin user accounts, and every piece of platform CONFIGURATION —
+ * Wipes: every user except those with the owner/co-owner role, transactions,
+ * notifications, and all synced affiliate data (child_customers/transactions/
+ * directives/sync_events). Also resets roles/permissions back to the
+ * canonical seeded set, discarding any custom roles or permission edits made
+ * via RoleController.
+ * Kept: owner/co-owner accounts, and every piece of platform CONFIGURATION —
  * Providers/Vendors, payment gateways, the product catalog (data/cable/
  * airtime/exam plans + pricing), Settings, StockVending, ServiceControl,
  * and each ChildInstance connection itself (only its synced data is wiped,
@@ -29,6 +35,7 @@ use Illuminate\Support\Facades\Log;
 class ResetWebsiteController extends Controller
 {
     private const CONFIRMATION_PHRASE = 'DELETE ALL DATA';
+    private const SURVIVING_ROLES = ['owner', 'co-owner'];
 
     public function reset(Request $request)
     {
@@ -43,7 +50,17 @@ class ResetWebsiteController extends Controller
         }
 
         $counts = DB::transaction(function () use ($admin) {
-            $nonAdminUserIds = User::where('user_type', '!=', 'admin')->pluck('id');
+            // Only owner/co-owner accounts survive — everyone else (regular
+            // customers, agents, and even other admin-type staff such as
+            // customer-care) is wiped, matched by their assigned role name
+            // rather than the coarser user_type column.
+            $keptUsers = User::with('role')
+                ->whereHas('role', fn ($q) => $q->whereIn('name', self::SURVIVING_ROLES))
+                ->get(['id', 'role_id'])
+                ->map(fn ($user) => ['id' => $user->id, 'role_name' => $user->role->name]);
+
+            $keptUserIds = $keptUsers->pluck('id');
+            $deletedUserIds = User::whereNotIn('id', $keptUserIds)->pluck('id');
 
             $counts = [
                 'transactions' => Transaction::count(),
@@ -52,7 +69,7 @@ class ResetWebsiteController extends Controller
                 'child_transactions' => ChildTransaction::count(),
                 'child_directives' => ChildDirective::count(),
                 'child_sync_events' => ChildSyncEvent::count(),
-                'users' => $nonAdminUserIds->count(),
+                'users' => $deletedUserIds->count(),
             ];
 
             Transaction::query()->delete();
@@ -70,10 +87,27 @@ class ResetWebsiteController extends Controller
             // stale is left in personal_access_tokens.
             DB::table('personal_access_tokens')
                 ->where('tokenable_type', User::class)
-                ->whereIn('tokenable_id', $nonAdminUserIds)
+                ->whereIn('tokenable_id', $deletedUserIds)
                 ->delete();
 
-            User::where('user_type', '!=', 'admin')->delete();
+            User::whereIn('id', $deletedUserIds)->delete();
+
+            // Reset roles/permissions to the canonical seeded set. Deleting
+            // `roles` nulls out role_id on the surviving owner/co-owner users
+            // (nullOnDelete), so their role is reattached by name below once
+            // the fresh rows exist.
+            DB::table('permission_role')->delete();
+            Permission::query()->delete();
+            Role::query()->delete();
+
+            (new RolesAndPermissionsSeeder())->run();
+
+            $freshRoleIdsByName = Role::pluck('id', 'name');
+            foreach ($keptUsers as $keptUser) {
+                User::where('id', $keptUser['id'])->update([
+                    'role_id' => $freshRoleIdsByName[$keptUser['role_name']] ?? null,
+                ]);
+            }
 
             return $counts;
         });
