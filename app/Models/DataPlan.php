@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 class DataPlan extends Model
 {
@@ -63,7 +62,7 @@ class DataPlan extends Model
 
     public function getPriceAttribute(){
         $user = Auth::user();
-        return $this->{$user->user_type?? "user" . "_price"};
+        return $this->{$user->pricingTier() . "_price"};
     }
     public function getNetworkAttribute($value)
     {

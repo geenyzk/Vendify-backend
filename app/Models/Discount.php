@@ -66,7 +66,7 @@ class Discount extends Model
 
     public function getPriceAttribute(){
         $user = Auth::user();
-        return $this->{$user?->user_type . "_discount"};
+        return $this->{($user?->pricingTier() ?? "user") . "_discount"};
     }
 
     function scopeGetElectricity($query, $name){
@@ -106,7 +106,7 @@ class Discount extends Model
         ->orWhere("category", $name)
         ->first();
         $user = Auth::user();
-        $user_discount_percent = $discount->{$user?->user_type . "_discount"};
+        $user_discount_percent = $discount->{($user?->pricingTier() ?? "user") . "_discount"};
 
         return round($amount - (($user_discount_percent / 100) * $amount), 2);
     }

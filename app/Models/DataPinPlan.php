@@ -17,6 +17,6 @@ class DataPinPlan extends Model
 
     public function getPriceAttribute(){
         $user = Auth::user();
-        return $this->{$user->user_type?? "user" . "_price"};
+        return $this->{$user->pricingTier() . "_price"};
     }
 }

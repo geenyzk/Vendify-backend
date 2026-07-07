@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Discount;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -148,9 +149,14 @@ class CustomerController extends Controller
             return response()->json(['error' => 'Insufficient wallet balance. Please fund your wallet.'], 402);
         }
 
-        // Deduct the cost from the user's wallet
+        // Deduct the cost from the user's wallet. user_type is kept in sync
+        // for reporting (AdminController::stats, broadcast targeting), but
+        // pricing itself reads role_id (User::pricingTier()) — the role
+        // table has no "user" entry, it's named "basic" there, hence the
+        // translation below.
         $user->wallet_balance -= $cost;
         $user->user_type = $upgradeTo;
+        $user->role_id = Role::where('name', $upgradeTo === 'user' ? 'basic' : $upgradeTo)->value('id');
         $user->save();
 
         return response()->json([

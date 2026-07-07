@@ -65,4 +65,20 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Role::class);
     }
+
+    private const PRICING_TIER_ROLES = ['agent', 'api', 'bonanza'];
+
+    /**
+     * Column prefix used by DataPlan/CablePlan/AirtimePinPlan/DataPinPlan/
+     * Discount/ExamPlan price & discount lookups. agent/api/bonanza roles
+     * get their own pricing column; every other role (basic, owner,
+     * co-owner, customer-care) falls back to the base `user_*` columns —
+     * staff aren't a separate retail pricing tier.
+     */
+    public function pricingTier(): string
+    {
+        $roleName = $this->role?->name;
+
+        return in_array($roleName, self::PRICING_TIER_ROLES, true) ? $roleName : 'user';
+    }
 }
