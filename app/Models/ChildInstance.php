@@ -17,6 +17,9 @@ class ChildInstance extends Model
         'last_seen_at',
         'health_status',
         'config',
+        'registration_code',
+        'registration_code_expires_at',
+        'registered_at',
     ];
 
     protected $casts = [
@@ -25,10 +28,13 @@ class ChildInstance extends Model
         'shared_secret' => 'encrypted',
         'last_seen_at' => 'datetime',
         'config' => 'array',
+        'registration_code_expires_at' => 'datetime',
+        'registered_at' => 'datetime',
     ];
 
     protected $hidden = [
         'shared_secret',
+        'registration_code',
     ];
 
     protected static function booted(): void
@@ -37,9 +43,12 @@ class ChildInstance extends Model
             if (empty($instance->slug)) {
                 $instance->slug = Str::slug($instance->name) . '-' . Str::lower(Str::random(6));
             }
-            if (empty($instance->shared_secret)) {
-                $instance->shared_secret = Str::random(64);
-            }
+            // shared_secret is intentionally NOT generated here anymore —
+            // it stays null until the child completes self-registration
+            // (see AdminController::generateChildRegistrationCode() /
+            // ChildRegistrationController::register()). An instance created
+            // directly with an explicit shared_secret (rare — e.g. a
+            // one-off manual setup) is left alone.
         });
     }
 

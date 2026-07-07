@@ -39,6 +39,17 @@ class AdminController extends Controller
         $transactionCount = Transaction::whereYear('created_at', Carbon::now()->year)
         ->whereMonth('created_at', Carbon::now()->month)
         ->count();
+
+        // Consumed by the dashboard's stat cards (vtu_2 dashboardService.ts's
+        // Stats type) alongside the fields above — kept as plain today-only
+        // counts here since the richer date-range breakdown lives in
+        // AnalyticsController::index() instead.
+        $totalFundingToday = Transaction::whereDate('created_at', Carbon::today())
+            ->where('status', 'success')
+            ->whereIn('transaction_type', ['wallet_funding', 'manual_funding'])
+            ->sum('amount');
+        $totalSignupsToday = User::whereDate('created_at', Carbon::today())->count();
+
         return $this->success([
             "users_graph" => [
                 'labels' => $labels,
@@ -48,11 +59,35 @@ class AdminController extends Controller
             "total_user" => User::count(),
             "total_user_balance" => User::sum("wallet_balance"),
             "api_balances" => VendorFactory::sumAllBalances(),
+            "total_funding_today" => (float) $totalFundingToday,
+            "total_signups_today" => $totalSignupsToday,
+            "affiliates" => $this->affiliateSummary(),
             "tx_chart" => [
                 "labels" => [], // $tx_labels
                 "data" => [], // $tx_labels
             ]
         ]);
+    }
+
+    // Phase 1 of the parent/child affiliate system has no dashboard
+    // presence at all yet — this is the aggregate view; per-instance
+    // detail already lives on the "Affiliates" admin page.
+    private function affiliateSummary(): array
+    {
+        $instances = \App\Models\ChildInstance::all(['id', 'status', 'last_seen_at']);
+        $staleCutoff = now()->subMinutes(15);
+
+        return [
+            'total' => $instances->count(),
+            'active' => $instances->where('status', 'active')->count(),
+            'pending' => $instances->where('status', 'pending')->count(),
+            'stale' => $instances->where('status', 'active')
+                ->filter(fn ($i) => !$i->last_seen_at || $i->last_seen_at->lt($staleCutoff))
+                ->count(),
+            'total_synced_customers' => \App\Models\ChildCustomer::count(),
+            'total_synced_transactions' => \App\Models\ChildTransaction::count(),
+            'total_synced_transaction_volume' => (float) \App\Models\ChildTransaction::sum('amount'),
+        ];
     }
 
     function systemInformation() {
@@ -304,6 +339,56 @@ class AdminController extends Controller
         $vendor->identifier = Str::uuid();
         $vendor->save();
         return $this->success(["identifier" => $vendor->identifier]);
+    }
+
+    // ChildInstance::shared_secret is $hidden on the model (it's a real
+    // credential, not something that should leak into every generic
+    // /table/child_instances list/show response) — these two admin-only
+    // actions are the only way to actually see it, mirroring refreshToken()
+    // above for vendor identifiers.
+    function childInstanceSecret(string $id)
+    {
+        $instance = \App\Models\ChildInstance::find($id);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+        return $this->success(['secret' => $instance->shared_secret]);
+    }
+
+    function regenerateChildInstanceSecret(string $id)
+    {
+        $instance = \App\Models\ChildInstance::find($id);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+        $instance->shared_secret = Str::random(64);
+        $instance->save();
+        return $this->success(['secret' => $instance->shared_secret]);
+    }
+
+    // No manual "create affiliate" form — an admin only ever needs to give
+    // a new child a name and a one-time code. The child turns that code
+    // into its own real slug/secret via ChildRegistrationController::register()
+    // the first time it connects; nothing else about the connection (base_url,
+    // status) is admin-configured up front.
+    function generateChildRegistrationCode(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+        ]);
+
+        $instance = \App\Models\ChildInstance::create([
+            'name' => $validated['name'],
+            'registration_code' => Str::upper(Str::random(10)),
+            'registration_code_expires_at' => now()->addDay(),
+        ]);
+
+        return $this->success([
+            'id' => $instance->id,
+            'name' => $instance->name,
+            'registration_code' => $instance->registration_code,
+            'expires_at' => $instance->registration_code_expires_at,
+        ], 'Registration code generated');
     }
 
     function broadcast(Request $request){

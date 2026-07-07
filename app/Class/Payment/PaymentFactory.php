@@ -21,11 +21,18 @@ class PaymentFactory
         //
     }
     static function make(Provider $provider){
-        Log::info($provider->name);
+        // No default arm used to mean any provider name that didn't match
+        // exactly (a typo, or a real gap — e.g. "Payvessel" is a configured
+        // payment provider in the DB with no class here at all) threw an
+        // uncaught UnhandledMatchError straight out of a webhook/generate
+        // request instead of a clear, catchable, loggable error.
         return match($provider->name){
             "flutterwave" => new FlutterWave($provider),
             "monnify" => new Monnify($provider),
             "payment point" => new PaymentPoint($provider),
+            default => throw new \InvalidArgumentException(
+                "No payment provider class mapped for [{$provider->name}] (provider #{$provider->id})."
+            ),
         };
     }
 }

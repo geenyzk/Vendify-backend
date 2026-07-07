@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Route;
@@ -25,6 +26,25 @@ Route::get('/docs.openapi', function () {
 
 Route::get('/cache', function () {
     return Cache::flush();
+});
+
+// Deploy helper for shared hosting with no SSH/artisan access — hit after
+// each deploy to run pending migrations. Token-gated: refuses to run at
+// all if DEPLOY_SECRET isn't set (so this can never be accidentally left
+// open), and rejects anything that doesn't match it via a timing-safe
+// comparison.
+Route::get('/deploy/migrate', function () {
+    $secret = env('DEPLOY_SECRET');
+    if (!$secret || !hash_equals($secret, (string) request('token'))) {
+        abort(403, 'Invalid or missing deploy token.');
+    }
+
+    Artisan::call('migrate', ['--force' => true]);
+
+    return response()->json([
+        'success' => true,
+        'output' => Artisan::output(),
+    ]);
 });
 
 require __DIR__.'/auth.php';

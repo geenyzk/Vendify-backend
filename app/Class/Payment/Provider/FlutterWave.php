@@ -80,7 +80,7 @@ class FlutterWave extends PaymentBase
             "is_permanent" => true,
             "firstname" => $firstName,
             "lastname" => $lastName,
-            "bvn" => $sessionUser->bvn ?? $gen->bvn
+            "bvn" => $sessionUser->bvn ?? $gen?->bvn
         ];
     }
 
@@ -104,31 +104,52 @@ class FlutterWave extends PaymentBase
     }
 
 
+    // Parsing only — no wallet credit / no $user->save() here. Centralized
+    // in PaymentBase::webhook() so it happens exactly once, only after
+    // signature verification + idempotency checks pass. This used to
+    // credit the wallet unconditionally right here, before the
+    // success/fail status below was even evaluated.
     protected function callback(HttpRequest $request): array
     {
         $payload = $request->all();
-        $data = $payload['data'];
-        $customer = $data['customer'];
-        $creditedAmount = $this->creditedAmount($data['amount']);
-        $user = User::where('email', $customer['email'])->first();
-        $user->wallet_balance += $creditedAmount;
-        $user->save();
+        $data = $payload['data'] ?? [];
+        $customer = $data['customer'] ?? [];
+        $status = ($data['status'] ?? null) === 'successful' ? 'success' : 'fail';
+        $creditedAmount = $this->creditedAmount($data['amount'] ?? 0);
+
         return [
-            "user_id" => $user->id,
+            'user_email' => $customer['email'] ?? null,
             'provider' => $this->providerName,
-            'transaction_reference' =>  $data['tx_ref'] ,
+            'transaction_reference' => $data['tx_ref'] ?? null,
             'payment_reference' => $data['flw_ref'] ?? null,
-            'response_message' => $data['processor_response'] ?? 'Transaction failed',
+            'response_message' => $data['processor_response'] ?? ($status === 'success' ? 'Transaction successful' : 'Transaction failed'),
             'completed_at' => now(),
             "funding_method" => "bank_transfer",
             'service_fee' => $data['app_fee'] ?? 0.00,
             'platform' => 'web',
             'transaction_type' => 'wallet_funding',
             'account_or_phone' => $customer['phone_number'] ?? null,
-            'amount' => $creditedAmount ?? 0.00,
-            'status' => $data['status'] =="successful" ?"success" :"fail" ,
+            'amount' => $creditedAmount,
+            'status' => $status,
             'receiver' => $customer['phone_number'] ?? null,
         ];
+    }
+
+    // Flutterwave sends a `verif-hash` header that must match the "Secret
+    // Hash" configured in the Flutterwave dashboard's webhook settings —
+    // stored per-provider in the (otherwise-unused) webhook_access column.
+    protected function verifyWebhookSignature(HttpRequest $request): bool
+    {
+        $expected = $this->provider->webhook_access;
+        if (empty($expected)) {
+            Log::warning('FlutterWave webhook secret (webhook_access) not configured — rejecting webhook.', [
+                'provider_id' => $this->provider->id,
+            ]);
+            return false;
+        }
+
+        $received = $request->header('verif-hash');
+        return $received !== null && hash_equals($expected, $received);
     }
 
 
