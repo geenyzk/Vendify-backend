@@ -6,7 +6,6 @@ use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class SandboxService extends VendorBase
@@ -19,13 +18,24 @@ class SandboxService extends VendorBase
     public function sendRequest(string $service, array $payload): array
     {
         $simulatedStatus = $payload['simulate_status'] ?? 'success';
+        // Cable purchases identify the customer by 'iuc', every other
+        // supported service here by 'phone'/'meter_number' under the
+        // 'phone' key already used below — fall back across whichever one
+        // the real payload actually has.
+        $account = $payload['phone'] ?? $payload['iuc'] ?? $payload['meter_number'] ?? null;
 
         return [
             'status' => $simulatedStatus === 'success' ? 'successful' : 'failed',
             'amount' => $payload['amount'],
-            'discount_amount' => $payload['amount'] * 0.98,
-            'phone' => $payload['phone'],
-            'plan_type' => $payload['plan_type'] ?? $payload['network_type'],
+            // No vendor-side markup simulated here — the real discount is
+            // already computed server-side (Discount::getDiscountedAmount)
+            // before this vendor layer is ever reached, same as every real
+            // vendor's own 'data'/'electricity' cases (which hardcode 0.00).
+            // A separate fake 2% here meant the sandbox never actually
+            // charged what production would have for the same request.
+            'discount_amount' => 0,
+            'phone' => $account,
+            'plan_type' => $payload['plan_type'] ?? $payload['network_type'] ?? null,
             'token' => $simulatedStatus === 'success' ? Str::random(12) : null,
             'reference' => 'SBX-' . strtoupper(Str::random(8)),
             'request-id' => $payload['tx_ref'],
@@ -55,7 +65,11 @@ class SandboxService extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['airtime', 'data', 'electricity'];
+        // Was missing 'cable' — USE_SANDBOX=true routes every vendor call
+        // through this class regardless of which real vendor is configured,
+        // so cable purchases would have thrown "No formatter for [cable]"
+        // (see formatResponse below) the instant sandbox mode was enabled.
+        return ['airtime', 'data', 'cable', 'electricity'];
     }
 
     protected function formatResponse(string $service, array $response): array
@@ -91,7 +105,12 @@ class SandboxService extends VendorBase
         $types = [
             'airtime' => ['transaction_type' => 'airtime_recharge'],
             'data' => ['transaction_type' => 'data_subscription'],
-            'electricity' => ['transaction_type' => 'electricity_payment'],
+            'cable' => ['transaction_type' => 'cable_subscription'],
+            // Was 'electricity_payment' — not a real value in the
+            // transactions.transaction_type enum ('electric_bill' is), so
+            // every simulated electricity purchase failed at the database
+            // insert with a truncation error.
+            'electricity' => ['transaction_type' => 'electric_bill'],
         ];
 
         if (!isset($types[$service])) {
@@ -138,6 +157,7 @@ class SandboxService extends VendorBase
         return match ($service) {
             'airtime' => '/airtime',
             'data' => '/data',
+            'cable' => '/cable',
             'electricity' => '/electricity',
             default => throw new \InvalidArgumentException("No endpoint mapped for service [$service]"),
         };
@@ -166,6 +186,9 @@ class SandboxService extends VendorBase
 
    protected function getPlans(?array $payload = null): JsonResponse
     {
-        return  AdminController::universalGet($payload['request'], $payload['table']);
+        // universalGet() is an instance method — calling it via
+        // `AdminController::universalGet(...)` throws "Non-static method
+        // ... cannot be called statically" the moment this actually runs.
+        return (new AdminController())->universalGet($payload['request'], $payload['table']);
     }
 }

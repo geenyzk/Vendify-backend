@@ -49,13 +49,19 @@ abstract class VendorBase implements VendorInterface
                 return $this->success([]);
             }
             $parser = TemplateParser::make();
-            $response = $this->sendRequest($service, $formattedPayload);
+            $response = $this->sendRequest($service, $formattedPayload) ?? [];
             // Merge API response with original payload to preserve discount/promotion data
-            $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response, $payload));
+            $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response ?? [], $payload));
             $transaction = TransactionService::process($formattedResponse, Auth::user());
             $message = Message::wherePurpose($service . "_" . $transaction['status'])->first();
-            $parsedMessage = $parser->with(["transaction" =>$transaction])->parse($message?->body ?? "");
-            $responseMessage = $parsedMessage ?? $response['data']['msg'] ?? $response['message'] ?? $response['response_message'];
+            // A custom Message template is optional — when none exists for
+            // this purpose, fall straight through to the vendor's own
+            // message instead of parsing an empty template (which returns
+            // "", not null, so `$parsedMessage ?? ...` used to always "win"
+            // with a blank string and hide the real vendor response).
+            $responseMessage = $message
+                ? $parser->with(["transaction" => $transaction])->parse($message->body ?? "")
+                : ($response['data']['msg'] ?? $response['message'] ?? $response['response_message'] ?? null);
             
             // Log transaction details
             Log::info("Transaction Completed", [
@@ -71,7 +77,12 @@ abstract class VendorBase implements VendorInterface
             } else {
                 return $this->fail([], $responseMessage, 500);
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            // \Exception alone doesn't catch \Error/\TypeError — e.g. a
+            // vendor HTTP call that comes back null/non-JSON used to blow
+            // this up with an uncaught array_merge() TypeError instead of
+            // the graceful fail() response every other error path here
+            // returns.
             Log::error("Transaction Error", [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()

@@ -90,16 +90,39 @@ class Vendor extends Model
     }
 
 
+    /**
+     * Filters to the vendor row assigned to $service in Stock Vending (e.g.
+     * "vtu", "sme", "dstv") — the admin-facing "which vendor fulfils this"
+     * setting.
+     *
+     * Previously called `$this->where(...)->first()` inside the scope body:
+     * `$this` there is the Vendor MODEL instance, not the query builder Eloquent
+     * hands scopes ($query) — so that ran an entirely separate, throwaway
+     * query, then returned it. Eloquent's scope mechanism ignores a scope's
+     * return value for chaining purposes and always hands back $query
+     * unmodified, so every `Vendor::provider($service)->first()` call
+     * silently returned the first row of the whole `providers` table —
+     * Stock Vending's per-service assignment had zero effect on which
+     * vendor actually processed a purchase. Constraining $query itself
+     * (and returning it) is what makes this scope, and its ->first()/->get()
+     * chaining, do what it looks like it does.
+     */
     public function scopeProvider(Builder $query, string $service)
     {
         $stock = StockVending::first();
         if (!$stock || !isset($stock->{$service})) {
-            return null;
+            return $query->whereRaw('0 = 1');
         }
 
-        $providerName = $stock->{$service};
-        $q = $this->where('name', $providerName)->first();
-        return $q;
+        // stock_vendings' own migration defaults every column to
+        // "adex_server_1" (underscored), but real provider rows are named
+        // "adex server 1" (spaced) — normalize both sides so that mismatch
+        // (and any future case/spacing slip, since this has no admin UI to
+        // manage it and is edited only via raw table writes today) doesn't
+        // silently resolve to "no vendor found".
+        $normalized = strtolower(str_replace('_', ' ', $stock->{$service}));
+
+        return $query->whereRaw('LOWER(REPLACE(name, "_", " ")) = ?', [$normalized]);
     }
 
 

@@ -9,7 +9,6 @@ use App\Models\DiscoProviderId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 
 class SMEPlug extends VendorBase
 {
@@ -27,8 +26,13 @@ class SMEPlug extends VendorBase
     function sendRequest(string $service, array $payload): array
     {
         $response = Http::withHeaders($this->getAuthHeaders())
-        ->post($this->buildEndpoint($service), $payload)->json();
-        return $response;
+            ->post($this->buildEndpoint($service), $payload)
+            ->json();
+
+        // ->json() returns null on a non-JSON/empty body. VendorBase::process()
+        // does array_merge($response['data'] ?? $response, ...) right after
+        // this — array_merge(null, ...) is a fatal TypeError.
+        return $response ?? [];
     }
 
     public function checkBalance(): string
@@ -68,7 +72,13 @@ class SMEPlug extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['airtime', 'data', 'electricity'];
+        // Was also claiming 'electricity', but endpoint() has no mapping
+        // for it and formatResponse()'s switch has no case for it either —
+        // supportsService('electricity') would say yes and then the actual
+        // purchase would throw. Only claim what's actually implemented
+        // below; add 'electricity' back once endpoint()/formatPayload()/
+        // formatResponse() all genuinely support it.
+        return ['airtime', 'data'];
     }
 
      protected function pingEndpoint(): string
@@ -100,6 +110,9 @@ class SMEPlug extends VendorBase
                 ];
             case 'data':
                 $dataPlan = DataPlan::find($payload['data_plan']);
+                if (!$dataPlan) {
+                    throw new \InvalidArgumentException("Data plan [{$payload['data_plan']}] not found");
+                }
                 return [
                     'network_id' => $this->networkIDs[$payload['network']],
                     'phone' => $payload['phone'],
@@ -107,13 +120,13 @@ class SMEPlug extends VendorBase
                     'customer_reference' => $payload['tx_ref'],
                 ];
             default:
-                throw new \InvalidArgumentException("Unknown service [$service] for Adex");
+                // Was "for Adex" — copy-pasted from that class, wrong provider name.
+                throw new \InvalidArgumentException("Unknown service [$service] for SMEPlug");
         }
     }
 
     protected function formatResponse(string $service, array $response): array
     {
-        $
         $default = [
             'provider' => $this->providerName,
             'status' => 'fail', // default unless confirmed otherwise
@@ -169,16 +182,23 @@ class SMEPlug extends VendorBase
     function verifyUser(string $service, string $identifier, array $payload): JsonResponse
     {
         if ($service === 'cable') {
-        $cableId = $this->cableNetworkIDs[$payload['serviceType']] ?? null;
+        // Was $payload['serviceType'], a key VTUServicesController::verify()
+        // never actually sends (it sends 'cable_network'/'disco', matching
+        // Adex's and vtpass's verifyUser()) — always undefined, so this
+        // always fell through to "Service type not given" regardless of
+        // what the customer picked.
+        $cableId = $this->cableNetworkIDs[$payload['cable_network']] ?? null;
         if (!$cableId) {
             return $this->fail([], "Service type not given");
-            // ['status' => 'error', 'message' => 'Cable ID required'];
         }
         $url = $this->baseUrl() . "/cable/cable-validation?iuc={$identifier}&cable={$cableId}";
         } elseif ($service === 'electricity') {
-            $disco = DiscoProviderId::forDisco($payload['serviceType']);
+            $disco = DiscoProviderId::forDisco($payload['disco']);
             $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
-            $meterType = $options['meter_type'] ?? 'prepaid';
+            // Was reading from an undefined $options variable — this
+            // method's parameter is $payload — so meter_type silently
+            // always defaulted to 'prepaid'.
+            $meterType = $payload['meter_type'] ?? 'prepaid';
             if (!$discoId) {
             return $this->fail([], "Service type not given");
             }
@@ -201,7 +221,10 @@ class SMEPlug extends VendorBase
 
         protected function getPlans(?array $payload = null): JsonResponse
         {
-            return  AdminController::universalGet($payload['request'], $payload['table']);
+            // universalGet() is an instance method — calling it via
+            // `AdminController::universalGet(...)` throws "Non-static
+            // method ... cannot be called statically" the moment this runs.
+            return (new AdminController())->universalGet($payload['request'], $payload['table']);
         }
 
         function callback(Request $request): array

@@ -22,12 +22,22 @@ class Adex extends VendorBase
 
     function sendRequest(string $service, array $payload): array
     {
-        Log::info($payload);
+        // Was logging the full raw payload/response unconditionally on every
+        // call — customer phone/meter/IUC numbers on every purchase, forever.
+        // Debug-level so it's still there when actually needed but doesn't
+        // spam production logs.
+        Log::debug("Adex request [{$service}]", ['payload' => $payload]);
         $response = Http::withHeaders($this->getAuthHeaders())
-        ->post($this->buildEndpoint($service), $payload)->json();
+            ->post($this->buildEndpoint($service), $payload)
+            ->json();
+        Log::debug("Adex response [{$service}]", ['response' => $response]);
 
-        Log::info($response);
-        return $response;
+        // ->json() returns null on a non-JSON/empty body (e.g. the vendor
+        // API times out or errors below the HTTP client's own retry). Base::
+        // process() does array_merge($response['data'] ?? $response, ...)
+        // right after this — array_merge(null, ...) is a fatal TypeError,
+        // not something the outer try/catch used to be able to soften.
+        return $response ?? [];
     }
 
     public function checkBalance(): string
@@ -69,24 +79,36 @@ class Adex extends VendorBase
      function login(): array
     {
         $key = md5($this->baseUrl() . $this->provider->username . $this->provider->password);
-        return Cache::remember($key, now()->addMinutes(5), function (){
-                try {
-                    $response = Http::withHeaders([
-                        'Authorization' => 'Basic ' . base64_encode(
-                            $this->provider->username . ':' . $this->provider->password
-                        ),
-                        'Content-Type' => 'application/json',
-                    ])->post($this->baseUrl() . "/user");
 
-                    $data = $response->json();
-                    return $data ?? [];
-                } catch (\Throwable $th) {
-                    //throw $th;
-                    Log::info(["login" => $th->getMessage()]);
+        $cached = Cache::get($key);
+        if ($cached) {
+            return $cached;
+        }
 
-                    return [];
-                }
-        });
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Basic ' . base64_encode(
+                    $this->provider->username . ':' . $this->provider->password
+                ),
+                'Content-Type' => 'application/json',
+            ])->post($this->baseUrl() . "/user");
+
+            $data = $response->json();
+
+            // Cache::remember() here used to cache whatever the closure
+            // returned, including [] on a failed/empty login — turning one
+            // transient outage into 5 minutes of every subsequent purchase
+            // authenticating with a blank token. Only a real access token is
+            // worth caching.
+            if (!empty($data['AccessToken'])) {
+                Cache::put($key, $data, now()->addMinutes(5));
+            }
+
+            return $data ?? [];
+        } catch (\Throwable $th) {
+            Log::warning('Adex login failed', ['error' => $th->getMessage()]);
+            return [];
+        }
     }
 
     protected function getSupportedServices(): array
@@ -141,6 +163,9 @@ class Adex extends VendorBase
                 ];
             case 'data':
                 $dataPlan = DataPlan::find($payload['data_plan']);
+                if (!$dataPlan) {
+                    throw new \InvalidArgumentException("Data plan [{$payload['data_plan']}] not found");
+                }
                 return [
                     'network' => $this->networkIDs[$payload['network']],
                     'phone' => $payload['phone'],
@@ -151,6 +176,9 @@ class Adex extends VendorBase
                 ];
             case 'cable':
                 $cablePlan = CablePlan::find($payload['cable_plan']);
+                if (!$cablePlan) {
+                    throw new \InvalidArgumentException("Cable plan [{$payload['cable_plan']}] not found");
+                }
                 return [
                     'cable' => $this->networkIDs[$payload['cable_network']],
                     'iuc' => $payload['iuc'],
@@ -216,7 +244,11 @@ class Adex extends VendorBase
     protected function formatResponse(string $service, array $response): array
     {
         $default = [
-            'provider' =>  null,//$this->providerName,
+            // Falls back to the vendor identifier (e.g. "adex") — exam/
+            // bulksms/data_card/recharge_card don't set their own 'provider'
+            // below, so this was silently leaving those transactions with
+            // provider=null instead of at least naming which vendor handled them.
+            'provider' => $this->providerName,
             'status' => 'fail', // default unless confirmed otherwise
             'transaction_reference' => $response['request-id'] ?? $response['tx_ref'] ?? null,
             'payment_reference' => $response['reference'] ?? null,
@@ -228,7 +260,10 @@ class Adex extends VendorBase
             // electricity) instead of always zeroing it.
             'service_fee' => (float) ($response['service_fee'] ?? 0),
             'platform' => 'api',
-            "transaction_type" => "data_subscription"
+            // Every case below sets its own transaction_type, so this is
+            // never actually used — left null (not a specific, misleading
+            // guess) in case a future service case is ever added without one.
+            "transaction_type" => null,
         ];
 
         switch ($service) {
@@ -267,7 +302,14 @@ class Adex extends VendorBase
                     'transaction_type' => 'cable_subscription',
                     'account_or_phone' => $response['iuc'] ?? null,
                     'amount' => (float) ($response['amount'] ?? 0.00),
-                    'discount_amount' => (float) ($response['charges'] ?? 0.00),
+                    // The real discount is already computed server-side
+                    // (Discount::getDiscountedAmount, before this vendor
+                    // call ever happens) — "charges" here is whatever fee
+                    // Adex applied on their own end, which is a cost, not a
+                    // discount. Mapping it to discount_amount would have
+                    // reduced what the customer is charged by the vendor's
+                    // OWN fee — the opposite of what it should do.
+                    'discount_amount' => 0.00,
                     'quantity' => 1.00,
                     'status' => $response['status'] ?? 'failed',
                     'receiver' => $response['iuc'] ?? null,
@@ -278,7 +320,12 @@ class Adex extends VendorBase
 
             case 'electricity':
                 $result = [
-                    'transaction_type' => 'electricity_bill',
+                    // Was 'electricity_bill' — not a real value in the
+                    // transactions.transaction_type enum ('electric_bill'
+                    // is), so every electricity purchase through Adex failed
+                    // at the database insert right after the vendor call
+                    // had already gone through.
+                    'transaction_type' => 'electric_bill',
                     'account_or_phone' => $response['meter_number'] ?? null,
                     'amount' => $response['amount'] ?? 0.00,
                     'discount_amount' => 0.00,
@@ -369,9 +416,11 @@ class Adex extends VendorBase
         } elseif ($service == 'electricity') {
             $disco = DiscoProviderId::forDisco($payload['disco']);
             $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
-            Log::info($disco);
-            Log::info($discoId);
-            $meterType = $options['meter_type'] ?? 'prepaid';
+            // Was reading from an undefined $options variable (this method's
+            // parameter is $payload), so meter_type silently always fell
+            // back to 'prepaid' regardless of what the customer actually
+            // selected — postpaid meters were verified against the wrong type.
+            $meterType = $payload['meter_type'] ?? 'prepaid';
             if (!$discoId) {
             return $this->fail([], "Service type not given");
             }
@@ -381,16 +430,15 @@ class Adex extends VendorBase
         }
 
         try {
-
             $response = Http::get($url);
-            Log::info(["response: " => $response]);
+            Log::debug('Adex verifyUser response', ['response' => $response->json()]);
 
             if ($response->ok() && $response->json('status') === 'success') {
                 return $this->success(['name' => $response->json('name')], ucfirst($service) . ' verification successful.', 201);
             }
             return $this->fail([], $response->json('message') ?? 'Verification failed.');
-        } catch (\Exception $e) {
-            Log::info(["ERROR: " => $e]);
+        } catch (\Throwable $e) {
+            Log::warning('Adex verifyUser failed', ['error' => $e->getMessage()]);
             return $this->fail([], $e->getMessage());
         }
     }
