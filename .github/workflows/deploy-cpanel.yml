@@ -1,4 +1,4 @@
-name: Deploy Site to test
+name: Deploy Site to live
 
 on:
   push:
@@ -43,6 +43,7 @@ jobs:
           server: ${{ secrets.CPANEL_HOST }}
           username: ${{ secrets.CPANEL_USERNAME }}
           password: ${{ secrets.CPANEL_PASSWORD }}
+          server-dir: ${{ secrets.CPANEL_PATH_BACKEND }}
           local-dir: ./ # deploy everything
           exclude: |
             **/node_modules/**

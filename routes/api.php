@@ -4,6 +4,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\ChildDirectiveController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\ServiceControlController;
 use App\Http\Controllers\TransactionController;
@@ -16,6 +17,16 @@ use Illuminate\Support\Facades\Route;
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
+
+// Pull/ack half of the parent<->child channel — the child polls these on
+// its own cron cadence (see child_backend's ParentSyncPullDirectives).
+// This is a client-polling RPC, not an unsolicited webhook, so it gets its
+// own route group + middleware rather than sharing the {type}/{identifier}
+// shape above.
+Route::prefix('child')->middleware('verify.child.hmac')->group(function () {
+    Route::get('/{slug}/directives', [ChildDirectiveController::class, 'index']);
+    Route::post('/{slug}/directives/{id}/ack', [ChildDirectiveController::class, 'ack']);
+});
 
 Route::post('/insert', [AdminController::class, 'universalInsert']);
 

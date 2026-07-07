@@ -262,6 +262,10 @@ class AdminController extends Controller
         $manualMap = [
             'vendors'   => \App\Models\Vendor::class,
             'providers' => Provider::class,
+            'child_instances' => \App\Models\ChildInstance::class,
+            'child_customers' => \App\Models\ChildCustomer::class,
+            'child_transactions' => \App\Models\ChildTransaction::class,
+            'child_directives' => \App\Models\ChildDirective::class,
             // Add more custom mappings if needed
         ];
         if (isset($manualMap[$table])) {
