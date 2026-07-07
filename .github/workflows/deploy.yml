@@ -37,9 +37,6 @@ jobs:
           mkdir -p bootstrap/cache
           chmod -R 775 storage bootstrap/cache
 
-      - name: Generate Scribe docs
-        run: php artisan scribe:generate
-
       - name: Deploy Backend
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
