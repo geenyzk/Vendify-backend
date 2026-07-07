@@ -140,9 +140,37 @@ class AdminController extends Controller
         }
     }
 
+    // Public catalog tables — the storefront reads these before login (see
+    // vtu_2's customerService.ts). Every other table requires an
+    // authenticated admin. Can't express this split as two GET routes with
+    // the same URI (Laravel's route collection is keyed by method+URI, so a
+    // second identical registration replaces the first rather than adding a
+    // constrained alternative) — enforced here instead.
+    // data_plans/cable_plans deliberately excluded even though
+    // customerService.ts's comments call them "public" — their price
+    // accessor (DataPlan::getPriceAttribute(), CablePlan::getPriceAttribute())
+    // unconditionally calls Auth::user()->user_type, which fatals on a
+    // guest request regardless of route auth. They only ever work
+    // authenticated in practice (mid-purchase-flow), so gating them behind
+    // auth below changes nothing for real usage and turns their previous
+    // 500 into a clean 401 for an actual guest request.
+    private const PUBLIC_TABLES = [
+        'networks', 'airtime_plans', 'network_types', 'bill_plans',
+    ];
+
     static function universalGet(Request $request, $modelSlug)
     {
         $self = new Self();
+
+        if (!in_array($modelSlug, self::PUBLIC_TABLES, true)) {
+            $user = $request->user('sanctum');
+            if (!$user) {
+                return $self->fail([], 'Unauthenticated.', 401);
+            }
+            if ($user->user_type !== 'admin') {
+                return $self->fail([], 'Unauthorized.', 403);
+            }
+        }
 
         $modelClass = $self->getModelClassFromTable($modelSlug);
         if (!$modelClass || !class_exists($modelClass)) {
@@ -389,6 +417,35 @@ class AdminController extends Controller
             'registration_code' => $instance->registration_code,
             'expires_at' => $instance->registration_code_expires_at,
         ], 'Registration code generated');
+    }
+
+    // Admin-initiated half of the directive outbox. The other half —
+    // ChildDirectiveController::index()/ack() — is the child polling this
+    // same table for pending rows, gated by verify.child.hmac. Kept as its
+    // own dedicated endpoint rather than the generic /table/child_directives
+    // write path: the Universal Table CRUD's create routes all require an
+    // id up front (updateOrInsert keyed on it), so they only ever support
+    // editing an existing row, not creating a brand new one.
+    function createChildDirective(Request $request, string $id)
+    {
+        $instance = \App\Models\ChildInstance::find($id);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+
+        $validated = $request->validate([
+            'type' => 'required|string|max:100',
+            'payload' => 'nullable|array',
+        ]);
+
+        $directive = \App\Models\ChildDirective::create([
+            'child_instance_id' => $instance->id,
+            'type' => $validated['type'],
+            'payload' => $validated['payload'] ?? [],
+            'status' => 'pending',
+        ]);
+
+        return $this->success($directive, 'Directive queued');
     }
 
     function broadcast(Request $request){

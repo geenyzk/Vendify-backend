@@ -12,7 +12,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'username', 'fullname', 'email', 'phone', 'password', 'status',
-        'user_type', 'wallet_balance', 'is_active', 'is_verified',
+        'user_type', 'role_id', 'wallet_balance', 'is_active', 'is_verified',
         'referral_code', 'referred_by', 'last_login_at',
     ];
 
@@ -59,5 +59,10 @@ class User extends Authenticatable
 
     function getBanksAttribute($query){
         return Bank::where("user_id", $this->id)->get();
+    }
+
+    public function role()
+    {
+        return $this->belongsTo(Role::class);
     }
 }

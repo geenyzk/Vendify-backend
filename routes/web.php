@@ -1,5 +1,6 @@
 <?php
 
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Response;
@@ -40,10 +41,17 @@ Route::get('/deploy/migrate', function () {
     }
 
     Artisan::call('migrate', ['--force' => true]);
+    $output = Artisan::output();
+
+    Artisan::call('db:seed', [
+        '--class' => RolesAndPermissionsSeeder::class,
+        '--force' => true,
+    ]);
+    $output .= Artisan::output();
 
     return response()->json([
         'success' => true,
-        'output' => Artisan::output(),
+        'output' => $output,
     ]);
 });
 
