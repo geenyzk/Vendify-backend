@@ -3,6 +3,7 @@
 namespace App\Classes\Vendor;
 
 use App\Classes\Vendor\Providers\Adex;
+use App\Classes\Vendor\Providers\Ogdams;
 use App\Classes\Vendor\Providers\SandboxService;
 use App\Classes\Vendor\Providers\SMEPlug;
 use App\Classes\Vendor\Providers\Vtpass;
@@ -35,6 +36,11 @@ class VendorFactory
             "spurs"=> new Adex($provider),
             "msorg"=> new Adex($provider),
             "vtpass"=> new Vtpass($provider),
+            // Matched either via sub_category="ogdams" directly, or the
+            // sub_category="simhost" + name="ogdams" convention above (the
+            // same one the pre-existing "simhost" special-case was clearly
+            // set up for, just never had a matching arm).
+            "ogdams"=> new Ogdams($provider),
             default => throw new \InvalidArgumentException(
                 "No vendor class mapped for sub_category/name [{$match}] (provider #{$provider->id}, {$provider->name})."
             ),
