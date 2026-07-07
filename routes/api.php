@@ -294,4 +294,4 @@ Route::prefix('payscribe')->group(function () {
     Route::get('/requery/{id}', [PayscribeController::class, 'requeryTransaction']);
 });
 
-require __DIR__.'/api_v1.php';
+// require __DIR__.'/api_v1.php'; // TEMP: missing file, disabled for local smoke test
