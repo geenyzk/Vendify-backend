@@ -28,6 +28,16 @@ Schedule::command('transactions:prune')
         \Illuminate\Support\Facades\Log::error('transactions:prune scheduled run failed.');
     });
 
+// Refreshes local DataPlan rows from each vendor's live catalogue (e.g.
+// Ogdams) so a purchase never has to call the vendor's API to resolve a
+// plan ID — no-ops for vendor classes that don't implement syncPlans().
+Schedule::command('vendors:sync-plans')
+    ->daily()
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('vendors:sync-plans scheduled run failed.');
+    });
+
 // Sends any admin broadcast scheduled for "later" once its time is due —
 // see BroadcastController::send()'s sendNow=false path.
 Schedule::command('broadcasts:send-scheduled')

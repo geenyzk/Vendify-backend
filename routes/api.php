@@ -195,6 +195,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/analytics', [AnalyticsController::class, 'index']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
+        Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans']);
         Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
 
         // Discount — a flash-sale-style price cut the platform applies

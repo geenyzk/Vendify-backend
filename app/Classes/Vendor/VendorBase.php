@@ -61,7 +61,7 @@ abstract class VendorBase implements VendorInterface
             // with a blank string and hide the real vendor response).
             $responseMessage = $message
                 ? $parser->with(["transaction" => $transaction])->parse($message->body ?? "")
-                : ($response['data']['msg'] ?? $response['message'] ?? $response['response_message'] ?? null);
+                : ($response['data']['msg'] ?? $response['msg'] ?? $response['message'] ?? $response['response_message'] ?? null);
             
             // Log transaction details
             Log::info("Transaction Completed", [
@@ -74,6 +74,15 @@ abstract class VendorBase implements VendorInterface
             // Return success response with full transaction details
             if ($transaction['status'] === "success") {
                 return $this->success($transaction, $responseMessage, 200);
+            } elseif ($transaction['status'] === "pending") {
+                // Ogdams is the first vendor to ever produce this (its 201
+                // "queued" / 202 "processing" codes) — the real outcome
+                // arrives later via webhook(). Reporting it as a 500 fail()
+                // told the customer their purchase failed when it was
+                // actually just still in flight; 202 Accepted + the
+                // transaction record lets the frontend show a "processing"
+                // state instead of a false failure.
+                return $this->success($transaction, $responseMessage, 202);
             } else {
                 return $this->fail([], $responseMessage, 500);
             }

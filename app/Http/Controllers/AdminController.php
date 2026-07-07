@@ -303,6 +303,16 @@ class AdminController extends Controller
                     if ($isUpdate) {
                         $model = $modelClass::find($item['id']);
                         if ($model) {
+                            // A plan created by a vendor sync (e.g.
+                            // Ogdams::syncPlans()) lands with is_draft=true
+                            // so it can't go on sale before an admin reviews
+                            // it. Any explicit admin edit through this same
+                            // endpoint (the edit form, or "bulk activate") is
+                            // exactly that review — clear the flag so the
+                            // "Draft" badge doesn't linger forever.
+                            if (in_array('is_draft', $tableColumns, true) && $model->is_draft) {
+                                $data['is_draft'] = false;
+                            }
                             $model->fill($data)->save();
                         } else {
                             // Fallback create if ID sent but not found
@@ -658,6 +668,30 @@ private function syncModelRelations(Model $model, array $item)
             return $this->success(['identifier' => $vendor->identifier], 'Token refreshed');
         } catch (Exception $e) {
             return $this->fail([], 'Provider not found', 404);
+        }
+    }
+
+    /**
+     * Pulls a vendor's live plan catalogue and upserts it into local
+     * DataPlan rows (see Ogdams::syncPlans()) so purchases never call the
+     * vendor's API just to resolve a plan ID. Not every vendor class
+     * implements this — the old per-provider-name-column providers
+     * (Adex/SMEPlug/vtpass) don't, since they predate this mechanism.
+     */
+    public function syncVendorPlans(string $id)
+    {
+        try {
+            $vendor = Vendor::findOrFail($id);
+            $vendorInstance = VendorFactory::make($vendor);
+
+            if (!method_exists($vendorInstance, 'syncPlans')) {
+                return $this->fail([], 'This provider does not support syncing plans.', 422);
+            }
+
+            $summary = $vendorInstance->syncPlans();
+            return $this->success($summary, 'Plans synced.');
+        } catch (Exception $e) {
+            return $this->fail([], $e->getMessage(), 500);
         }
     }
 

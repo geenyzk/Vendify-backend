@@ -7,6 +7,7 @@ use App\Http\Controllers\AdminController;
 use App\Models\DataPlan;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -41,10 +42,24 @@ class Ogdams extends VendorBase
             ->post($this->buildEndpoint($service), $payload)
             ->json();
 
-        // ->json() returns null on a non-JSON/empty body. VendorBase::process()
-        // does array_merge($response['data'] ?? $response, ...) right after
-        // this — array_merge(null, ...) would be a fatal TypeError.
-        return $response ?? [];
+        if (!$response) {
+            // ->json() returns null on a non-JSON/empty body. VendorBase::process()
+            // does array_merge($response['data'] ?? $response, ...) right after
+            // this — array_merge(null, ...) would be a fatal TypeError.
+            return [];
+        }
+
+        // Ogdams nests the real payload (msg/ref/...) under a top-level
+        // 'data' key, e.g. {status, code, data: {msg, ref}}. VendorBase::
+        // process() does array_merge($response['data'] ?? $response, $payload)
+        // right after this returns — since 'data' exists, it picks THAT as the
+        // merge base and silently drops the sibling 'status'/'code' fields
+        // that formatResponse() below depends on. Flatten here so both the
+        // envelope (status/code) and the nested payload survive together.
+        $flat = array_merge($response, $response['data'] ?? []);
+        unset($flat['data']);
+
+        return $flat;
     }
 
     public function checkBalance(): string
@@ -138,9 +153,22 @@ class Ogdams extends VendorBase
                 if (!$dataPlan) {
                     throw new \InvalidArgumentException("Data plan [{$payload['data_plan']}] not found");
                 }
+                // Unlike Adex/SMEPlug/vtpass (which predate it and still read
+                // a legacy per-provider-name column), the admin "Data Plans"
+                // UI only writes a vendor's plan ID via the providerables
+                // pivot (provider_id + server_id) — there's no field to edit
+                // a legacy `ogdams` column at all, so reading one here would
+                // always be null. Read from the pivot instead — the same
+                // place syncPlans() below writes to.
+                $vendorPlanId = $dataPlan->providers()
+                    ->wherePivot('provider_id', $this->provider->id)
+                    ->first()?->pivot?->server_id;
+                if (!$vendorPlanId) {
+                    throw new \InvalidArgumentException("Data plan [{$dataPlan->id}] has no Ogdams plan ID configured");
+                }
                 return [
                     'networkId' => $this->networkIDs[$payload['network']],
-                    'planId' => $dataPlan->{str_replace(" ", "_", $this->provider->name)},
+                    'planId' => $vendorPlanId,
                     'phoneNumber' => $payload['phone'],
                     'reference' => $payload['tx_ref'],
                 ];
@@ -176,7 +204,11 @@ class Ogdams extends VendorBase
             'status' => $status,
             'transaction_reference' => $response['ref'] ?? $response['reference'] ?? null,
             'payment_reference' => $response['ref'] ?? null,
-            'response_message' => $response['data']['msg'] ?? $response['msg'] ?? null,
+            // Post-flatten (see sendRequest()), 'msg' lives at the top level —
+            // the 'data.msg' path no longer exists, kept only as a defensive
+            // fallback in case this is ever called with a raw, unflattened
+            // response (e.g. directly from a test).
+            'response_message' => $response['msg'] ?? $response['data']['msg'] ?? null,
             'completed_at' => now(),
             // The real discount is already computed server-side
             // (Discount::getDiscountedAmount) before this vendor call ever
@@ -206,6 +238,134 @@ class Ogdams extends VendorBase
         // `AdminController::universalGet(...)` throws "Non-static method
         // ... cannot be called statically".
         return (new AdminController())->universalGet($payload['request'], $payload['table']);
+    }
+
+    /**
+     * Pulls the live plan catalogue from Ogdams and returns it as a flat
+     * list — the raw shape groups plans by network name:
+     * { status, data: { MTN: [{networkId, planId, name, validity, currency,
+     * telcoPrice, ourPrice, type}], AIRTEL: [...], ... } }
+     */
+    public function fetchRemotePlans(): array
+    {
+        $response = Http::withHeaders($this->getAuthHeaders())
+            ->get($this->baseUrl() . '/api/v4/get/data/plans')
+            ->json();
+
+        if (!($response['status'] ?? false) || !is_array($response['data'] ?? null)) {
+            throw new \RuntimeException('Ogdams plan list request failed or returned an unexpected shape.');
+        }
+
+        $flat = [];
+        foreach ($response['data'] as $networkName => $plans) {
+            $network = strtolower($networkName);
+            if (!isset($this->networkIDs[$network])) {
+                // A network Ogdams supports that we don't sell — skip rather
+                // than guess, so it doesn't get silently created as a plan
+                // for a network no purchase form can even select.
+                continue;
+            }
+            foreach ((array) $plans as $plan) {
+                $flat[] = [
+                    'network' => $network,
+                    'vendor_plan_id' => (string) ($plan['planId'] ?? ''),
+                    'name' => (string) ($plan['name'] ?? ''),
+                    'validity' => (string) ($plan['validity'] ?? ''),
+                    'plan_type' => strtoupper((string) ($plan['type'] ?? '')),
+                    // ourPrice is what Ogdams actually bills us; telcoPrice
+                    // has shown up as "0.00"/null on several sample plans
+                    // above, so it isn't a reliable cost — fall back to it
+                    // only when ourPrice itself is missing.
+                    'cost_price' => (float) ($plan['ourPrice'] ?? $plan['telcoPrice'] ?? 0),
+                ];
+            }
+        }
+
+        return $flat;
+    }
+
+    /**
+     * Upserts the live Ogdams catalogue into local DataPlan rows, so a
+     * purchase never has to call Ogdams to know what plans exist (see
+     * formatPayload()'s data case, which reads the plan ID straight off the
+     * providerables pivot this method writes to).
+     *
+     * A DataPlan <-> provider link is a single row keyed only on
+     * (providerable_id, providerable_type) — NOT also on provider_id (see
+     * AdminController::syncModelRelations) — so this only ever touches rows
+     * already linked to *this* Ogdams provider, or brand-new rows it creates
+     * itself. It never repoints a plan some other vendor already owns.
+     *
+     * New plans land inactive + is_draft=true so they don't go on sale with
+     * a default ₦0 markup before an admin has priced them.
+     */
+    public function syncPlans(): array
+    {
+        $remotePlans = $this->fetchRemotePlans();
+        $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0];
+
+        foreach ($remotePlans as $remote) {
+            if ($remote['vendor_plan_id'] === '') {
+                $summary['skipped']++;
+                continue;
+            }
+
+            // Amount + unit out of e.g. "500MB [SME]" / "1.5GB [SME]" — same
+            // split the admin form itself uses (plan_name = amount,
+            // plan_size = unit).
+            if (!preg_match('/([\d.]+)\s*(MB|GB)/i', $remote['name'], $m)) {
+                $summary['skipped']++;
+                continue;
+            }
+            [, $amount, $unit] = $m;
+
+            $existingLink = DB::table('providerables')
+                ->where('providerable_type', DataPlan::class)
+                ->where('provider_id', $this->provider->id)
+                ->where('server_id', $remote['vendor_plan_id'])
+                ->first();
+
+            if ($existingLink) {
+                DataPlan::where('id', $existingLink->providerable_id)->update([
+                    'validity' => $remote['validity'],
+                ]);
+                DB::table('providerables')
+                    ->where('id', $existingLink->id)
+                    ->update([
+                        'cost_price' => $remote['cost_price'],
+                        'updated_at' => now(),
+                    ]);
+                $summary['updated']++;
+                continue;
+            }
+
+            $dataPlan = DataPlan::create([
+                'network' => $remote['network'],
+                'plan_type' => $remote['plan_type'],
+                'plan_name' => $amount,
+                'plan_size' => strtoupper($unit),
+                'validity' => $remote['validity'],
+                'active' => false,
+                'is_draft' => true,
+                'sort_order' => 0,
+            ]);
+
+            DB::table('providerables')->insert([
+                'provider_id' => $this->provider->id,
+                'providerable_id' => $dataPlan->id,
+                'providerable_type' => DataPlan::class,
+                'cost_price' => $remote['cost_price'],
+                'margin_value' => 0,
+                'margin_type' => 'fiat',
+                'server_id' => $remote['vendor_plan_id'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $summary['created']++;
+        }
+
+        return $summary;
     }
 
     /**

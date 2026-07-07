@@ -19,12 +19,14 @@ class DataPlan extends Model
         'server_id',
         'network',
         'active',
+        'is_draft',
         'validity',
         'sort_order',
         'pricing'
        ];
     protected $casts = [
         "active" => "boolean",
+        "is_draft" => "boolean",
         'pricing' => 'array',
     ];
 
