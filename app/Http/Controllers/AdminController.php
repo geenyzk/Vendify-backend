@@ -167,7 +167,7 @@ class AdminController extends Controller
             if (!$user) {
                 return $self->fail([], 'Unauthenticated.', 401);
             }
-            if ($user->user_type !== 'admin') {
+            if (!$user->role || !$user->role->is_staff) {
                 return $self->fail([], 'Unauthorized.', 403);
             }
         }

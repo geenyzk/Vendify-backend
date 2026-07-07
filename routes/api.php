@@ -60,7 +60,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 
 // Universal Table API writes: admin only.
-Route::middleware(['auth:sanctum', 'user_type:admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::post('/insert', [AdminController::class, 'universalInsert']);
     Route::post('/table/{table}', [AdminController::class, 'universalCreateOrUpdate']);
     Route::put('/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
@@ -177,9 +177,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/wallet-withdrawals', [WalletWithdrawalController::class, 'submit']);
     });
 
-    Route::prefix("admin")->middleware('user_type:admin')->group(function () {
+    Route::prefix("admin")->middleware('admin')->group(function () {
         Route::resource('users', UserController::class)
-            ->withoutMiddleware(['auth:sanctum', 'user_type:admin'])
+            ->withoutMiddleware(['auth:sanctum', 'admin'])
             ->only(['store']);
 
         Route::middleware('permission:customers')->group(function () {
@@ -294,4 +294,4 @@ Route::prefix('payscribe')->group(function () {
     Route::get('/requery/{id}', [PayscribeController::class, 'requeryTransaction']);
 });
 
-require __DIR__.'/api_v1.php';
+// require __DIR__.'/api_v1.php'; // TEMP: missing file, disabled for local smoke test

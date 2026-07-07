@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Middleware\CheckPermission;
-use App\Http\Middleware\CheckUserType;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\VerifyChildSignature;
 use Illuminate\Foundation\Application;
@@ -19,7 +18,6 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'verify.child.hmac' => VerifyChildSignature::class,
             'admin' => EnsureUserIsAdmin::class,
-            'user_type' => CheckUserType::class,
             'permission' => CheckPermission::class,
         ]);
     })

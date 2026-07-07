@@ -12,10 +12,8 @@ use Illuminate\Support\Facades\Auth;
 
 /**
  * Backs both search bars (admin topbar, user topbar). Each endpoint is
- * scoped to what that caller is actually allowed to see — there's no
- * granular per-admin permission-slug system on this branch (no
- * Role/Permission models exist), so "permission filtered" here means: the
- * admin search requires user_type=admin, and the user search only ever
+ * scoped to what that caller is actually allowed to see: the admin search
+ * requires a staff role (role->is_staff), and the user search only ever
  * touches the logged-in user's own rows, never another user's.
  */
 class SearchController extends Controller
@@ -25,7 +23,7 @@ class SearchController extends Controller
     public function adminSearch(Request $request)
     {
         $user = Auth::user();
-        if (!$user || $user->user_type !== 'admin') {
+        if (!$user || !$user->role || !$user->role->is_staff) {
             return $this->fail([], 'Unauthorized', 403);
         }
 
