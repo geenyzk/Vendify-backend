@@ -22,6 +22,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PayscribeController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\PromotionController;
+use App\Http\Controllers\ResetWebsiteController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ServiceControlController;
@@ -209,6 +210,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/welcome-message', [WelcomeMessageController::class, 'adminShow']);
             Route::put('/welcome-message', [WelcomeMessageController::class, 'upsert']);
             Route::delete('/welcome-message', [WelcomeMessageController::class, 'destroy']);
+            Route::post('/reset-website', [ResetWebsiteController::class, 'reset']);
         });
 
         Route::middleware('permission:transactions')->group(function () {
