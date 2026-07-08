@@ -93,10 +93,17 @@ Route::get('/setup', function () {
         abort(403, 'Invalid or missing setup token.');
     }
 
+    // Bring the schema current before seeding — on shared hosting nothing
+    // else runs migrations, and a fresh deploy hitting /setup first would
+    // otherwise fail on columns the seeder expects (e.g. roles.is_staff).
+    Artisan::call('migrate', ['--force' => true]);
+    $output = Artisan::output();
+
     Artisan::call('db:seed', [
         '--class' => RolesAndPermissionsSeeder::class,
         '--force' => true,
     ]);
+    $output .= Artisan::output();
 
     $ownerRoleId = Role::where('name', 'owner')->value('id');
 
@@ -155,6 +162,7 @@ Route::get('/setup', function () {
         'default_owner' => $defaultOwner,
         'promoted' => $promoted,
         'roles' => Role::with('permissions:id,name')->get(['id', 'name', 'is_staff']),
+        'output' => $output,
     ]);
 })->withoutMiddleware('web');
 
