@@ -8,11 +8,13 @@ use App\Models\ChildDirective;
 use App\Models\ChildInstance;
 use App\Models\Role;
 use App\Models\User;
+use App\Notifications\MigratedAccountInvite;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 
 /**
@@ -102,6 +104,7 @@ class ChildCustomerMigrationController extends Controller
             return [$user, $directive];
         });
 
+        $inviteSent = false;
         if (!$linkedExisting) {
             // Same posture as registration: a payment-provider outage must
             // not fail the migration — the virtual account can be generated
@@ -114,11 +117,29 @@ class ChildCustomerMigrationController extends Controller
                     'error' => $e->getMessage(),
                 ]);
             }
+
+            // Claim email: a real broker token so "set your password" is the
+            // account-claim step. Only for brand-new accounts — a linked
+            // customer already knows their credentials here. Non-fatal: the
+            // customer can always use the normal forgot-password flow.
+            try {
+                $user->notify(new MigratedAccountInvite(
+                    Password::createToken($user),
+                    $instance->name,
+                ));
+                $inviteSent = true;
+            } catch (\Throwable $e) {
+                Log::warning('Post-migration claim email failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         return $this->success([
             'user' => $user->only(['id', 'username', 'email', 'phone']),
             'linked_existing' => $linkedExisting,
+            'invite_sent' => $inviteSent,
             'directive_id' => $directive->id,
             'wallet_balance_at_migration' => (float) $customer->wallet_balance,
         ], $linkedExisting ? 'Linked to an existing parent account' : 'Parent account created');

@@ -12,6 +12,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\BroadcastController;
+use App\Http\Controllers\ChildCustomerContactController;
 use App\Http\Controllers\ChildCustomerMigrationController;
 use App\Http\Controllers\ChildDirectiveController;
 use App\Http\Controllers\ChildRegistrationController;
@@ -252,6 +253,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/child-instances/generate-code', [AdminController::class, 'generateChildRegistrationCode']);
         Route::post('/child-instances/{id}/directives', [AdminController::class, 'createChildDirective']);
         Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
+        Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
+        Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);
 
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::get('/analytics', [AnalyticsController::class, 'index']);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Password;
@@ -40,5 +41,20 @@ class PasswordResetLinkController extends Controller
                     ? back()->with('status', __($status))
                     : back()->withInput($request->only('email'))
                         ->withErrors(['email' => __($status)]);
+    }
+
+    // JSON twin of store() for the SPA — POST /api/forgot-password pointed
+    // here since the route split but the method never existed (500 on every
+    // "forgot password" attempt). Always responds success so the endpoint
+    // can't be used to enumerate which emails have accounts.
+    public function apiStore(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        Password::sendResetLink($request->only('email'));
+
+        return $this->success(null, 'If that email belongs to an account, a reset link has been sent.');
     }
 }

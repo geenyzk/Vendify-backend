@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Classes\TemplateParser;
 use App\HttpResponse;
 use App\Models\Broadcast;
+use App\Models\ChildCustomer;
+use App\Models\ChildInstance;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\BroadcastNotification;
@@ -27,9 +29,10 @@ class BroadcastController extends Controller
     private function filterRules(): array
     {
         return [
-            'audience_mode' => 'required|in:criteria,individuals',
+            'audience_mode' => 'required|in:criteria,individuals,child_customers',
             'user_ids' => 'required_if:audience_mode,individuals|array',
             'user_ids.*' => 'integer',
+            'child_instance_id' => 'required_if:audience_mode,child_customers|integer|exists:child_instances,id',
             'user_types' => 'nullable|array',
             'user_types.*' => 'in:user,agent,api,admin,bonanza',
             'role_ids' => 'nullable|array',
@@ -72,6 +75,16 @@ class BroadcastController extends Controller
     {
         if (($filters['audience_mode'] ?? 'criteria') === 'individuals') {
             return User::whereIn('id', $filters['user_ids'] ?? []);
+        }
+
+        // A child affiliate's synced customers — reachable only by email
+        // (they have no login here for in-app notifications), enforced in
+        // send(). Rows without an email are excluded from both the count
+        // preview and the send, so the two can't drift apart.
+        if (($filters['audience_mode'] ?? 'criteria') === 'child_customers') {
+            return ChildCustomer::where('child_instance_id', $filters['child_instance_id'])
+                ->whereNotNull('email')
+                ->where('email', '!=', '');
         }
 
         $query = User::query();
@@ -135,6 +148,11 @@ class BroadcastController extends Controller
         if (($filters['audience_mode'] ?? 'criteria') === 'individuals') {
             $count = count($filters['user_ids'] ?? []);
             return "{$count} selected user" . ($count === 1 ? '' : 's');
+        }
+
+        if (($filters['audience_mode'] ?? 'criteria') === 'child_customers') {
+            $name = ChildInstance::where('id', $filters['child_instance_id'])->value('name') ?? 'unknown affiliate';
+            return "Customers of {$name}";
         }
 
         $parts = [];
@@ -205,6 +223,13 @@ class BroadcastController extends Controller
     public function send(Request $request): JsonResponse
     {
         $validated = $request->validate(array_merge($this->filterRules(), $this->contentRules()));
+
+        // Child customers have no login here (no in-app channel) and SMS is
+        // reserved for our own users — email is the only channel that can
+        // actually reach them.
+        if ($validated['audience_mode'] === 'child_customers' && $validated['channels'] !== ['Email']) {
+            return $this->fail([], 'Child affiliate customers can only be reached by email.', 422);
+        }
 
         $audience = $this->resolveAudience($validated);
         $audienceLabel = $this->describeAudience($validated);
@@ -283,7 +308,10 @@ class BroadcastController extends Controller
         $broadcast->update(['sent' => true, 'recipient_count' => $count]);
     }
 
-    private function sendNotificationToUser(User $user, array $validated): void
+    // $recipient is a User or (for the child_customers audience) a
+    // ChildCustomer — both are Notifiable, and TemplateParser leaves any
+    // {{ user.* }} placeholder a ChildCustomer doesn't have untouched.
+    private function sendNotificationToUser(User|ChildCustomer $user, array $validated): void
     {
         $parser = TemplateParser::make()->with(['user' => $user]);
         $parse = fn (?string $template) => $template === null ? null : $parser->parse($template);

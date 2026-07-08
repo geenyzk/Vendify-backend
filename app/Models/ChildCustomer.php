@@ -5,9 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Notifications\Notifiable;
 
 class ChildCustomer extends Model
 {
+    // Notifiable so the parent's existing notification machinery (broadcasts,
+    // one-off mails) can address a child's customer directly — the point of
+    // the affiliate relationship is that parent resources work for them too.
+    use Notifiable;
+
     protected $fillable = [
         'child_instance_id',
         'external_id',
@@ -36,5 +42,15 @@ class ChildCustomer extends Model
     public function migratedUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'migrated_to_user_id');
+    }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(ChildCustomerMessage::class);
+    }
+
+    public function routeNotificationForMail(): ?string
+    {
+        return $this->email;
     }
 }
