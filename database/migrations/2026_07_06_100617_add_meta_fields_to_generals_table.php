@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('generals', function (Blueprint $table) {
             // Browser tab title / SEO description — deliberately separate
             // from app_name since a page title often reads better as a
-            // fuller tagline ("KORA — Airtime, Data & Bills") than the bare
+            // fuller tagline ("Vendify — Airtime, Data & Bills") than the bare
             // brand name shown in headers/sidebars.
             $table->string('meta_title')->nullable()->after('app_name');
             $table->text('meta_description')->nullable()->after('meta_title');

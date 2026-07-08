@@ -20,7 +20,7 @@ class DatabaseSeeder extends Seeder
 
 
         General::create([
-            "app_name" => "Spur Connect"
+            "app_name" => "Vendify"
         ]);
 
         $this->call([

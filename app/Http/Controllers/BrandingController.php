@@ -20,9 +20,9 @@ class BrandingController extends Controller
         $general = General::find(1);
 
         return $this->success([
-            'app_name' => $general?->app_name ?: 'KORA',
+            'app_name' => $general?->app_name ?: 'Vendify',
             'logo' => $general?->app_logo,
-            'meta_title' => $general?->meta_title ?: ($general?->app_name ?: 'KORA'),
+            'meta_title' => $general?->meta_title ?: ($general?->app_name ?: 'Vendify'),
             'meta_description' => $general?->meta_description,
         ]);
     }

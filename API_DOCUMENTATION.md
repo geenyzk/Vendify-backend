@@ -2238,7 +2238,7 @@ or it's turned off, `welcome_message` is `null`.
   "data": {
     "welcome_message": {
       "id": 1,
-      "title": "Welcome to Kora VTU!",
+      "title": "Welcome to Vendify VTU!",
       "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
       "active": true,
       "created_at": "2026-07-04T11:45:34.000000Z",
@@ -2268,7 +2268,7 @@ exists yet), so the admin UI can load and edit a currently-disabled message.
   "data": {
     "welcome_message": {
       "id": 1,
-      "title": "Welcome to Kora VTU!",
+      "title": "Welcome to Vendify VTU!",
       "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
       "active": true,
       "created_at": "2026-07-04T11:45:34.000000Z",
@@ -2305,7 +2305,7 @@ for users who'd already marked the previous version as seen.
   "data": {
     "welcome_message": {
       "id": 1,
-      "title": "Welcome to Kora VTU!",
+      "title": "Welcome to Vendify VTU!",
       "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
       "active": true,
       "created_at": "2026-07-04T11:45:34.000000Z",
