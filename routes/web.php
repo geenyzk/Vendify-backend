@@ -154,6 +154,15 @@ Route::get('/setup', function () {
         $promoted = ['id' => $user->id, 'email' => $user->email, 'role' => 'owner'];
     }
 
+    // Browser visits land on the SPA login ready to sign in as the fresh
+    // owner; curl/API callers (Accept: application/json) still get the full
+    // JSON report, including the artisan migrate/seed output.
+    if (!request()->expectsJson()) {
+        return redirect()->away(
+            rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login'
+        );
+    }
+
     return response()->json([
         'success' => true,
         'message' => $staffExists
