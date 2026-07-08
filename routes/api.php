@@ -195,6 +195,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             // that it actually creates users it must sit behind admin+permission.
             Route::resource('users', UserController::class)
                 ->only(['index', 'store', 'show', 'update', 'destroy']);
+            Route::post('/users/{id}/impersonate', [UserController::class, 'impersonate']);
             Route::resource('roles', RoleController::class);
             Route::get('/roles/{id}/users', [RoleController::class, 'users']);
             Route::get('/permissions', [PermissionController::class, 'index']);
@@ -219,6 +220,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/transactions/prune-preview', [TransactionController::class, 'prunePreview']);
             Route::post('/transactions/prune', [TransactionController::class, 'pruneNow']);
         });
+
+        Route::get('/search', [SearchController::class, 'adminSearch']);
 
         Route::middleware('permission:wallets')->group(function () {
             Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);

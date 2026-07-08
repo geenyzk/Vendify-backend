@@ -24,6 +24,10 @@ class BrandingController extends Controller
             'logo' => $general?->app_logo,
             'meta_title' => $general?->meta_title ?: ($general?->app_name ?: 'KORA'),
             'meta_description' => $general?->meta_description,
+            // Public-facing contact details (shown in the landing footer) —
+            // still nothing sensitive from General (bank/BVN stays private).
+            'app_email' => $general?->app_email,
+            'app_phone' => $general?->app_phone,
         ]);
     }
 }

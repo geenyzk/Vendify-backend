@@ -21,8 +21,26 @@ class UserController extends Controller
     public function index()
     {
         //
-        return $this->success(["users" => User::all()->toArray()]);
+        return $this->success(["users" => User::with('role')->get()->toArray()]);
 
+    }
+
+    /**
+     * Mirror of User::pricingTier() plus the staff case — user_type is not
+     * read for authorization or pricing anywhere anymore, but it's kept in
+     * sync for reporting (AdminController::stats, broadcast targeting,
+     * AdminNotifier) whenever the role changes.
+     */
+    private function userTypeForRole(?Role $role): string
+    {
+        if (!$role) {
+            return 'user';
+        }
+        if ($role->is_staff) {
+            return 'admin';
+        }
+
+        return in_array($role->name, ['agent', 'api', 'bonanza'], true) ? $role->name : 'user';
     }
 
     /**
@@ -37,11 +55,15 @@ class UserController extends Controller
                 'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:' . User::class],
                 'phone' => ['required', 'string', 'max:255', 'unique:' . User::class],
                 'password' => ['required', Rules\Password::defaults()],
-                'user_type' => ['nullable', Rule::in(['user', 'agent', 'api', 'admin', 'bonanza'])],
+                'role_id' => ['nullable', 'exists:roles,id'],
             ]);
         } catch (ValidationException $e) {
             return $this->fail($e->errors(), "Validation Error", 422);
         }
+
+        $role = isset($validated['role_id'])
+            ? Role::find($validated['role_id'])
+            : Role::where('slug', 'basic')->orWhere('name', 'basic')->first();
 
         $user = User::create([
             'fullname' => $validated['fullname'],
@@ -49,9 +71,9 @@ class UserController extends Controller
             'email' => $validated['email'],
             'phone' => $validated['phone'],
             'password' => Hash::make($validated['password']),
-            'user_type' => $validated['user_type'] ?? 'user',
+            'user_type' => $this->userTypeForRole($role),
             'status' => 'active',
-            'role_id' => Role::where('name', 'basic')->value('id'),
+            'role_id' => $role?->id,
         ]);
 
         // Same as self-registration: provision a virtual funding account, but
@@ -62,7 +84,7 @@ class UserController extends Controller
             Log::warning("Could not generate funding account for user {$user->id}: {$e->getMessage()}");
         }
 
-        return $this->success(["user" => $user->fresh()], "User created successfully.", 201);
+        return $this->success(["user" => $user->fresh(['role'])], "User created successfully.", 201);
     }
 
     /**
@@ -70,7 +92,7 @@ class UserController extends Controller
      */
     public function show(string $id)
     {
-        return $this->success(["user" => User::find($id)->toArray()]);
+        return $this->success(["user" => User::with('role')->find($id)->toArray()]);
     }
 
     /**
@@ -89,7 +111,7 @@ class UserController extends Controller
                 'username' => ['sometimes', 'required', 'string', 'max:255', Rule::unique('users')->ignore($user->id)],
                 'email' => ['sometimes', 'required', 'string', 'lowercase', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
                 'phone' => ['sometimes', 'required', 'string', 'max:255', Rule::unique('users')->ignore($user->id)],
-                'user_type' => ['sometimes', Rule::in(['user', 'agent', 'api', 'admin', 'bonanza'])],
+                'role_id' => ['sometimes', 'exists:roles,id'],
                 'status' => ['sometimes', Rule::in(['active', 'suspended', 'inactive'])],
                 'password' => ['sometimes', 'nullable', Rules\Password::defaults()],
             ]);
@@ -105,9 +127,43 @@ class UserController extends Controller
             }
         }
 
+        if (array_key_exists('role_id', $validated)) {
+            $validated['user_type'] = $this->userTypeForRole(Role::find($validated['role_id']));
+        }
+
         $user->update($validated);
 
-        return $this->success(["user" => $user->fresh()], "User updated successfully.");
+        return $this->success(["user" => $user->fresh(['role'])], "User updated successfully.");
+    }
+
+    /**
+     * Issue a login token for a customer so an admin can see the app exactly
+     * as that customer does. The token name records who initiated it, so
+     * impersonation sessions stay distinguishable from real logins in
+     * personal_access_tokens.
+     */
+    public function impersonate(Request $request, string $id)
+    {
+        $admin = $request->user();
+        $target = User::with('role')->findOrFail($id);
+
+        if ((string) $admin->id === (string) $target->id) {
+            return $this->fail(null, "You are already signed in as this user.", 422);
+        }
+
+        // Support tooling is for customer accounts only — staff accounts
+        // would hand over their admin permissions along with the session.
+        if ($target->role && $target->role->is_staff) {
+            return $this->fail(null, "Staff accounts cannot be impersonated.", 403);
+        }
+
+        $token = $target->createToken("impersonated-by:{$admin->id}");
+        Log::info("Admin {$admin->id} ({$admin->username}) started impersonating user {$target->id} ({$target->username}).");
+
+        return $this->success([
+            "user" => $target,
+            "token" => $token->plainTextToken,
+        ], "Impersonation session started.");
     }
 
     /**
