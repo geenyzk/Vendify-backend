@@ -47,8 +47,8 @@ Route::get('/deploy/{action}', function (string $action) {
 
     $command = match ($action) {
         'migrate' => ['migrate', ['--force' => true]],
-        'refresh' => ['migrate:refresh', ['--force' => true]],
-        'fresh' => ['migrate:fresh', ['--force' => true]],
+        'refresh' => ['migrate:refresh', ['--force' => true, '--seed' => false]],
+        'fresh' => ['migrate:fresh', ['--force' => true, '--seed' => false]],
     };
 
     Artisan::call($command[0], $command[1]);
@@ -60,6 +60,10 @@ Route::get('/deploy/{action}', function (string $action) {
             '--force' => true,
         ]);
         $output .= Artisan::output();
+    }
+
+    if ($action === 'fresh' || $action === 'refresh') {
+        $output .= PHP_EOL . 'Note: refresh/fresh were run without seeding to avoid schema failures caused by migration ordering.';
     }
 
     return response()->json([
