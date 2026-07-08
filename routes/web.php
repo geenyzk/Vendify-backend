@@ -57,6 +57,7 @@ Route::get('/deploy/{action}', function (string $action) {
     Artisan::call($command[0], $command[1]);
     $output = Artisan::output();
 
+
     if ($action === 'migrate') {
         Artisan::call('db:seed', [
             '--class' => RolesAndPermissionsSeeder::class,
