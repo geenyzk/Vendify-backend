@@ -161,14 +161,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 
-<<<<<<< HEAD
-    Route::post('/promotions/validate', [PromotionController::class, 'validate']);
-    Route::post('/promotions/apply', [PromotionController::class, 'apply']);
-=======
         // Promotion routes
         Route::post('/promotions/validate', [PromotionController::class, 'validate']);
         Route::post('/promotions/apply', [PromotionController::class, 'apply']);
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 
     Route::prefix("customer")->group(function(){
         Route::get('/stats', [CustomerController::class, 'stats']);
