@@ -50,3 +50,5 @@ jobs:
           exclude: |
             **/node_modules/**
             **/.git*
+            **/.env
+            **/.env.*
