@@ -77,7 +77,10 @@ class AccountController extends Controller
 
         $user->update(['pin' => $validated['pin']]);
 
-        return $this->success(null, 'Transaction PIN updated successfully.');
+        return $this->success(
+            ['user' => $user->fresh()->load('role.permissions')],
+            'Transaction PIN updated successfully.'
+        );
     }
 
     /**

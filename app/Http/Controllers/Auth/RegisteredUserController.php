@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Illuminate\View\View;
 use Illuminate\Validation\ValidationException;
@@ -66,9 +67,9 @@ class RegisteredUserController extends Controller
 
             $request->validate([
                 'fullname' => ['string', 'max:255'],
-                'username' => ['required', 'string', 'max:255', 'unique:'.User::class],
-                'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
-                'phone' => ['required', 'string', 'max:255', 'unique:'.User::class],
+                'username' => ['required', 'string', 'max:255', Rule::unique('users', 'username')->whereNull('deleted_at')],
+                'email' => ['required', 'string', 'lowercase', 'email', 'max:255', Rule::unique('users', 'email')->whereNull('deleted_at')],
+                'phone' => ['required', 'string', 'max:255', Rule::unique('users', 'phone')->whereNull('deleted_at')],
                 'referral_code' => ['string', 'nullable', 'max:255', 'exists:users,referral_code'],
                 'password' => ['required', 'confirmed', Rules\Password::defaults()],
             ]);
