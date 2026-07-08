@@ -12,11 +12,18 @@ use Illuminate\Support\Facades\Log;
 
 class PaymentPoint extends PaymentBase
 {
+<<<<<<<< HEAD:app/Classes/Payment/Provider/PaymentPoint.php
+    // See Monnify.php for why this is required — creditedAmount() reads
+    // this property and throws if it's left uninitialized, silently
+    // breaking wallet crediting for every successful payment.
+    protected string $providerName = 'paymentpoint';
+========
     // Was never declared — needed WITH the space to match the real
     // providers.name value ("payment point"), confirmed live via
     // SHOW COLUMNS/SELECT, so creditedAmount()'s Provider::whereName()
     // lookup actually finds a row instead of silently no-op'ing.
     protected string $providerName = 'payment point';
+>>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/PaymentPoint.php
 
     public function connect(): mixed
     {
@@ -51,7 +58,7 @@ class PaymentPoint extends PaymentBase
             ]);
 
             if ($response->successful()) {
-                $data = $response->json('data');
+                $data = $response->json();
                 return $this->formatResponse($data, $user);
             } else {
                 Log::error("PaymentPoint: Failed to create virtual account", [
@@ -71,10 +78,9 @@ class PaymentPoint extends PaymentBase
     protected function formatPayload(array|User $payload, ?User $user = null): array
     {
         $user = $payload instanceof User ? $payload : $user;
-
         return [
             'email'       => $user->email,
-            'name'        => $user->fullname,
+            'name'        => $user->username,
             'phoneNumber' => $user->phone,
             'bankCode'    => ['20946'],
             'businessId'  => $this->provider->username,
@@ -92,7 +98,12 @@ class PaymentPoint extends PaymentBase
             'account_type' => 'virtual',
             'bank_account' => $bankAccount['accountNumber'] ?? '',
             'bank_name'    => $bankAccount['bankName'] ?? '',
+<<<<<<<< HEAD:app/Classes/Payment/Provider/PaymentPoint.php
+            'provider'     => 'paymentpoint',
+            "account_name" => $bankAccount['accountName'],
+========
             'provider'     => $this->providerName,
+>>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/PaymentPoint.php
             'status'       => 'active',
             'amount'       => 0.00, // No amount in response, so default to 0
             'ref'          => $bankAccount['Reserved_Account_Id'] ?? null,
@@ -113,6 +124,32 @@ class PaymentPoint extends PaymentBase
     protected function callback(Request $request): array
     {
         $payload = $request->all();
+<<<<<<<< HEAD:app/Classes/Payment/Provider/PaymentPoint.php
+        if($payload['transaction_status'] !== 'success') return [];
+        $data = $payload['data'];
+        $customer = $payload['customer'];
+        $user = User::where('email', $customer['email'])->first();
+        if (!$user) {
+            Log::warning('PaymentPoint webhook: no user found for email', ['email' => $customer['email'] ?? null]);
+            return [];
+        }
+
+        $creditedAmount = $this->creditedAmount($payload['amount_paid']);
+
+        // Gateways retry webhooks (missed 200, network hiccup, etc.) — only
+        // credit the wallet the first time this tx_ref is seen as
+        // successful, otherwise a retry double-credits the user.
+        $alreadyCredited = Transaction::where('transaction_reference', $data['tx_ref'])
+            ->where('status', 'success')
+            ->exists();
+        if (!$alreadyCredited) {
+            $user->wallet_balance += $creditedAmount;
+            $user->save();
+        }
+
+        return [
+            'user_id' => $user->id,
+========
         if (($payload['transaction_status'] ?? null) !== 'success') {
             return [];
         }
@@ -123,6 +160,7 @@ class PaymentPoint extends PaymentBase
 
         return [
             'user_email' => $customer['email'] ?? null,
+>>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/PaymentPoint.php
             'provider' => $this->providerName,
             'transaction_reference' => $data['tx_ref'] ?? null,
             // Was $data['flw_ref'] — copy-pasted from FlutterWave's callback,

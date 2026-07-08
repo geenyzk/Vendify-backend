@@ -48,20 +48,57 @@ abstract class VendorBase implements VendorInterface
              if ($this->isSandbox) {
                 return $this->success([]);
             }
-            $parser = TemplateParser::make(); 
-            $response = $this->sendRequest($service, $formattedPayload);
-            $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response, $payload));
+            $parser = TemplateParser::make();
+            $response = $this->sendRequest($service, $formattedPayload) ?? [];
+            // Merge API response with original payload to preserve discount/promotion data
+            $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response ?? [], $payload));
             $transaction = TransactionService::process($formattedResponse, Auth::user());
             $message = Message::wherePurpose($service . "_" . $transaction['status'])->first();
-            $parsedMessage = $parser->with(["transaction" =>$transaction])->parse($message->body);
-            $responseMessage = $parsedMessage ?? $response['data']['msg'] ?? $response['message'] ?? $response['response_message'];
-            Log:info($parsedMessage);
-            $response_ = $this->{$transaction['status']}($transaction, $responseMessage , $transaction['status'] === "success"? 200:500);
-            return $response_; 
-        } catch (\Exception $e) {
+            // A custom Message template is optional — when none exists for
+            // this purpose, fall straight through to the vendor's own
+            // message instead of parsing an empty template (which returns
+            // "", not null, so `$parsedMessage ?? ...` used to always "win"
+            // with a blank string and hide the real vendor response).
+            $responseMessage = $message
+                ? $parser->with(["transaction" => $transaction])->parse($message->body ?? "")
+                : ($response['data']['msg'] ?? $response['msg'] ?? $response['message'] ?? $response['response_message'] ?? null);
+            
+            // Log transaction details
+            Log::info("Transaction Completed", [
+                'transaction_id' => $transaction['id'] ?? null,
+                'amount' => $transaction['amount'] ?? null,
+                'discount_applied' => $transaction['discount_applied'] ?? null,
+                'status' => $transaction['status'] ?? null
+            ]);
+            
+            // Return success response with full transaction details
+            if ($transaction['status'] === "success") {
+                return $this->success($transaction, $responseMessage, 200);
+            } elseif ($transaction['status'] === "pending") {
+                // Ogdams is the first vendor to ever produce this (its 201
+                // "queued" / 202 "processing" codes) — the real outcome
+                // arrives later via webhook(). Reporting it as a 500 fail()
+                // told the customer their purchase failed when it was
+                // actually just still in flight; 202 Accepted + the
+                // transaction record lets the frontend show a "processing"
+                // state instead of a false failure.
+                return $this->success($transaction, $responseMessage, 202);
+            } else {
+                return $this->fail([], $responseMessage, 500);
+            }
+        } catch (\Throwable $e) {
+            // \Exception alone doesn't catch \Error/\TypeError — e.g. a
+            // vendor HTTP call that comes back null/non-JSON used to blow
+            // this up with an uncaught array_merge() TypeError instead of
+            // the graceful fail() response every other error path here
+            // returns.
+            Log::error("Transaction Error", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return $this->fail([], $e->getMessage(), 500);
         }
-    } 
+    }
 
     abstract public function sendRequest(string $service, array $payload): array;
 

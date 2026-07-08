@@ -19,7 +19,10 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
       deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -76,7 +79,10 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
       deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -411,7 +417,11 @@ endpoints:
         name: scheduleDate
         description: 'Must be a valid date.'
         required: false
+<<<<<<< HEAD
+        example: '2025-08-20T04:39:18'
+=======
         example: '2025-08-07T12:05:47'
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -436,8 +446,13 @@ endpoints:
       notifTitle: consequatur
       notifMessage: consequatur
       sendNow: true
+<<<<<<< HEAD
+      scheduleDate: '2025-08-20T04:39:18'
+      priorityHigh: false
+=======
       scheduleDate: '2025-08-07T12:05:47'
       priorityHigh: true
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     fileParameters: []
     responses: []
     responseFields: []
@@ -463,7 +478,10 @@ endpoints:
       title: ''
       description: ''
       authenticated: true
+<<<<<<< HEAD
+=======
       deprecated: false
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
       custom: []
     headers:
       Authorization: 'Bearer {YOUR_AUTH_KEY}'
@@ -566,7 +584,11 @@ endpoints:
         custom: []
     cleanBodyParameters:
       amount: 73
+<<<<<<< HEAD
+      type: credit
+=======
       type: debit
+>>>>>>> bbdf8dbc93811b942956ea2015f977bbc20327d4
     fileParameters: []
     responses: []
     responseFields: []

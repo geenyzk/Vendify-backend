@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Discount;
+use App\Classes\SerivceControl\ServiceControlService;
 use App\Models\Role;
 use App\Models\Setting;
 use App\Models\Transaction;
@@ -85,10 +85,10 @@ class CustomerController extends Controller
  *
  * @group Customer
  *
- * This endpoint allows an authenticated user to upgrade their account type (e.g., user, agent, bonanza, api).
- * The system checks for sufficient wallet balance, deducts the upgrade cost, and updates the user type.
+ * This endpoint allows an authenticated user to upgrade their account into
+ * any Role the admin has marked upgradable (Customers > Roles & Permissions).
  *
- * @bodyParam upgrade_to string required The user level to upgrade to. Must be one of: user, agent, bonanza, api. Example: agent
+ * @bodyParam upgrade_to string required The target role's slug. Example: agent
  *
  * @response 200 {
  *   "message": "Successfully upgraded your account to agent.",
@@ -114,56 +114,67 @@ class CustomerController extends Controller
  * }
  *
  * @response 404 {
- *   "error": "Discount info not found."
+ *   "error": "This role is not available for upgrade."
  * }
  *
  * @authenticated
  */
 
-    
+
 
     public function upgrade(Request $request)
     {
         $user = Auth::user();
 
         $validator = Validator::make($request->all(), [
-            'upgrade_to' => 'required|string|in:user,agent,bonanza,api',
+            'upgrade_to' => 'required|string',
+            'pin' => 'required|string',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['error' => 'Invalid upgrade option'], 422);
         }
 
+        // This moves real money out of the wallet, same as any other
+        // purchase — require the transaction PIN like every other spend.
+        if (!ServiceControlService::verify($user->id, $request->input('pin'))) {
+            return response()->json(['error' => 'Invalid pin'], 422);
+        }
+
         $upgradeTo = $request->input('upgrade_to');
 
         // Check if user already at this level
-        if ($user->user_type === $upgradeTo) {
+        if ($user->role?->slug === $upgradeTo) {
             return response()->json(['error' => 'You are already at this user level.'], 400);
         }
 
-        $discount = Discount::whereName($upgradeTo)->first();
-        if (!$discount) {
-            return response()->json(['error' => 'Discount info not found.'], 404);
+        // The admin marks which roles are self-upgradable, and at what cost,
+        // directly on the Role itself (Customers > Roles & Permissions) —
+        // no more separate, disconnected Discount(service_type=user_upgrade)
+        // rows duplicating the tier name as free text.
+        $role = Role::where('slug', $upgradeTo)->where('upgradable', true)->where('is_active', true)->first();
+        if (!$role) {
+            return response()->json(['error' => 'This role is not available for upgrade.'], 404);
         }
 
-        $cost = $discount->price;
+        $cost = (float) $role->upgrade_cost;
 
         if ($user->wallet_balance < $cost) {
             return response()->json(['error' => 'Insufficient wallet balance. Please fund your wallet.'], 402);
         }
 
-        // Deduct the cost from the user's wallet. user_type is kept in sync
-        // for reporting (AdminController::stats, broadcast targeting), but
-        // pricing itself reads role_id (User::pricingTier()) — the role
-        // table has no "user" entry, it's named "basic" there, hence the
-        // translation below.
+        // Deduct the cost from the user's wallet and move them onto the new
+        // role — role_id is the real relationship (permissions, role.name
+        // shown in the UI); user_type is a legacy string kept in sync
+        // alongside it so both stay consistent.
         $user->wallet_balance -= $cost;
-        $user->user_type = $upgradeTo;
-        $user->role_id = Role::where('name', $upgradeTo === 'user' ? 'basic' : $upgradeTo)->value('id');
+        $user->role_id = $role->id;
+        $user->user_type = $role->slug;
         $user->save();
+        $user->setRelation('role', $role);
 
         return response()->json([
-            'message' => "Successfully upgraded your account to {$upgradeTo}.",
+            'message' => "Successfully upgraded your account to {$role->name}.",
             'user' => $user,
         ]);
     }

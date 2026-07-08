@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\HttpResponse;
 use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +17,8 @@ use Illuminate\View\View;
 
 class NewPasswordController extends Controller
 {
+    use HttpResponse;
+
     /**
      * Display the password reset view.
      */
@@ -61,9 +64,10 @@ class NewPasswordController extends Controller
                         ->withErrors(['email' => __($status)]);
     }
 
-    // JSON twin of store() for the SPA — POST /api/reset-password pointed
-    // here since the route split but the method never existed (500 on every
-    // reset attempt, including migrated customers claiming their account).
+    /**
+     * JSON counterpart of store() for the SPA — same broker reset, just a
+     * JSON response instead of a redirect.
+     */
     public function apiStore(Request $request): JsonResponse
     {
         $request->validate([
@@ -84,8 +88,10 @@ class NewPasswordController extends Controller
             }
         );
 
-        return $status == Password::PASSWORD_RESET
-            ? $this->success(null, __($status))
-            : $this->fail([], __($status), 422);
+        if ($status !== Password::PASSWORD_RESET) {
+            return $this->fail(['email' => [__($status)]], __($status), 422);
+        }
+
+        return $this->success(null, 'Password reset successfully. Please sign in.');
     }
 }

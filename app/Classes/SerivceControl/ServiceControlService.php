@@ -4,7 +4,7 @@ namespace App\Classes\SerivceControl;
 
 use App\Models\ServiceControl;
 use App\Models\User;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Hash;
 
 class ServiceControlService
 {
@@ -22,13 +22,11 @@ class ServiceControlService
         }
 
         $user = User::find($userID);
-        Log::info($user);
 
         if (!$user || !$user->pin || !$pin) {
             return false;
         }
 
-        Log::info($user->pin === $pin);
-        return $user->pin === $pin;
+        return Hash::check($pin, $user->pin);
     }
 }

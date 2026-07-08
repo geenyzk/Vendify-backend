@@ -2,170 +2,127 @@
 
 namespace App\Http\Controllers;
 
-use App\HttpResponse;
-use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
+use Illuminate\Http\JsonResponse;
 
 class RoleController extends Controller
 {
-    use HttpResponse;
+    /**
+     * Get all roles.
+     */
+    public function index(): JsonResponse
+    {
+        $roles = Role::with('serviceCostMargins', 'users', 'permissions')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $roles->toResourceCollection(),
+        ]);
+    }
 
     /**
-     * Roles the seeder/legacy data rely on — deleting these would orphan
-     * pricing tiers or lock every staff member out of the panel (users.role_id
-     * is nullOnDelete, so deleting `owner` silently de-staffs its holders).
+     * Get a specific role with its cost margins.
      */
-    private const PROTECTED_SLUGS = [
-        'owner', 'co-owner', 'customer-care', 'admin', 'user',
-        'api', 'agent', 'bonanza', 'basic',
-    ];
-
-    public function index()
+    public function show($id): JsonResponse
     {
-        return $this->success([
-            'roles' => Role::with('permissions')->withCount('users')->get(),
+        $role = Role::with('serviceCostMargins', 'users', 'permissions')->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'data' => $role->toResource(),
         ]);
     }
 
-    public function store(Request $request)
+    /**
+     * Create a new role.
+     */
+    public function store(Request $request): JsonResponse
     {
-        $validated = $this->validatePayload($request);
-
-        $role = Role::create($this->roleAttributes($validated) + [
-            'slug' => $this->uniqueSlug($validated['slug'] ?? $validated['name']),
+        $validated = $request->validate([
+            'name' => 'required|string|unique:roles',
+            'slug' => 'required|string|unique:roles',
+            'description' => 'nullable|string',
+            'is_active' => 'boolean',
+            'upgradable' => 'boolean',
+            'upgrade_cost' => 'nullable|numeric|min:0|required_if:upgradable,true',
+            'permission_ids' => 'array',
+            'permission_ids.*' => 'exists:permissions,id',
         ]);
 
-        $this->syncPermissions($role, $validated);
+        $role = Role::create(collect($validated)->except('permission_ids')->all());
 
-        return $this->success([
-            'role' => $role->load('permissions')->loadCount('users'),
-        ], 'Role created', 201);
-    }
-
-    public function show(string $id)
-    {
-        $role = Role::with('permissions')->withCount('users')->find($id);
-
-        if (!$role) {
-            return $this->fail(null, 'Role not found', 404);
-        }
-
-        return $this->success(['role' => $role]);
-    }
-
-    public function update(Request $request, string $id)
-    {
-        $role = Role::find($id);
-
-        if (!$role) {
-            return $this->fail(null, 'Role not found', 404);
-        }
-
-        $validated = $this->validatePayload($request, $role);
-
-        $attributes = $this->roleAttributes($validated);
-        if (array_key_exists('slug', $validated) && $validated['slug']) {
-            $attributes['slug'] = $this->uniqueSlug($validated['slug'], $role->id);
-        }
-
-        $role->update($attributes);
-
-        $this->syncPermissions($role, $validated);
-
-        return $this->success([
-            'role' => $role->load('permissions')->loadCount('users'),
-        ], 'Role updated');
-    }
-
-    public function destroy(string $id)
-    {
-        $role = Role::withCount('users')->find($id);
-
-        if (!$role) {
-            return $this->fail(null, 'Role not found', 404);
-        }
-
-        if (in_array($role->slug, self::PROTECTED_SLUGS, true)) {
-            return $this->fail(null, 'This is a built-in role and cannot be deleted.', 422);
-        }
-
-        if ($role->users_count > 0) {
-            return $this->fail(null, "Reassign the {$role->users_count} user(s) on this role first.", 422);
-        }
-
-        $role->delete();
-
-        return $this->success([], 'Role deleted');
-    }
-
-    public function users(string $id)
-    {
-        $role = Role::find($id);
-
-        if (!$role) {
-            return $this->fail(null, 'Role not found', 404);
-        }
-
-        return $this->success(['users' => $role->users]);
-    }
-
-    private function validatePayload(Request $request, ?Role $role = null): array
-    {
-        $ignore = $role ? ',' . $role->id : '';
-
-        return $request->validate([
-            'name' => ($role ? 'sometimes|' : '') . 'required|string|max:255|unique:roles,name' . $ignore,
-            'slug' => 'sometimes|nullable|string|max:255|unique:roles,slug' . $ignore,
-            'description' => 'sometimes|nullable|string|max:1000',
-            'is_active' => 'sometimes|boolean',
-            'is_staff' => 'sometimes|boolean',
-            'upgradable' => 'sometimes|boolean',
-            'upgrade_cost' => 'sometimes|nullable|numeric|min:0',
-            // The SPA sends permission ids; older API clients send names.
-            'permission_ids' => 'sometimes|array',
-            'permission_ids.*' => 'integer|exists:permissions,id',
-            'permissions' => 'sometimes|array',
-            'permissions.*' => 'string',
-        ]);
-    }
-
-    private function roleAttributes(array $validated): array
-    {
-        return collect($validated)
-            ->only(['name', 'description', 'is_active', 'is_staff', 'upgradable', 'upgrade_cost'])
-            ->all();
-    }
-
-    private function syncPermissions(Role $role, array $validated): void
-    {
         if (array_key_exists('permission_ids', $validated)) {
             $role->permissions()->sync($validated['permission_ids']);
-
-            return;
         }
 
-        if (array_key_exists('permissions', $validated)) {
-            // Legacy shape: permission identifiers by name or slug (the two
-            // columns hold the machine key on new and legacy rows respectively).
-            $role->permissions()->sync(
-                Permission::whereIn('name', $validated['permissions'])
-                    ->orWhereIn('slug', $validated['permissions'])
-                    ->pluck('id')
-            );
-        }
+        $role->load('permissions');
+
+        return response()->json([
+            'success' => true,
+            'data' => $role->toResource(),
+            'message' => 'Role created successfully',
+        ], 201);
     }
 
-    private function uniqueSlug(string $source, ?int $ignoreId = null): string
+    /**
+     * Update a role.
+     */
+    public function update(Request $request, $id): JsonResponse
     {
-        $base = Str::slug($source) ?: 'role';
-        $slug = $base;
+        $role = Role::findOrFail($id);
 
-        for ($i = 2; Role::where('slug', $slug)->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))->exists(); $i++) {
-            $slug = "{$base}-{$i}";
+        $validated = $request->validate([
+            'name' => 'string|unique:roles,name,' . $id,
+            'slug' => 'string|unique:roles,slug,' . $id,
+            'description' => 'nullable|string',
+            'is_active' => 'boolean',
+            'upgradable' => 'boolean',
+            'upgrade_cost' => 'nullable|numeric|min:0|required_if:upgradable,true',
+            'permission_ids' => 'array',
+            'permission_ids.*' => 'exists:permissions,id',
+        ]);
+
+        $role->update(collect($validated)->except('permission_ids')->all());
+
+        if (array_key_exists('permission_ids', $validated)) {
+            $role->permissions()->sync($validated['permission_ids']);
         }
 
-        return $slug;
+        $role->load('permissions');
+
+        return response()->json([
+            'success' => true,
+            'data' => $role->toResource(),
+            'message' => 'Role updated successfully',
+        ]);
+    }
+
+    /**
+     * Delete a role.
+     */
+    public function destroy($id): JsonResponse
+    {
+        $role = Role::findOrFail($id);
+        $role->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Role deleted successfully',
+        ]);
+    }
+
+    /**
+     * Get all users with a specific role.
+     */
+    public function users($id): JsonResponse
+    {
+        $role = Role::findOrFail($id);
+        $users = $role->users()->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $users,
+        ]);
     }
 }

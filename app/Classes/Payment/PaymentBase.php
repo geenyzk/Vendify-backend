@@ -2,6 +2,7 @@
 
 namespace App\Classes\Payment;
 
+use App\Classes\AdminNotifier;
 use App\Classes\Payment\Interface\PaymentInterface;
 use App\Models\Bank;
 use App\Models\Provider;
@@ -38,9 +39,7 @@ abstract class PaymentBase implements PaymentInterface
                 ->first();
             if (!$existing) {
                 Bank::create($response);
-                Log::info("Virtual account saved successfully for user {$user->id}.");
-            } else {
-                Log::info("User {$user->id} already has a virtual account with {$response['bank_name']}.");
+
             }
         } catch (\Throwable $th) {
             // Used to be a bare empty catch — a failure here (bad
@@ -94,6 +93,18 @@ abstract class PaymentBase implements PaymentInterface
 
             $callback = $this->callback($request);
 
+<<<<<<<< HEAD:app/Classes/Payment/PaymentBase.php
+            $transaction = Transaction::updateOrCreate(
+                ['transaction_reference' => $callback['transaction_reference']],
+                $callback
+            );
+
+            if ($transaction->status === 'success') {
+                AdminNotifier::notifyFunding($transaction);
+            }
+
+        } catch (\Exception $e) {
+========
             if (empty($callback) || empty($callback['transaction_reference'])) {
                 Log::warning('Missing transaction_reference in callback.', ['callback' => $callback]);
                 return true;
@@ -155,6 +166,7 @@ abstract class PaymentBase implements PaymentInterface
             // uninitialized-typed-property bug that used to make Monnify's
             // and PaymentPoint's webhooks fatal-crash on every call,
             // bypassing this catch entirely.
+>>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/PaymentBase.php
             Log::error('Webhook processing failed.', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -163,6 +175,39 @@ abstract class PaymentBase implements PaymentInterface
         }
     }
 
+
+    /**
+     * Initiate a bank transfer to a vendor's account.
+     * Payment gateways that support outbound transfers must override this.
+     *
+     * @param  array{account_bank: string, account_number: string, amount: float, narration: string, reference: string}  $payload
+     * @return array{status: string, message: string, data: array}
+     */
+    public function transfer(array $payload): array
+    {
+        throw new \RuntimeException(class_basename($this) . ' does not support outbound transfers.');
+    }
+
+    /**
+     * Fetch the list of banks supported by this gateway for outbound transfers.
+     * Payment gateways that support bank lookups must override this.
+     *
+     * @return array<int, array{code: string, name: string}>
+     */
+    public function getBanks(): array
+    {
+        throw new \RuntimeException(class_basename($this) . ' does not support fetching banks.');
+    }
+
+    /**
+     * Whether this gateway has a real transfer()/getBanks() implementation —
+     * used to pick the right gateway for wallet-to-bank withdrawals without
+     * hardcoding a provider name. See PaymentFactory::makeTransferCapable().
+     */
+    public function supportsTransfers(): bool
+    {
+        return false;
+    }
 
     protected function creditedAmount($amount)
     {

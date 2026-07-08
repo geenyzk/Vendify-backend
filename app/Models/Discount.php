@@ -3,114 +3,83 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 class Discount extends Model
 {
-    //
     protected $hidden = ["created_at", "updated_at"];
-    protected $appends = ["price"];
-    protected $casts = [
-        "isActive" => 'boolean'
+
+    protected $fillable = [
+        "name", "service_type", "network", "discount_type", "value",
+        "active", "starts_at", "ends_at",
     ];
-    protected static function booted()
-    {
-        static::retrieved(function ($model) {
-            $model->network =$model->name;
-            if (env('APP_TYPE', "standalone") === 'affiliate') {
-                foreach (range(2, 5) as $i) {
-                    unset(
-                        $model->{"adex_server_$i"},
-                        $model->{"spurs_server_$i"},
-                        $model->{"msorg_server_$i"}
-                    );
-                }
 
-                unset($model->spurs_server_1, $model->msorg_server_1, $model->vtpass, $model->payscribe);
-            }
-        });
-    }
-
-
-    public function toArray()
-    {
-        $array = parent::toArray();
-        $array['network'] =$array['name'];
-
-        if (env('APP_TYPE', "standalone") === 'affiliate') {
-            // Keep only adex_server_1, remove others
-            foreach (range(2, 5) as $i) {
-                unset(
-                    $array["adex_server_$i"],
-                    $array["spurs_server_$i"],
-                    $array["msorg_server_$i"]
-                );
-            }
-
-            unset($array["spurs_server_1"], $array["msorg_server_1"], $array["vtupass"], $array["payscribe"]);
-        }
-
-        return $array;
-    }
-
-
-    function scopeAirtime(){
-        return $this->where("type", "airtime")
-        ->get()->map(function($airtime){
-            $airtime->network = $airtime->name;
-            return $airtime;
-        });
-    }
-
-
-    public function getPriceAttribute(){
-        $user = Auth::user();
-        return $this->{($user?->pricingTier() ?? "user") . "_discount"};
-    }
-
-    function scopeGetElectricity($query, $name){
-        return $query->where("name", $name)
-        ->first();
-    }
-
-    function scopeGetAllElectricity(){
-        return $this->where("type", "electricity")
-        ->get();
-    }
-
-
-   public static function getAmountRangeError(float $amount, string $category): ?string
-    {
-        $discount = self::where("category", $category)->first();
-
-        if (!$discount) {
-            return "Invalid category.";
-        }
-
-        if ($amount < $discount->min || $amount > $discount->max) {
-            return "Amount must be between {$discount->min} and {$discount->max}.";
-        }
-
-        return null; // no error
-    }
-
+    protected $casts = [
+        "value" => "decimal:2",
+        "active" => "boolean",
+        "starts_at" => "date",
+        "ends_at" => "date",
+    ];
 
     /**
- * Calculate the discounted amount based on the original amount.
- */
-    static public function getDiscountedAmount(float $amount, string $name): float
+     * Whether this discount is currently live: the active flag is on and —
+     * if a window is set — today falls inside it. A discount with no
+     * window (both null) is always-on whenever active.
+     */
+    public function isCurrentlyActive(): bool
     {
-        $discount = self::
-        where("name", $name)
-        ->orWhere("category", $name)
-        ->first();
-        $user = Auth::user();
-        $user_discount_percent = $discount->{($user?->pricingTier() ?? "user") . "_discount"};
+        if (!$this->active) return false;
 
-        return round($amount - (($user_discount_percent / 100) * $amount), 2);
+        $today = now()->startOfDay();
+
+        if ($this->starts_at && $today->lt($this->starts_at)) return false;
+        if ($this->ends_at && $today->gt($this->ends_at)) return false;
+
+        return true;
     }
 
+    /**
+     * Calculate the discounted amount for a purchase. Returns the original
+     * amount unchanged if no active discount applies.
+     */
+    public static function getDiscountedAmount(float $amount, string $serviceType, ?string $network = null): float
+    {
+        $discount = static::findApplicable($serviceType, $network);
 
+        if (!$discount) {
+            return $amount;
+        }
 
+        $value = (float) $discount->value;
+        $reduction = $discount->discount_type === 'fixed'
+            ? min($value, $amount)
+            : $amount * ($value / 100);
+
+        return round(max(0, $amount - $reduction), 2);
+    }
+
+    /**
+     * Pick the best-matching active discount for a purchase: a rule scoped
+     * to this exact network wins over a network-agnostic rule (network is
+     * null, i.e. applies to every network) for the same service type. Only
+     * rows currently live (see isCurrentlyActive) are considered.
+     */
+    public static function findApplicable(string $serviceType, ?string $network): ?self
+    {
+        $candidates = static::where('service_type', $serviceType)
+            ->where(function ($q) use ($network) {
+                $q->whereNull('network');
+                if ($network) {
+                    $q->orWhere('network', $network);
+                }
+            })
+            ->get()
+            ->filter(fn (self $d) => $d->isCurrentlyActive());
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        return $candidates->first(fn (self $d) => $network && $d->network === $network)
+            ?? $candidates->first();
+    }
 }

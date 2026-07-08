@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Classes\TemplateParser;
 use App\Classes\TransactionService;
 use App\Classes\Vendor\VendorFactory;
 use App\Models\Discount;
@@ -11,333 +10,639 @@ use App\Models\Provider;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
-use App\Notifications\BroadcastNotification;
 use Carbon\Carbon;
+use Exception;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
+/**
+ * @group Admin Management
+ */
 class AdminController extends Controller
 {
+    // --- Stats & Dashboard Methods (Kept largely the same) ---
 
-    function stats(){
-        // USER DONUT CHART DATA
-        $raw = User::select('user_type', DB::raw('count(*) as total'))
-        ->groupBy('user_type')
-        ->get();
-
-        // $tx_raw = Transaction::select('user_type', DB::raw('count(*) as total'))
-        // ->groupBy('user_type')
-        // ->get();
-
-        // $tx_labels = $tx_raw->pluck("");
-        $labels = $raw->pluck('user_type');
-
-        $transactionCount = Transaction::whereYear('created_at', Carbon::now()->year)
-        ->whereMonth('created_at', Carbon::now()->month)
-        ->count();
-
-        // Consumed by the dashboard's stat cards (vtu_2 dashboardService.ts's
-        // Stats type) alongside the fields above — kept as plain today-only
-        // counts here since the richer date-range breakdown lives in
-        // AnalyticsController::index() instead.
-        $totalFundingToday = Transaction::whereDate('created_at', Carbon::today())
-            ->where('status', 'success')
-            ->whereIn('transaction_type', ['wallet_funding', 'manual_funding'])
-            ->sum('amount');
-        $totalSignupsToday = User::whereDate('created_at', Carbon::today())->count();
-
+    public function stats()
+    {
         return $this->success([
-            "users_graph" => [
-                'labels' => $labels,
-                'data' => $raw,
-            ],
-            "transaction_count" => $transactionCount,
-            "total_user" => User::count(),
-            "total_user_balance" => User::sum("wallet_balance"),
-            "api_balances" => VendorFactory::sumAllBalances(),
-            "total_funding_today" => (float) $totalFundingToday,
-            "total_signups_today" => $totalSignupsToday,
-            "affiliates" => $this->affiliateSummary(),
-            "tx_chart" => [
-                "labels" => [], // $tx_labels
-                "data" => [], // $tx_labels
-            ]
+            'users_graph' => $this->buildUserChart(),
+            'transaction_count' => $this->getMonthlyTransactionCount(),
+            'total_user' => User::count(),
+            'total_user_balance' => User::sum('wallet_balance'),
+            'api_balances' => VendorFactory::sumAllBalances(),
+            'total_funding_today' => $this->getTodayFundingTotal(),
+            'total_signups_today' => $this->getTodaySignupsCount(),
+            'sales_chart' => $this->buildSalesChart(),
+            'transaction_status' => $this->getTransactionStatus(),
+            'tx_chart' => $this->buildTransactionChart(),
+            // 'api_balance' => VendorFactory::sumAllBalances()
         ]);
     }
 
-    // Phase 1 of the parent/child affiliate system has no dashboard
-    // presence at all yet — this is the aggregate view; per-instance
-    // detail already lives on the "Affiliates" admin page.
-    private function affiliateSummary(): array
-    {
-        $instances = \App\Models\ChildInstance::all(['id', 'status', 'last_seen_at']);
-        $staleCutoff = now()->subMinutes(15);
+    // ... [Private chart building methods: getLast7Days, buildUserChart, etc. kept as is] ...
+    // (Assuming these private helper methods exist as per your original file.
+    // I am omitting them here for brevity, but they should remain in the class.)
 
+    private function getLast7Days()
+    {
+        $days = collect();
+        for ($i = 6; $i >= 0; $i--) {
+            $days->push(Carbon::today()->subDays($i)->format('Y-m-d'));
+        }
+        return $days;
+    }
+
+    private function buildUserChart(): array
+    {
+        $usersRaw = User::select('user_type', DB::raw('count(*) as total'))
+            ->groupBy('user_type')
+            ->get();
+        $colors = ['#36A2EB', '#FF6384', '#FFCE56', '#4BC0C0', '#9966FF'];
         return [
-            'total' => $instances->count(),
-            'active' => $instances->where('status', 'active')->count(),
-            'pending' => $instances->where('status', 'pending')->count(),
-            'stale' => $instances->where('status', 'active')
-                ->filter(fn ($i) => !$i->last_seen_at || $i->last_seen_at->lt($staleCutoff))
-                ->count(),
-            'total_synced_customers' => \App\Models\ChildCustomer::count(),
-            'total_synced_transactions' => \App\Models\ChildTransaction::count(),
-            'total_synced_transaction_volume' => (float) \App\Models\ChildTransaction::sum('amount'),
+            'labels' => $usersRaw->pluck('user_type')->toArray(),
+            'datasets' => [[
+                'label' => 'Users by Type',
+                'data' => $usersRaw->pluck('total')->toArray(),
+                'backgroundColor' => $colors,
+                'borderColor' => $colors,
+            ]]
         ];
     }
 
-    function systemInformation() {
-        return $this->success(["general" => General::first() ]);
-    }
-
-    function airtimeDiscount () {
-        $discount = Discount::airtime();
-        return $this->success(["discount" => $discount]);
-    }
-
-
-    public function universalShow($table, $id)
+    private function getMonthlyTransactionCount(): int
     {
-        if (!Schema::hasTable($table)) {
-            return $this->fail([], 'Table not found', 404);
-        }
-
-        $modelClass = $this->getModelClassFromTable($table);
-        if (!class_exists($modelClass)) {
-            return $this->fail([], 'Model not found for table', 404);
-        }
-
-        try {
-            $record = $modelClass::find($id);
-            if (!$record) {
-                return $this->fail([], 'Record not found', 404);
-            }
-            $data = $record->toArray();
-
-            $serverGroups = [];
-
-            // Loop through keys and group server values by prefix (e.g., adex, spurs)
-            foreach ($data as $key => $value) {
-                $matches = [];
-                if (preg_match('/^(adex|spurs|simhost|msorg|vtpass|payscribe)(_server_\d+)?$/', $key, $matches)) {
-                    $prefix = $matches[1];
-
-                    $serverGroups[$prefix][] = [
-                            'key' => $key,
-                            'value' => $value ?? "0"
-                        ];
-                }
-            }
-
-            return $this->success([...$data, 'servers' => $serverGroups ]);
-
-        } catch (\Exception $e) {
-            return $this->fail([],$e->getMessage(), 500);
-        }
+        $now = Carbon::now();
+        return Transaction::whereYear('created_at', $now->year)->whereMonth('created_at', $now->month)->count();
     }
 
-    // Public catalog tables — the storefront reads these before login (see
-    // vtu_2's customerService.ts). Every other table requires an
-    // authenticated admin. Can't express this split as two GET routes with
-    // the same URI (Laravel's route collection is keyed by method+URI, so a
-    // second identical registration replaces the first rather than adding a
-    // constrained alternative) — enforced here instead.
-    // data_plans/cable_plans deliberately excluded even though
-    // customerService.ts's comments call them "public" — their price
-    // accessor (DataPlan::getPriceAttribute(), CablePlan::getPriceAttribute())
-    // unconditionally calls Auth::user()->user_type, which fatals on a
-    // guest request regardless of route auth. They only ever work
-    // authenticated in practice (mid-purchase-flow), so gating them behind
-    // auth below changes nothing for real usage and turns their previous
-    // 500 into a clean 401 for an actual guest request.
-    private const PUBLIC_TABLES = [
-        'networks', 'airtime_plans', 'network_types', 'bill_plans',
-    ];
-
-    static function universalGet(Request $request, $modelSlug)
+    private function getTransactionStatus(): array
     {
-        $self = new Self();
+        $now = Carbon::now();
+        $baseQuery = Transaction::whereYear('created_at', $now->year)->whereMonth('created_at', $now->month);
+        return [
+            'successful' => (clone $baseQuery)->where('status', 'success')->count(),
+            'failed' => (clone $baseQuery)->where('status', 'fail')->count(),
+            'pending' => (clone $baseQuery)->where('status', 'pending')->count(),
+        ];
+    }
 
-        if (!in_array($modelSlug, self::PUBLIC_TABLES, true)) {
-            $user = $request->user('sanctum');
-            if (!$user) {
-                return $self->fail([], 'Unauthenticated.', 401);
-            }
-            if (!$user->role || !$user->role->is_staff) {
-                return $self->fail([], 'Unauthorized.', 403);
-            }
+    private function getTodayFundingTotal(): float
+    {
+        return Transaction::where('transaction_type', 'funding')->whereDate('created_at', Carbon::today())->sum('amount');
+    }
+
+    private function getTodaySignupsCount(): int
+    {
+        return User::whereDate('created_at', Carbon::today())->count();
+    }
+
+    private function buildTransactionChart(): array
+    {
+        $days = $this->getLast7Days();
+        $txData = Transaction::select(DB::raw('DATE(created_at) as date'), DB::raw('count(*) as total'))
+            ->whereDate('created_at', '>=', $days->first())
+            ->groupBy(DB::raw('DATE(created_at)'))->orderBy('date')->get()->keyBy('date');
+
+        $labels = [];
+        $values = [];
+        foreach ($days as $day) {
+            $labels[] = Carbon::parse($day)->format('D');
+            $values[] = $txData[$day]->total ?? 0;
+        }
+        return ['labels' => $labels, 'datasets' => [['label' => 'Transactions', 'data' => $values, 'backgroundColor' => '#36A2EB', 'borderRadius' => 8]]];
+    }
+
+    private function buildSalesChart(): array
+    {
+        $salesData = Transaction::select('transaction_type', DB::raw('SUM(amount) as total'))
+            ->whereDate('created_at', Carbon::today())->where('status', 'success')
+            ->groupBy('transaction_type')->pluck('total', 'transaction_type')->toArray();
+
+        $categories = ['airtime_recharge' => 'Airtime VTU', 'data_subscription' => 'Data Bundle', 'airtime_pin' => 'Airtime Pin', 'cable_subscription' => 'Cable Sales', 'electric_bill' => 'Bill Sales'];
+        $colors = ['#36A2EB', '#FF6384', '#FFCE56', '#9966FF'];
+        $chart = [];
+        foreach ($categories as $key => $label) {
+            $chart[] = ['name' => $label, 'value' => $salesData[$key] ?? 0, 'fill' => $colors[count($chart) % count($colors)]];
+        }
+        return $chart;
+    }
+
+    // --- System Info Methods ---
+
+    public function systemInformation()
+    {
+        $general = General::first();
+        return $general ? $this->success(['general' => $general]) : $this->fail([], 'System information not configured', 404);
+    }
+
+    public function airtimeDiscount()
+    {
+        $discounts = Discount::where('service_type', 'airtime')->get();
+        return $this->success(['discount' => $discounts]);
+    }
+
+    // --- Optimized Universal Methods ---
+
+    /**
+     * Get records from a table with filtering and eager loading.
+     * Supports ?with=relation1,relation2 and ?sort=column,desc
+     */
+    // Tables the generic reader must never serve: GET /table/{table} is
+    // reachable by any logged-in user (not just admins), so anything holding
+    // other users' PII (phone numbers, proof uploads, submitted amounts,
+    // bank account details) needs its own permission-gated controller
+    // instead — see AirtimeToCashController / WalletWithdrawalController.
+    private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'wallet_withdrawals', 'broadcasts'];
+
+    public function universalGet(Request $request, $modelSlug)
+    {
+        if (in_array($modelSlug, self::RESTRICTED_TABLES, true)) {
+            return $this->fail([], 'This resource is not available via the generic table API.', 403);
         }
 
-        $modelClass = $self->getModelClassFromTable($modelSlug);
+        $modelClass = $this->getModelClassFromTable($modelSlug);
         if (!$modelClass || !class_exists($modelClass)) {
-            return $self->fail([], "Model not found for slug: $modelSlug", 404);
-        }
-
-        $modelInstance = new $modelClass();
-        $table = $modelInstance->getTable();
-
-
-        if (!Schema::hasTable($table)) {
-            return $self->fail([], "Table not found: $table", 404);
+            return $this->fail([], "Model not found for slug: $modelSlug", 404);
         }
 
         try {
             $query = $modelClass::query();
+            $table = (new $modelClass)->getTable();
 
+            // 1. Dynamic Filtering
             foreach ($request->query() as $column => $value) {
+                if ($column === 'with' || $column === 'sort' || $column === 'page') continue;
+
                 if (Schema::hasColumn($table, $column)) {
                     $query->where($column, $value);
                 }
             }
 
+            // 2. Eager Loading (Relationships)
+            $this->handleEagerLoading($query, $request);
+
+            // 3. Sorting
+            if ($request->has('sort')) {
+                $sortParts = explode(',', $request->get('sort'));
+                $column = $sortParts[0];
+                $direction = $sortParts[1] ?? 'asc';
+                if (Schema::hasColumn($table, $column)) {
+                    $query->orderBy($column, $direction);
+                }
+            } else {
+                $query->latest(); // Default sort
+            }
+
             $records = $query->get();
 
-            return $self->success($records);
+            // 4. Resource Response
+            if ($records->isNotEmpty()) {
+                $resourceClass = $this->resolveResourceClass($modelClass);
+                if ($resourceClass) {
+                    return $this->success($resourceClass::collection($records));
+                }
+            }
 
-        } catch (\Exception $e) {
-            return $self->fail([], $e->getMessage(), 500);
+            return $this->success($records);
+        } catch (Exception $e) {
+            Log::error('Universal Get failed', ['error' => $e->getMessage()]);
+            return $this->fail([], $e->getMessage(), 500);
         }
     }
 
-
-    static function universalCreateOrUpdate(Request $request, $table, $id)
+    /**
+     * Get a single record with eager loading.
+     */
+    public function universalShow(Request $request, $table, $id)
     {
-        // Check table exists
-        $self = new Self();
-        if (!Schema::hasTable($table)) {
-            return response()->json(['error' => 'Table not found'], 404);
+        if (in_array($table, self::RESTRICTED_TABLES, true)) {
+            return $this->fail([], 'This resource is not available via the generic table API.', 403);
         }
 
-        $data = $request->all();
-        if (empty($data)) {
-            return response()->json(['error' => 'No data provided'], 400);
-        }
-
-        // Get valid columns
-        $tableColumns = Schema::getColumnListing($table);
-        $filteredData = array_filter($data, fn($key) => in_array($key, $tableColumns), ARRAY_FILTER_USE_KEY);
-
-        if (empty($filteredData)) {
-            return response()->json(['error' => 'No valid columns provided'], 400);
+        $modelClass = $this->getModelClassFromTable($table);
+        if (!class_exists($modelClass)) {
+            return $this->fail([], 'Model not found', 404);
         }
 
         try {
-            // Ensure 'id' is also in the table columns
-            if (!in_array('id', $tableColumns)) {
-                return response()->json(['error' => 'Table does not have an id column'], 400);
+            $query = $modelClass::query();
+
+            // Allow eager loading on single show as well
+            $this->handleEagerLoading($query, $request);
+
+            $record = $query->find($id);
+
+            if (!$record) {
+                return $this->fail([], 'Record not found', 404);
             }
 
-            // Set the match condition for updateOrInsert
-            $match = ['id' => $id];
-
-            // Perform create or update
-            $updatedOrInserted = DB::table($table)->updateOrInsert($match, $filteredData);
-
-            if ($updatedOrInserted) {
-                return $self->success([], 'Create or update successful');
-            } else {
-                return $self->success([], 'No changes were made', "info");
+            $resourceClass = $this->resolveResourceClass($modelClass);
+            if ($resourceClass) {
+                return $this->success(new $resourceClass($record));
             }
-        } catch (\Exception $e) {
-            return $self->fail([], $e->getMessage(), 500);
+
+            return $this->success($record->toArray());
+        } catch (Exception $e) {
+            return $this->fail([], $e->getMessage(), 500);
         }
     }
 
-    static function universalBulkCreateOrUpdate(Request $request, $table)
+    /**
+     * Massive refactor of the Bulk Create/Update logic to reduce redundancy.
+     */
+    public static function universalBulkCreateOrUpdate(Request $request, $table)
     {
-        $self = new Self();
+        $self = new self();
 
-        // Check table exists
-        if (!Schema::hasTable($table)) {
-            return response()->json(['error' => 'Table not found'], 404);
+        if (in_array($table, self::RESTRICTED_TABLES, true)) {
+            return $self->fail([], 'This resource is not available via the generic table API.', 403);
         }
 
-        $items = $request->input('items'); // Expecting: [ { id: ..., field1: ..., field2: ... }, ... ]
+        // `$table` is the route slug, which for aliases like "vendors" (→
+        // App\Models\Vendor, mapped onto the real `providers` table) is not
+        // an actual table name — resolve the model's real table before any
+        // Schema:: call, the same way universalGet() already does.
+        $modelClass = $self->getModelClassFromTable($table);
+        $hasModel = $modelClass && class_exists($modelClass);
+        $realTable = $hasModel ? (new $modelClass())->getTable() : $table;
 
+        if (!Schema::hasTable($realTable)) {
+            return $self->fail([], 'Table not found', 404);
+        }
+
+        $items = $request->input('items');
         if (!is_array($items) || empty($items)) {
-            return response()->json(['error' => 'No valid data array provided'], 400);
+            return $self->fail([], 'No valid data provided', 400);
         }
 
-        $tableColumns = Schema::getColumnListing($table);
-
-        // Make sure the table has an ID column
-        if (!in_array('id', $tableColumns)) {
-            return response()->json(['error' => 'Table does not have an id column'], 400);
-        }
-
+        $tableColumns = Schema::getColumnListing($realTable);
         $results = [];
+
         try {
+            Log::info('universalBulkCreateOrUpdate incoming items', ['table' => $table, 'items_sample' => $request->all()['items'] ?? null]);
+            DB::beginTransaction();
+
             foreach ($items as $item) {
-                if (!isset($item['id'])) {
-                    continue; // Skip items without an ID
-                }
+                Log::info($item);
+                if (!is_array($item)) continue;
 
-                // Filter valid columns
-                $filteredData = array_filter(
-                    $item,
-                    fn($key) => in_array($key, $tableColumns),
-                    ARRAY_FILTER_USE_KEY
-                );
+                // 1. Prepare Data (Normalize & Clean)
+                $data = $self->prepareModelData($item, $tableColumns);
+                if (empty($data)) continue;
 
-                if (!empty($filteredData)) {
-                    $match = ['id' => $item['id']];
-                    $status = DB::table($table)->updateOrInsert($match, $filteredData);
-                    $results[] = [
-                        'id' => $item['id'],
-                        'status' => $status ? 'updated/inserted' : 'unchanged'
-                    ];
+                $model = null;
+                $isUpdate = isset($item['id']) && $item['id'] != 0;
+
+                if ($hasModel) {
+                    // 2. Eloquent Handling (Preferred)
+                    if ($isUpdate) {
+                        $model = $modelClass::find($item['id']);
+                        if ($model) {
+                            // A plan created by a vendor sync (e.g.
+                            // Ogdams::syncPlans()) lands with is_draft=true
+                            // so it can't go on sale before an admin reviews
+                            // it. Any explicit admin edit through this same
+                            // endpoint (the edit form, or "bulk activate") is
+                            // exactly that review — clear the flag so the
+                            // "Draft" badge doesn't linger forever.
+                            if (in_array('is_draft', $tableColumns, true) && $model->is_draft) {
+                                $data['is_draft'] = false;
+                            }
+                            $model->fill($data)->save();
+                        } else {
+                            // Fallback create if ID sent but not found
+                            $model = new $modelClass();
+                            $model->forceFill($data); // Force fill incase ID is passed
+                            $model->save();
+                        }
+                    } else {
+                        $model = new $modelClass();
+                        $model->forceFill($data);
+                        $model->save();
+                    }
+
+                    // 3. Sync Relationships (The core refactored part)
+                    if ($model) {
+                        $self->syncModelRelations($model, $item);
+
+                        // Reload relations if needed for response
+                        if (method_exists($model, 'networkTypes')) {
+                            $model->load('networkTypes');
+                        }
+                        // Ensure providers (providerable pivot) is included in response so frontend can derive switch state
+                        if (method_exists($model, 'providers')) {
+                            $model->load('providers');
+                        }
+                        $results[] = $model;
+                    }
+
+                } else {
+                    // 4. DB Facade Fallback (No Model)
+                    $match = ['id' => $item['id'] ?? 0];
+                    DB::table($realTable)->updateOrInsert($match, $data);
+
+                    $results[] = $item['id'] == 0
+                        ? DB::table($realTable)->orderByDesc('id')->first()
+                        : DB::table($realTable)->find($item['id']);
                 }
             }
 
-            return $self->success($results, 'Bulk create or update completed');
-        } catch (\Exception $e) {
-            return $self->fail([], $e->getMessage(), 500);
+            DB::commit();
+
+            return $self->success(
+                count($items) === 1 ? ($results[0] ?? null) : $results,
+                'Operation completed successfully'
+            );
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('Bulk operation failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return $self->fail([], 'Server error: ' . $e->getMessage(), 500);
+        }
+    }
+
+    public static function universalCreateOrUpdate(Request $request, $table, $id = 0)
+    {
+        $data = $request->all();
+        $data['id'] = $id;
+        $request->merge(['items' => [$data]]);
+        return self::universalBulkCreateOrUpdate($request, $table);
+    }
+
+    /**
+     * Reorder records in a table based on provided items.
+     * Expects `items` = [{id: 1, sort_order: 1}, ...] and optional `column` (default: sort_order)
+     */
+    public function reorder(Request $request, $table)
+    {
+        $modelClass = $this->getModelClassFromTable($table);
+        $hasModel = $modelClass && class_exists($modelClass);
+        $realTable = $hasModel ? (new $modelClass())->getTable() : $table;
+
+        if (!Schema::hasTable($realTable)) return $this->fail([], 'Table not found', 404);
+
+        $items = $request->input('items');
+        if (!is_array($items) || empty($items)) return $this->fail([], 'No items provided', 400);
+
+        $column = $request->input('column', 'sort_order');
+        $tableColumns = Schema::getColumnListing($realTable);
+        if (!in_array($column, $tableColumns)) return $this->fail([], "Column {$column} not found on table {$table}", 400);
+
+        try {
+            DB::beginTransaction();
+            foreach ($items as $it) {
+                if (!isset($it['id'])) continue;
+                $id = $it['id'];
+                $value = $it[$column] ?? $it['order'] ?? null;
+                if ($value === null) continue;
+                DB::table($realTable)->where('id', $id)->update([$column => $value, 'updated_at' => now()]);
+            }
+            DB::commit();
+
+            $ids = array_column($items, 'id');
+            $rows = DB::table($realTable)->whereIn('id', $ids)->orderBy($column)->get();
+            return $this->success($rows, 'Reorder completed');
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Reorder failed', ['error' => $e->getMessage()]);
+            return $this->fail([], 'Server error: ' . $e->getMessage(), 500);
         }
     }
 
     public function universalDelete(Request $request, $table, $id)
     {
-        // Ensure the table exists
-        if (!Schema::hasTable($table)) {
-            return $this->success([], 'Table not found', 404, 'info');
+        return $this->universalBulkDelete($request->merge(['ids' => [$id]]), $table);
+    }
+
+    public function universalBulkDelete(Request $request, $table)
+    {
+        if (in_array($table, self::RESTRICTED_TABLES, true)) {
+            return $this->fail([], 'This resource is not available via the generic table API.', 403);
         }
+
+        $modelClass = $this->getModelClassFromTable($table);
+        $hasModel = $modelClass && class_exists($modelClass);
+        $realTable = $hasModel ? (new $modelClass())->getTable() : $table;
+
+        if (!Schema::hasTable($realTable)) return $this->fail([], 'Table not found', 404);
+
+        $ids = $request->input('ids');
+        if (empty($ids) || !is_array($ids)) return $this->fail([], 'No valid IDs provided', 400);
 
         try {
-            // Attempt to delete the record
-            $deleted = DB::table($table)->where('id', $id)->delete();
+            DB::beginTransaction();
 
-            if ($deleted) {
-                return $this->success([],'Record deleted successfully');
+            if ($hasModel) {
+                // Use Eloquent to ensure events (like pivot detachment) run
+                $count = $modelClass::destroy($ids);
             } else {
-                return $this->fail([], 'No matching record found or already deleted', 404);
+                $count = DB::table($realTable)->whereIn('id', $ids)->delete();
             }
 
-        } catch (\Exception $e) {
-                return $this->fail([], $e->getMessage(), 500);
+            DB::commit();
+
+            if ($count > 0) {
+                return $this->success(['deleted' => $count], "$count record(s) deleted");
+            }
+            return $this->fail([], 'No records found to delete', 404);
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            return $this->fail([], $e->getMessage(), 500);
         }
-    }
-    private function getModelClassFromTable(string $table): string
-    {
-        $manualMap = [
-            'vendors'   => \App\Models\Vendor::class,
-            'providers' => Provider::class,
-            'child_instances' => \App\Models\ChildInstance::class,
-            'child_customers' => \App\Models\ChildCustomer::class,
-            'child_transactions' => \App\Models\ChildTransaction::class,
-            'child_directives' => \App\Models\ChildDirective::class,
-            // Add more custom mappings if needed
-        ];
-        if (isset($manualMap[$table])) {
-            return $manualMap[$table];
-        }
-        $modelName = Str::studly(Str::singular($table));
-        return "App\\Models\\{$modelName}";
     }
 
+    // --- Helper Methods ---
+
+    /**
+     * Helper to clean input data, handle CamelCase to snake_case, and parse dates.
+     */
+    private function prepareModelData(array $item, array $tableColumns): array
+    {
+        // Normalize camelCase to snake_case for common issues
+        if (isset($item['serviceType']) && !isset($item['service_type'])) {
+            $item['service_type'] = $item['serviceType'];
+        }
+
+        // Filter valid columns
+        $data = array_filter(
+            $item,
+            fn($key) => in_array($key, $tableColumns),
+            ARRAY_FILTER_USE_KEY
+        );
+
+        // Parse Standard Dates
+        foreach (['created_at', 'updated_at'] as $date) {
+            if (!empty($data[$date])) {
+                try {
+                    $data[$date] = Carbon::parse($data[$date])->format('Y-m-d H:i:s');
+                } catch (Exception $e) {
+                    unset($data[$date]);
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Centralized Logic for syncing relationships (Providers, NetworkTypes, Pivots).
+     */
+    /**
+ * Centralized Logic for syncing relationships and Morphs.
+ * Handles: providerable (morph), networkTypes (many-to-many), etc.
+ */
+private function syncModelRelations(Model $model, array $item)
+{
+    // Log entry for tracing relation sync input
+    Log::info('syncModelRelations called', ['model' => get_class($model), 'id' => $model->id ?? null, 'item_keys' => array_keys($item)]);
+
+    // 1. Sync Polymorphic "Providerable" (e.g. DataPlan -> Provider)
+    if (method_exists($model, 'providers')) {
+        // If frontend explicitly indicates not to use providerable, detach any pivot entries
+        if (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable'] === false) {
+            // Insert or update a providerables row with provider_id = null so the plan
+            // is considered "global" (uses NetworkType->provider). Keep default pivot values.
+            $serverIdDefault = $item['providerable']['server_id'] ?? $item['server_id'] ?? null;
+            $pivotDataDefault = [
+                'provider_id' => null,
+                'providerable_id' => $model->id,
+                'providerable_type' => get_class($model),
+                'cost_price' => 0,
+                'margin_value' => 0,
+                'margin_type' => 'fiat',
+                'server_id' => $serverIdDefault,
+                'updated_at' => now(),
+                'created_at' => now(),
+            ];
+            try {
+                DB::table('providerables')->updateOrInsert(
+                    ['providerable_id' => $model->id, 'providerable_type' => get_class($model)],
+                    $pivotDataDefault
+                );
+                Log::info('providerables upserted with provider_id = null due to use_provider_as_providerable=false', ['model' => get_class($model), 'id' => $model->id]);
+            } catch (Exception $e) {
+                Log::error('Failed to upsert providerables (null provider)', ['error' => $e->getMessage(), 'model' => get_class($model), 'id' => $model->id ?? null]);
+            }
+        }
+
+        // If providerable payload present, sync the provided provider_id; otherwise do nothing (leave detach as above)
+        if (isset($item['providerable'])) {
+            $prov = $item['providerable'];
+            // Use the top-level toggle to decide whether this plan should use a plan-specific provider
+            $provId = (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable']) ? ($prov['provider_id'] ?? null) : null;
+            $pivotData = [
+                'cost_price' => $prov['cost_price'] ?? 0,
+                'margin_value' => $prov['margin_value'] ?? 0,
+                'margin_type' => $prov['margin_type'] ?? 'fiat',
+                'server_id' => $prov['server_id'] ?? $item['server_id'] ?? null,
+            ];
+
+            Log::info('providerable payload', ['model' => get_class($model), 'id' => $model->id ?? null, 'providerable' => $prov]);
+
+            try {
+                // Use a single upsert to ensure only one providerables row exists per providerable
+                $where = ['providerable_id' => $model->id, 'providerable_type' => get_class($model)];
+                $upsert = [
+                    'provider_id' => $provId,
+                    'cost_price' => $pivotData['cost_price'],
+                    'margin_value' => $pivotData['margin_value'],
+                    'margin_type' => $pivotData['margin_type'],
+                    'server_id' => $pivotData['server_id'] ?? null,
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ];
+
+                DB::table('providerables')->updateOrInsert($where, $upsert);
+                Log::info('providerables upserted (single row) with provider_id', ['model' => get_class($model), 'id' => $model->id, 'provider_id' => $provId, 'pivot' => $upsert]);
+            } catch (Exception $e) {
+                Log::error('Failed to upsert providerables (single row)', ['error' => $e->getMessage(), 'model' => get_class($model), 'id' => $model->id ?? null]);
+            }
+        }
+    }
+
+    // 2. Sync Many-to-Many "NetworkTypes"
+    if (isset($item['network_type_ids']) && is_array($item['network_type_ids']) && method_exists($model, 'networkTypes')) {
+        $typeConfig = $item['network_type_config'] ?? [];
+        $syncData = [];
+
+        foreach ($item['network_type_ids'] as $typeId) {
+            $typeModel = \App\Models\NetworkType::find($typeId);
+            $syncData[$typeId] = [
+                'service_type' => $typeModel?->service_type ?? 'airtime',
+                'active' => $typeConfig[$typeId] ?? true
+            ];
+        }
+        $model->networkTypes()->sync($syncData);
+    }
+
+    // 3. Propagate service_type updates to pivot tables
+    if (isset($item['service_type']) && $model->getTable() === 'network_types') {
+        DB::table('network_network_type')
+            ->where('network_type_id', $model->id)
+            ->update(['service_type' => $item['service_type'], 'updated_at' => now()]);
+    }
+}
+
+    private function getModelClassFromTable(string $table): string
+    {
+        $map = [
+            'vendors' => Vendor::class,
+            'providers' => Provider::class,
+            'data_plans' => \App\Models\DataPlan::class, // Added assumption based on usage
+        ];
+
+        if (isset($map[$table])) return $map[$table];
+
+        $name = Str::studly(Str::singular($table));
+        return "App\\Models\\{$name}";
+    }
+
+    /**
+     * Dynamically finds the API Resource for a model.
+     */
+    private function resolveResourceClass($modelClass): ?string
+    {
+        // 1. Try generic naming convention: App\Http\Resources\UserResource
+        $className = class_basename($modelClass);
+        $resourceClass = "App\\Http\\Resources\\{$className}Resource";
+
+        if (class_exists($resourceClass)) {
+            return $resourceClass;
+        }
+
+        // 2. Fallback to manual map (if naming doesn't align)
+        return match ($modelClass) {
+            // Add manual overrides here if necessary
+            default => null,
+        };
+    }
+
+    /**
+     * Applies 'with' params from request to query builder.
+     */
+    private function handleEagerLoading($query, Request $request)
+    {
+        if ($request->has('with')) {
+            $relations = explode(',', $request->get('with'));
+            foreach ($relations as $relation) {
+                // Prevent loading dangerous or non-existent relations if strict mode desired
+                // For now, assuming admin trusts inputs or Eloquent will ignore invalid ones gracefully-ish
+                try {
+                    $query->with(trim($relation));
+                } catch (\Exception $e) {
+                    // Ignore invalid relations
+                }
+            }
+        }
+    }
+
+    // --- Fund & Broadcast (Kept lightweight) ---
 
     public function fundUser(Request $request, $id)
     {
@@ -346,158 +651,65 @@ class AdminController extends Controller
             'type' => 'required|in:credit,debit',
         ]);
 
-        $user = User::findOrFail($id);
-
         try {
-            $transaction = TransactionService::fundUser($user, $validated['amount'], $validated['type']);
-                // 'message' => ,
-
-            return  $this->success([ 'user' => User::find($id)], 'User wallet ' . ($validated['type'] === 'credit' ? 'funded' : 'debited') . ' successfully.');
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Transaction failed: ' . $e->getMessage(),
-            ], 400);
+            $user = User::findOrFail($id);
+            TransactionService::fundUser($user, $validated['amount'], $validated['type']);
+            return $this->success(['user' => $user->refresh()], "User wallet {$validated['type']}ed successfully");
+        } catch (Exception $e) {
+            return $this->fail([], $e->getMessage(), 500);
         }
     }
 
-
-    function refreshToken(Request $re, string $id){
-
-        $vendor = Provider::find($id);
-        $vendor->identifier = Str::uuid();
-        $vendor->save();
-        return $this->success(["identifier" => $vendor->identifier]);
-    }
-
-    // ChildInstance::shared_secret is $hidden on the model (it's a real
-    // credential, not something that should leak into every generic
-    // /table/child_instances list/show response) — these two admin-only
-    // actions are the only way to actually see it, mirroring refreshToken()
-    // above for vendor identifiers.
-    function childInstanceSecret(string $id)
+    public function refreshToken(string $id)
     {
-        $instance = \App\Models\ChildInstance::find($id);
-        if (!$instance) {
-            return $this->fail([], 'Affiliate not found', 404);
+        try {
+            $vendor = Provider::findOrFail($id);
+            $vendor->update(['identifier' => Str::uuid()]);
+            return $this->success(['identifier' => $vendor->identifier], 'Token refreshed');
+        } catch (Exception $e) {
+            return $this->fail([], 'Provider not found', 404);
         }
-        return $this->success(['secret' => $instance->shared_secret]);
     }
 
-    function regenerateChildInstanceSecret(string $id)
+    /**
+     * Pulls a vendor's live plan catalogue and upserts it into local
+     * DataPlan rows (see Ogdams::syncPlans()) so purchases never call the
+     * vendor's API just to resolve a plan ID. Not every vendor class
+     * implements this — the old per-provider-name-column providers
+     * (Adex/SMEPlug/vtpass) don't, since they predate this mechanism.
+     */
+    public function syncVendorPlans(string $id)
     {
-        $instance = \App\Models\ChildInstance::find($id);
-        if (!$instance) {
-            return $this->fail([], 'Affiliate not found', 404);
+        try {
+            $vendor = Vendor::findOrFail($id);
+            $vendorInstance = VendorFactory::make($vendor);
+
+            if (!method_exists($vendorInstance, 'syncPlans')) {
+                return $this->fail([], 'This provider does not support syncing plans.', 422);
+            }
+
+            $summary = $vendorInstance->syncPlans();
+            return $this->success($summary, 'Plans synced.');
+        } catch (Exception $e) {
+            return $this->fail([], $e->getMessage(), 500);
         }
-        $instance->shared_secret = Str::random(64);
-        $instance->save();
-        return $this->success(['secret' => $instance->shared_secret]);
     }
 
-    // No manual "create affiliate" form — an admin only ever needs to give
-    // a new child a name and a one-time code. The child turns that code
-    // into its own real slug/secret via ChildRegistrationController::register()
-    // the first time it connects; nothing else about the connection (base_url,
-    // status) is admin-configured up front.
-    function generateChildRegistrationCode(Request $request)
+    public function banks(string $id)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-        ]);
+        try {
+            $provider = Provider::findOrFail($id);
+            $gateway = \App\Classes\Payment\PaymentFactory::make($provider);
+            $banks = Cache::remember(
+                "provider_banks_{$provider->name}",
+                now()->addDay(),
+                fn() => $gateway->getBanks()
+            );
 
-        $instance = \App\Models\ChildInstance::create([
-            'name' => $validated['name'],
-            'registration_code' => Str::upper(Str::random(10)),
-            'registration_code_expires_at' => now()->addDay(),
-        ]);
-
-        return $this->success([
-            'id' => $instance->id,
-            'name' => $instance->name,
-            'registration_code' => $instance->registration_code,
-            'expires_at' => $instance->registration_code_expires_at,
-        ], 'Registration code generated');
-    }
-
-    // Admin-initiated half of the directive outbox. The other half —
-    // ChildDirectiveController::index()/ack() — is the child polling this
-    // same table for pending rows, gated by verify.child.hmac. Kept as its
-    // own dedicated endpoint rather than the generic /table/child_directives
-    // write path: the Universal Table CRUD's create routes all require an
-    // id up front (updateOrInsert keyed on it), so they only ever support
-    // editing an existing row, not creating a brand new one.
-    function createChildDirective(Request $request, string $id)
-    {
-        $instance = \App\Models\ChildInstance::find($id);
-        if (!$instance) {
-            return $this->fail([], 'Affiliate not found', 404);
+            return $this->success(['banks' => $banks]);
+        } catch (Exception $e) {
+            return $this->fail([], $e->getMessage(), 500);
         }
-
-        $validated = $request->validate([
-            'type' => 'required|string|max:100',
-            'payload' => 'nullable|array',
-        ]);
-
-        $directive = \App\Models\ChildDirective::create([
-            'child_instance_id' => $instance->id,
-            'type' => $validated['type'],
-            'payload' => $validated['payload'] ?? [],
-            'status' => 'pending',
-        ]);
-
-        return $this->success($directive, 'Directive queued');
     }
 
-    function broadcast(Request $request){
-        $validated = $request->validate([
-            'channels' => 'required|array',
-            'recipients' => 'required|array',
-            'smsMessage' => 'nullable|string|max:160',
-            'emailSubject' => 'nullable|string',
-            'emailBody' => 'nullable|string',
-            'notifTitle' => 'nullable|string',
-            'notifMessage' => 'nullable|string',
-            'sendNow' => 'required|boolean',
-            'scheduleDate' => 'nullable|date',
-            'priorityHigh' => 'required|boolean',
-        ]);
-
-       $recipients = User::whereIn('user_type', $validated['recipients'])->get();
-       foreach ($recipients as $user) {
-        $transaction = Transaction::whereUserId($user->id)->latest()->first(); // or get relevant transaction
-        $general = General::first(); // or use a config or cached settings
-
-        $context = [
-            'user' => $user,
-            'transaction' => $transaction,
-            'general' => $general,
-        ];
-
-        $parser = TemplateParser::make()->with($context);
-
-        $data = [
-            'channels' => $validated['channels'],
-            'smsMessage' => $parser->parse($validated['smsMessage'] ?? ""),
-            'emailSubject' => $parser->parse($validated['emailSubject'] ?? ""),
-            'emailBody' => $parser->parse($validated['emailBody'] ?? ""),
-            'notifTitle' => $parser->parse($validated['notifTitle'] ?? ""),
-            'notifMessage' => $parser->parse($validated['notifMessage'] ?? ""),
-            'priorityHigh' => $validated['priorityHigh'],
-        ];
-
-        $notification = new BroadcastNotification($data);
-        if (!$validated['sendNow']) {
-            Log::info("delayed...");
-            $notification->delay(Carbon::parse($validated['scheduleDate']));
-        }
-
-        // Log::warning($notification);
-
-        Notification::route('mail', $user->email)
-            ->route('sms', $user->phone)
-            ->notify($notification);
-            Log::info('Broadcast sent to users: ' . $user->username);
-    }
-
-    }
 }

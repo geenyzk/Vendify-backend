@@ -31,8 +31,6 @@ class Payment
         $providers->map(function ($provider) use($user){
             PaymentFactory::make($provider)->generateAccount($user);
         });
-
-
     }
 
      static function webhook(Request $request, $identifier){

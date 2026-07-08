@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Jobs\SendTransactionCallback;
+use App\Models\CashbackRate;
 use App\Models\Setting;
 use App\Models\Transaction;
 use App\Models\User;
@@ -20,28 +21,74 @@ class TransactionService
         return DB::transaction(function () use ($apiData, $user) {
             $transactionType = $apiData['transaction_type'];
 
-            $amount = floatval($apiData['discount_amount'] ?? $apiData['amount']);
+            // Extract discount and pricing information
+            $discountAmount = floatval($apiData['discount_amount'] ?? 0);
+            $promotionId = $apiData['promotion_id'] ?? null;
+
+            // Get the final amount to charge user (after discount) from apiData
+            // Priority: final_amount > (amount - discount_amount) > amount
+            $finalAmount = floatval(
+                $apiData['final_amount'] ?? 
+                (($apiData['amount'] ?? 0) - $discountAmount) ??
+                ($apiData['amount'] ?? 0)
+            );
+
+            // Get the original/API amount (before discount)
+            $originalAmount = floatval($apiData['amount'] ?? 0);
+
+            // Calculate balance changes based on final amount (what user actually pays)
             $balanceBefore = floatval($user->wallet_balance);
-            $balanceAfter = $apiData["status"] === "success"? $balanceBefore - floatval($apiData['amount']): $user->wallet_balance;
+            $balanceAfter = $apiData["status"] === "success" ? $balanceBefore - $finalAmount : $user->wallet_balance;
 
-            // Optional: Deduct wallet (if not done via API balance already)
-            $user->wallet_balance = $balanceAfter;
-            $user->save();
+            // Deduct wallet only if transaction is successful
+            if ($apiData["status"] === "success") {
+                $user->wallet_balance = $balanceAfter;
+                $user->save();
+            }
 
-            // Create the transaction
+            // Log the transaction details for debugging
+            Log::info("Transaction Processing", [
+                'user_id' => $user->id,
+                'original_amount' => $originalAmount,
+                'discount_amount' => $discountAmount,
+                'final_amount' => $finalAmount,
+                'balance_before' => $balanceBefore,
+                'balance_after' => $balanceAfter,
+                'promotion_id' => $promotionId,
+                'status' => $apiData["status"]
+            ]);
+
+            // Create the transaction with proper discount and promotion tracking
             $tx_data = array_merge($apiData, [
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
                 'user_id' => $user->id,
-                "amount" => $amount,
+                'amount' => $finalAmount,           // Final amount user paid (after discount)
+                'discount_amount' => $discountAmount,  // Track discount separately
+                'promotion_id' => $promotionId,     // Link to promotion used
             ]);
+
+            // Remove final_amount from tx_data to avoid storage conflicts
+            unset($tx_data['final_amount']);
+
             $transaction = Transaction::create($tx_data);
 
-            // Referral commission — only on a transaction that actually
-            // went through (previously fired unconditionally, so a
-            // failed purchase still paid the referrer).
+            // Cashback: a flat, per-service-type wallet credit — replaces
+            // the old per-role Discount pricing. Only on success, and keyed
+            // off the same transaction_type stored on the row above (e.g.
+            // 'airtime_recharge'), not the Discount model's own "type".
             if ($apiData['status'] === 'success') {
-                self::distributeCommission($user, $amount, $transactionType);
+                // Referral commission — only on a transaction that actually
+                // went through (previously fired unconditionally, so a
+                // failed purchase still paid the referrer).
+                self::distributeCommission($user, $finalAmount, $transactionType);
+
+                self::creditCashback($user, $finalAmount, $transactionType);
+
+                // Event rewards keyed off purchase/funding volume — computed
+                // fresh from Transaction data each time, so this is safe to
+                // call on every successful transaction (see EventService).
+                EventService::checkAndAward($user);
             }
 
             AdminNotifier::notifyTransaction($transaction);
@@ -51,19 +98,32 @@ class TransactionService
                 $apiData['status'] === 'success' ? 'transaction_success' : 'transaction_failed',
                 $apiData['status'] === 'success' ? "{$label} successful" : "{$label} failed",
                 $apiData['status'] === 'success'
-                    ? "Your {$label} purchase of ₦{$amount} was successful. Ref: {$transaction->transaction_reference}"
-                    : "Your {$label} purchase of ₦{$amount} could not be completed.",
+                    ? "Your {$label} purchase of ₦{$finalAmount} was successful. Ref: {$transaction->transaction_reference}"
+                    : "Your {$label} purchase of ₦{$finalAmount} could not be completed.",
             ));
 
             SendTransactionCallback::dispatch($user, $transaction);
 
-            return $transaction->toArray();
+            // Enrich transaction response with discount info
+            $transactionArray = $transaction->toArray();
+            $transactionArray['discount_applied'] = [
+                'discount_amount' => $discountAmount,
+                'original_amount' => $originalAmount,
+                'final_amount' => $finalAmount,
+                'promotion_id' => $promotionId,
+            ];
+
+            return $transactionArray;
         });
     }
 
     public static function generateTransactionReference(): string
     {
-        return 'TXN-' . now()->format('YmdHis') . '-' . strtoupper(Str::random(6));
+        $settings = Setting::first();
+        $prefix = $settings?->invoice_prefix ?: 'TXN-';
+        $suffix = $settings?->invoice_suffix ?: '';
+
+        return $prefix . now()->format('YmdHis') . '-' . strtoupper(Str::random(6)) . $suffix;
     }
 
     protected static function calculateServiceFee(float $amount): float
@@ -98,6 +158,22 @@ class TransactionService
                 'Referral commission earned',
                 "You earned ₦{$commission} from @{$user->username}'s purchase — added to your referral balance.",
             ));
+        }
+    }
+
+    protected static function creditCashback(User $user, float $amount, string $transactionType): void
+    {
+        $rate = CashbackRate::where('service_type', $transactionType)
+            ->where('active', true)
+            ->first();
+
+        if (!$rate || $rate->percentage <= 0) {
+            return;
+        }
+
+        $cashback = round($amount * ($rate->percentage / 100), 2);
+        if ($cashback > 0) {
+            $user->increment('wallet_balance', $cashback);
         }
     }
 

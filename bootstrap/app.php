@@ -1,8 +1,8 @@
 <?php
 
-use App\Http\Middleware\CheckPermission;
-use App\Http\Middleware\EnsureUserIsAdmin;
-use App\Http\Middleware\VerifyChildSignature;
+use App\Http\Middleware\EnsurePermission;
+use App\Http\Middleware\EnsureUserType;
+use App\Http\Middleware\HandleRequest;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,10 +15,16 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->statefulApi();
+        $middleware->trustProxies(at: '*');
+
+        $middleware->append([
+            HandleRequest::class
+        ]);
+
         $middleware->alias([
-            'verify.child.hmac' => VerifyChildSignature::class,
-            'admin' => EnsureUserIsAdmin::class,
-            'permission' => CheckPermission::class,
+            'user_type' => EnsureUserType::class,
+            'permission' => EnsurePermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

@@ -2,28 +2,40 @@
 
 namespace App\Http\Controllers;
 
-use App\Class\ChildSync\ChildAuthenticator;
-use App\Class\ChildSync\ChildSyncFactory;
-use App\Class\Payment\Payment;
-use App\Class\Vendor\VendorFactory;
+use App\Classes\Payment\Payment;
+use App\Classes\Vendor\VendorFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class WebhookController extends Controller
 {
-    //
 
-    function handle(Request $request,string $type, string $identifier){
 
-        Log::info($request->all());
+
+
+    /**
+     * Handle payment or vendor webhook
+     *
+     * This handles webhook requests from payment providers or vendors.
+     *@group webhook
+     * @urlParam type string required Type of webhook (payment or vendor). Example: payment
+     * @urlParam identifier string required Identifier for the webhook. Example: flutterwave
+     *
+     * @unauthenticated
+     *
+     * @response 200 {
+     *   "status": "success",
+     *   "message": "Webhook handled"
+     * }
+     */
+    public function handle(Request $request, string $type, string $identifier)
+
+    {
+
         try {
-            //code...
             switch ($type) {
                 case 'payment':
                     return Payment::webhook($request, $identifier) ;
-
-                case 'child':
-                    return $this->childWebhook($request, $identifier);
 
                 case 'vendor':
                 default:
@@ -33,21 +45,5 @@ class WebhookController extends Controller
             //throw $th;
             $this->fail([], "Unauthorized", 401);
         }
-
-
-    }
-
-    // Same {type}/{identifier} shape as the vendor/payment cases above, but
-    // unlike those (which have no payload verification at all), a growing
-    // set of less-trusted child instances needs the request signature
-    // checked before ChildSyncFactory touches anything.
-    protected function childWebhook(Request $request, string $identifier)
-    {
-        [$instance, $error] = ChildAuthenticator::verify($request, $identifier);
-        if (!$instance) {
-            return $this->fail([], $error, 401);
-        }
-
-        return ChildSyncFactory::webhook($request, $instance);
     }
 }

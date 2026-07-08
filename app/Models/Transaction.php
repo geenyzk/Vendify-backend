@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Models\Promotion;
 
 class Transaction extends Model
 {
@@ -15,7 +16,13 @@ class Transaction extends Model
         'quantity', 'status', 'transaction_reference', 'payment_reference',
         'funding_method', 'balance_before', 'balance_after', 'completed_at',
         'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token',
-        'discount_amount', 'related_reference',
+        'promotion_id', 'discount_amount', 'refunded_at', 'refund_reason',
+        'related_reference',
+    ];
+
+    protected $casts = [
+        'completed_at' => 'datetime',
+        'refunded_at' => 'datetime',
     ];
 
     // Transaction types where the wallet was actually charged, and a
@@ -31,6 +38,14 @@ class Transaction extends Model
     ];
 
     /**
+     * Get the promotion associated with this transaction.
+     */
+    public function promotion()
+    {
+        return $this->belongsTo(Promotion::class, 'promotion_id');
+    }
+
+    /**
      * Get the user who owns this transaction.
      */
     public function user()
@@ -42,7 +57,7 @@ class Transaction extends Model
     {
         return strtoupper('TXN-' . now()->format('YmdHis') . '-' . Str::random(6));
     }
-    
+
     public static function calculateSummary(Carbon $startDate, Carbon $endDate, ?int $userId = null): array
     {
         $allTypes = [

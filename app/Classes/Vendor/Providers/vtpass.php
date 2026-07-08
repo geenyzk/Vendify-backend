@@ -6,7 +6,7 @@ use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
-use App\Models\Discount;
+use App\Models\DiscoProviderId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -44,6 +44,28 @@ class Vtpass extends VendorBase
             ->get($this->baseUrl() . "/requery?request_id={$tx_ref}")
             ->json();
         return $res ?? [];
+    }
+
+    /**
+     * VTPass authenticates every request via the api-key/public-key headers
+     * directly (see getAuthHeaders()) rather than a login/token exchange, so
+     * this just confirms those credentials actually work — used by
+     * isHealthy() for the admin connection-status check. This method was
+     * missing entirely before, which left VendorInterface partially
+     * unimplemented and made the class fatal to instantiate at all.
+     */
+    public function login(): array
+    {
+        try {
+            $res = Http::withHeaders($this->getAuthHeaders())
+                ->get($this->baseUrl() . '/balance')
+                ->json();
+
+            return isset($res['contents']['balance']) ? ['status' => 'success'] : ['status' => 'fail'];
+        } catch (\Throwable $th) {
+            Log::error("VTPass login/ping error: " . $th->getMessage());
+            return ['status' => 'fail'];
+        }
     }
 
     protected function getAuthHeaders(): array
@@ -108,6 +130,9 @@ class Vtpass extends VendorBase
 
             case 'data':
                 $dataPlan = DataPlan::find($payload['data_plan']);
+                if (!$dataPlan) {
+                    throw new \InvalidArgumentException("Data plan [{$payload['data_plan']}] not found");
+                }
                 return [
                     'request_id' => $payload['tx_ref'],
                     'serviceID' => strtolower($payload['network'] . '-data'),
@@ -118,6 +143,9 @@ class Vtpass extends VendorBase
 
             case 'cable':
                 $cablePlan = CablePlan::find($payload['cable_plan']);
+                if (!$cablePlan) {
+                    throw new \InvalidArgumentException("Cable plan [{$payload['cable_plan']}] not found");
+                }
                 return [
                     'request_id' => $payload['tx_ref'],
                     'serviceID' => strtolower($payload['cable_network']),
@@ -126,7 +154,10 @@ class Vtpass extends VendorBase
                 ];
 
             case 'electricity':
-                $disco = Discount::getElectricity($payload['disco']);
+                // vtpass takes the disco slug directly as serviceID rather
+                // than a per-provider numeric ID (unlike Adex/SMEPlug), so
+                // no DiscoProviderId lookup is needed here — this used to
+                // fetch one anyway and then never use it.
                 return [
                     'request_id' => $payload['tx_ref'],
                     'serviceID' => strtolower($payload['disco']),
@@ -156,18 +187,37 @@ class Vtpass extends VendorBase
             'payment_reference' => $response['transactionID'] ?? null,
             'response_message' => $response['response_description'] ?? '',
             'completed_at' => now(),
-            'service_fee' => 0.00,
+            // $response here is the vendor's raw API reply merged with the
+            // original $validated payload (see VendorBase::process) — pass
+            // through whatever VTUServicesController computed (e.g. the
+            // Bill Plan fee for electricity) instead of always zeroing it.
+            'service_fee' => (float) ($response['service_fee'] ?? 0),
             'platform' => 'api',
         ];
 
-        return match($service) {
-            'airtime', 'data', 'cable', 'electricity', 'exam' => array_merge($default, [
-                'amount' => $response['amount'] ?? 0,
-                'receiver' => $response['phone'] ?? $response['billersCode'] ?? null,
-                'token' => $response['token'] ?? null,
-            ]),
-            default => $default,
-        };
+        // Was missing entirely — formatResponse() never set transaction_type
+        // for any service, and it's a NOT NULL enum column on `transactions`,
+        // so every single vtpass transaction failed at the database insert
+        // with a truncation/constraint error right after a real vendor call
+        // had already gone through.
+        $transactionTypes = [
+            'airtime' => 'airtime_recharge',
+            'data' => 'data_subscription',
+            'cable' => 'cable_subscription',
+            'electricity' => 'electric_bill',
+            'exam' => 'exam',
+        ];
+
+        if (!isset($transactionTypes[$service])) {
+            throw new \InvalidArgumentException("No response formatter defined for service [$service]");
+        }
+
+        return array_merge($default, [
+            'transaction_type' => $transactionTypes[$service],
+            'amount' => $response['amount'] ?? 0,
+            'receiver' => $response['phone'] ?? $response['billersCode'] ?? null,
+            'token' => $response['token'] ?? null,
+        ]);
     }
 
     function verifyUser(string $service, string $identifier, array $payload): JsonResponse
@@ -177,9 +227,17 @@ class Vtpass extends VendorBase
         }
 
         $url = $this->baseUrl() . '/merchant-verify';
+        // $payload comes straight from VTUServicesController::verify() —
+        // 'cable_network'/'disco', never a 'serviceID' key, so that always
+        // resolved to null here (verification would always fail against
+        // the real vtpass endpoint). Build it the same way formatPayload()
+        // does for the actual purchase, so verify checks the same billing ID.
+        $serviceId = $service === 'cable'
+            ? strtolower($payload['cable_network'] ?? '')
+            : strtolower($payload['disco'] ?? '');
         $data = [
             'billersCode' => $identifier,
-            'serviceID' => $payload['serviceID'],
+            'serviceID' => $serviceId,
         ];
 
         try {
@@ -196,7 +254,10 @@ class Vtpass extends VendorBase
 
     protected function getPlans(?array $payload = null): JsonResponse
     {
-        return AdminController::universalGet($payload['request'], $payload['table']);
+        // universalGet() is an instance method, not static — calling it via
+        // `AdminController::universalGet(...)` throws "Non-static method
+        // ... cannot be called statically" the moment this actually runs.
+        return (new AdminController())->universalGet($payload['request'], $payload['table']);
     }
 
     function callback(Request $request): array
