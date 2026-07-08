@@ -57,45 +57,40 @@ Route::get('/deploy/{action}', function (string $action) {
     ]);
 })->where('action', '(migrate|refresh|fresh)');
 
-// Route::middleware(['auth:sanctum'])->group(function () {
-//     // Route::get("/user", [AuthenticatedSessionController::class, 'index']);
-//     // SPA clients should POST to /logout, but we accept GET too for browser hits.
-//     Route::match(['get', 'post'], "/logout", [AuthenticatedSessionController::class, 'destroy']);
-//     Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
-//     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
-//     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
-//     Route::get('/transactions/report', [TransactionController::class, 'report']);
+Route::middleware(['auth:sanctum'])->group(function () {
+    // Route::get("/user", [AuthenticatedSessionController::class, 'index']);
+    // SPA clients should POST to /logout, but we accept GET too for browser hits.
+    Route::match(['get', 'post'], "/logout", [AuthenticatedSessionController::class, 'destroy']);
+    Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
+    Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
+    Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
+    Route::get('/transactions/report', [TransactionController::class, 'report']);
 
+    Route::prefix("customer")->group(function () {
+        Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
+        Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);
+    });
 
-//     Route::prefix("customer")->group(function(){
+    Route::prefix("admin")->group(function () {
+        Route::resource('users', UserController::class)
+            ->withoutMiddleware('auth:sanctum')
+            ->only(['store']);
 
-//         Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
-//         Route::post('/account/upgrade', [CustomerController::class, 'upgrade']);
-//     });
+        Route::resource('users', UserController::class)
+            ->only(['show', 'update', 'destroy', 'index']);
 
+        Route::resource('controls', ServiceControlController::class);
 
+        Route::get('/stats', [AdminController::class, 'stats']);
+        Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
 
-//     Route::prefix("admin")->group(function () {
-//         Route::resource('users', UserController::class)
-//             ->withoutMiddleware('auth:sanctum')
-//             ->only(['store']);
+        Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
 
-//         Route::resource('users', UserController::class)
-//             ->only(['show', 'update', 'destroy', 'index']);
+        Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
+    });
 
-//         Route::resource('controls', ServiceControlController::class);
-
-//         Route::get('/stats', [AdminController::class, 'stats']);
-//         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
-
-//         Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
-
-//         Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
-//     });
-
-
-//     Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
-// });
+    Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
+});
 
 require __DIR__.'/auth.php';
 require __DIR__.'/admin.php';
