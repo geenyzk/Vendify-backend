@@ -67,7 +67,6 @@ class AuthenticatedSessionController extends Controller
                 ]);
             }
 
-            $user->role = $user->user_type;
             return $this->success([
                 'user' => $user->load('role.permissions'),
                 'token' => $token,

@@ -23,10 +23,24 @@ class AccountController extends Controller
 
         $validated = $request->validate([
             'fullname' => 'sometimes|string|max:255',
+            'username' => [
+                'sometimes',
+                'string',
+                'max:255',
+                Rule::unique('users', 'username')->ignore($user->id)->whereNull('deleted_at'),
+            ],
+            'email' => [
+                'sometimes',
+                'string',
+                'lowercase',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')->ignore($user->id)->whereNull('deleted_at'),
+            ],
             'phone' => [
                 'sometimes',
                 'string',
-                Rule::unique('users', 'phone')->ignore($user->id),
+                Rule::unique('users', 'phone')->ignore($user->id)->whereNull('deleted_at'),
             ],
         ]);
 
