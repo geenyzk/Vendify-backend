@@ -12,6 +12,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\BroadcastController;
+use App\Http\Controllers\ChildCustomerMigrationController;
 use App\Http\Controllers\ChildDirectiveController;
 use App\Http\Controllers\ChildRegistrationController;
 use App\Http\Controllers\CustomerController;
@@ -240,6 +241,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/airtime-to-cash/{atc}/approve', [AirtimeToCashController::class, 'approve']);
             Route::post('/airtime-to-cash/{atc}/reject', [AirtimeToCashController::class, 'reject']);
         });
+
+        // Parent/child affiliate admin plumbing. The first three sat here
+        // before the permission-group reorg (06d83b9) dropped them by
+        // accident; the affiliates UI calls all of these. Not scoped to a
+        // seeded permission — affiliate management is owner-level surface,
+        // same as /stats below.
+        Route::get('/child-instances/{id}/secret', [AdminController::class, 'childInstanceSecret']);
+        Route::post('/child-instances/{id}/regenerate-secret', [AdminController::class, 'regenerateChildInstanceSecret']);
+        Route::post('/child-instances/generate-code', [AdminController::class, 'generateChildRegistrationCode']);
+        Route::post('/child-instances/{id}/directives', [AdminController::class, 'createChildDirective']);
+        Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
 
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::get('/analytics', [AnalyticsController::class, 'index']);
