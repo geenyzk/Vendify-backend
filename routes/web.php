@@ -34,26 +34,40 @@ Route::get('/cache', function () {
 // all if DEPLOY_SECRET isn't set (so this can never be accidentally left
 // open), and rejects anything that doesn't match it via a timing-safe
 // comparison.
-Route::get('/deploy/migrate', function () {
+Route::get('/deploy/{action}', function (string $action) {
     $secret = env('DEPLOY_SECRET');
     if (!$secret || !hash_equals($secret, (string) request('token'))) {
         abort(403, 'Invalid or missing deploy token.');
     }
 
-    Artisan::call('migrate', ['--force' => true]);
+    $allowedActions = ['migrate', 'refresh', 'fresh'];
+    if (!in_array($action, $allowedActions, true)) {
+        abort(404, 'Unsupported deploy action.');
+    }
+
+    $command = match ($action) {
+        'migrate' => ['migrate', ['--force' => true]],
+        'refresh' => ['migrate:refresh', ['--force' => true]],
+        'fresh' => ['migrate:fresh', ['--force' => true]],
+    };
+
+    Artisan::call($command[0], $command[1]);
     $output = Artisan::output();
 
-    Artisan::call('db:seed', [
-        '--class' => RolesAndPermissionsSeeder::class,
-        '--force' => true,
-    ]);
-    $output .= Artisan::output();
+    if ($action === 'migrate') {
+        Artisan::call('db:seed', [
+            '--class' => RolesAndPermissionsSeeder::class,
+            '--force' => true,
+        ]);
+        $output .= Artisan::output();
+    }
 
     return response()->json([
         'success' => true,
+        'action' => $action,
         'output' => $output,
     ]);
-});
+})->where('action', '(migrate|refresh|fresh)');
 
 require __DIR__.'/auth.php';
 require __DIR__.'/admin.php';
