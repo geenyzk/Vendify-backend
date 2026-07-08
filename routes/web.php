@@ -47,8 +47,8 @@ Route::get('/deploy/{action}', function (string $action) {
 
     $command = match ($action) {
         'migrate' => ['migrate', ['--force' => true]],
-        'refresh' => ['migrate:refresh', ['--force' => true, '--seed' => false]],
-        'fresh' => ['migrate:fresh', ['--force' => true, '--seed' => false]],
+        'refresh' => ['migrate:refresh', ['--force' => true, '--seed' => true]],
+        'fresh' => ['migrate:fresh', ['--force' => true, '--seed' => true]],
     };
 
     Artisan::call($command[0], $command[1]);
