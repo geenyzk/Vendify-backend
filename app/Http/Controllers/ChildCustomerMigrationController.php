@@ -67,7 +67,7 @@ class ChildCustomerMigrationController extends Controller
         // users.email and users.phone are both NOT NULL + unique, so a
         // brand-new account needs both synced from the child.
         if (!$existing && (!$customer->email || !$customer->phone)) {
-            $missing = !$customer->email ? 'an email address' : 'a phone number';
+            $missing = !$customer->email ? 'email address' : 'phone number';
             return $this->fail([], "Cannot create a parent account: this customer has no {$missing} synced from the child yet.", 422);
         }
 
