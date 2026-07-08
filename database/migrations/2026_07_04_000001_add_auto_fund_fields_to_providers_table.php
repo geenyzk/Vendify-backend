@@ -8,6 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('providers', 'auto_fund_enabled')) {
+            return;
+        }
+
         Schema::table('providers', function (Blueprint $table) {
             $table->boolean('auto_fund_enabled')->default(false)->after('active');
             $table->decimal('auto_fund_threshold', 15, 2)->nullable()->after('auto_fund_enabled');

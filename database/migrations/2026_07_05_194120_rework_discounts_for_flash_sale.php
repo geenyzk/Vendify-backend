@@ -17,6 +17,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('discounts', 'service_type')) {
+            return;
+        }
+
         Schema::table('discounts', function (Blueprint $table) {
             $table->string('service_type')->nullable()->after('name');
             $table->string('network')->nullable()->after('service_type');

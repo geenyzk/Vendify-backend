@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('settings', 'wallet_transfer_min')) {
+            return;
+        }
+
         Schema::table('settings', function (Blueprint $table) {
             $table->decimal('wallet_transfer_min', 12, 2)->default(50);
             $table->decimal('wallet_transfer_max', 12, 2)->default(1000000);

@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('cable_plans', 'charge_fee')) {
+            return;
+        }
+
         Schema::table('cable_plans', function (Blueprint $table) {
             // Cable subscription prices are fixed by the cable company
             // (DStv/GOtv/Startimes) — unlike a flat admin-entered price,

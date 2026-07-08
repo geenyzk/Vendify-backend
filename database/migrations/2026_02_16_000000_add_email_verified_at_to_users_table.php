@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('users', 'email_verified_at')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             $table->timestamp('email_verified_at')->nullable()->after('email');
         });

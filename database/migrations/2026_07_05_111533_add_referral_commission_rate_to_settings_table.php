@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('settings', 'referral_commission_rate')) {
+            return;
+        }
+
         Schema::table('settings', function (Blueprint $table) {
             $table->decimal('referral_commission_rate', 5, 2)->default(2.00);
         });

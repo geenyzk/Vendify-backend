@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('settings', 'notify_admin_on_airtime_to_cash')) {
+            return;
+        }
+
         Schema::table('settings', function (Blueprint $table) {
             $table->boolean('notify_admin_on_airtime_to_cash')->default(true);
             $table->boolean('notify_admin_on_wallet_withdrawal')->default(true);

@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('airtime_to_cash_requests')) {
+            return;
+        }
+
         Schema::create('airtime_to_cash_requests', function (Blueprint $table) {
             $table->id();
             $table->uuid('user_id');

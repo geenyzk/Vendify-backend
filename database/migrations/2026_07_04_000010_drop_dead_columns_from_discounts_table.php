@@ -13,6 +13,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('discounts', 'user_discount')) {
+            return;
+        }
+
         Schema::table('discounts', function (Blueprint $table) {
             $table->dropColumn([
                 'user_discount',

@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('welcome_message_views')) {
+            return;
+        }
+
         // Tracks which users have seen which welcome message. `seen_at` is compared
         // against `welcome_messages.updated_at` at read time so editing the message
         // (title/body) makes it pop up again for everyone, without needing to

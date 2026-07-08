@@ -13,6 +13,12 @@ return new class extends Migration
      */
     public function up()
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('broadcasts')) {
+            return;
+        }
+
         Schema::create('broadcasts', function (Blueprint $table) {
             $table->id();
             $table->string('title')->nullable();

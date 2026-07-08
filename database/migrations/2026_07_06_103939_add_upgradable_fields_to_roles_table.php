@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('roles', 'upgradable')) {
+            return;
+        }
+
         Schema::table('roles', function (Blueprint $table) {
             // Whether a customer can self-upgrade into this role from
             // /upgrade-account, and what it costs — replaces the old

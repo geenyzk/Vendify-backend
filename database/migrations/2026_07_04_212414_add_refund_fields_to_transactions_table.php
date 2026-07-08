@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('transactions', 'refunded_at')) {
+            return;
+        }
+
         Schema::table('transactions', function (Blueprint $table) {
             $table->timestamp('refunded_at')->nullable()->after('completed_at');
             $table->string('refund_reason')->nullable()->after('refunded_at');

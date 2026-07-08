@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('airtime_pins')) {
+            return;
+        }
+
         Schema::create('airtime_pins', function (Blueprint $table) {
             $table->id();
             $table->enum("network", ["mtn", "glo", "airtel", "9mobile"]);

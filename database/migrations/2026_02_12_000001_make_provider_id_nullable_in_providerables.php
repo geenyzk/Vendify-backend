@@ -12,6 +12,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('providerables', 'provider_id')) {
+            return;
+        }
+
         // Make provider_id nullable. Use raw SQL if the change() helper is not available.
         try {
             Schema::table('providerables', function (Blueprint $table) {

@@ -8,6 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('vendor_fundings')) {
+            return;
+        }
+
         Schema::create('vendor_fundings', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('vendor_id');

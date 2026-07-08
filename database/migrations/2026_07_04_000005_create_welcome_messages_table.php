@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('welcome_messages')) {
+            return;
+        }
+
         Schema::create('welcome_messages', function (Blueprint $table) {
             $table->id();
             $table->string('title');

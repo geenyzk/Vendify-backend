@@ -13,6 +13,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('users', 'total_referral_earnings')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             // Lifetime total, unlike referral_balance which drains to zero
             // every time it's converted to wallet_balance — see

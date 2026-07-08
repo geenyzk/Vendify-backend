@@ -12,6 +12,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('airtime_plans')) {
+            return;
+        }
+
         // Split out of `discounts`, which is now dedicated to the separate
         // flash-sale Discount feature under Growth & Marketing — this table
         // keeps the original per-network airtime config (name = network,

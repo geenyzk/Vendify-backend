@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('bill_plans')) {
+            return;
+        }
+
         Schema::create('bill_plans', function (Blueprint $table) {
             $table->id();
             // Matches disco_provider_ids.name (e.g. "Ikeja Electric") — the

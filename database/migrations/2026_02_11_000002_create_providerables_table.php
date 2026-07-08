@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('providerables')) {
+            return;
+        }
+
         
 
         Schema::create('providerables', function (Blueprint $table) {

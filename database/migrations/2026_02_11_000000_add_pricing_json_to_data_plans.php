@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('data_plans', 'pricing')) {
+            return;
+        }
+
         Schema::table('data_plans', function (Blueprint $table) {
             // Add a JSON column to store pricing as a structured payload
             $table->json('pricing')->nullable()->after('active');

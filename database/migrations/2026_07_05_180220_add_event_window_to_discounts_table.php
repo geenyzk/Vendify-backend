@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('discounts', 'starts_at')) {
+            return;
+        }
+
         Schema::table('discounts', function (Blueprint $table) {
             // Null on both = always-on discount (legacy behavior, unchanged).
             // Set both = a scheduled "event" that only applies within the

@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('networks', 'airtime_to_cash_destination_number')) {
+            return;
+        }
+
         Schema::table('networks', function (Blueprint $table) {
             $table->string('airtime_to_cash_destination_number')->nullable();
             $table->decimal('airtime_to_cash_min', 10, 2)->default(100);

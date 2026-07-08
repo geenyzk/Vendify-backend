@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('permission_role')) {
+            return;
+        }
+
         Schema::create('permission_role', function (Blueprint $table) {
             $table->id();
             $table->foreignId('role_id')->constrained()->onDelete('cascade');

@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Some databases already have this table without the migration row
+        // (schema drift from dump imports) — skip instead of aborting the run.
+        if (Schema::hasTable('event_awards')) {
+            return;
+        }
+
         Schema::create('event_awards', function (Blueprint $table) {
             $table->id();
             $table->foreignId('event_id')->constrained()->cascadeOnDelete();

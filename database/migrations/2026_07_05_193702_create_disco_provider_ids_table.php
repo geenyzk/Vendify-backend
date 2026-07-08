@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): the table may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasTable('disco_provider_ids')) {
+            return;
+        }
+
         // Split out of the `discounts` table, where these columns used to
         // live before `2026_07_04_000010_drop_dead_columns_from_discounts_table`
         // dropped them as "dead" — they were actually still read live by

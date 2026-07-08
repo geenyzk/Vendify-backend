@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('broadcasts', 'name')) {
+            return;
+        }
+
         Schema::table('broadcasts', function (Blueprint $table) {
             // Admin's own label for finding this broadcast again later — not
             // shown to recipients.

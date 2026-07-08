@@ -12,6 +12,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('transactions', 'related_reference')) {
+            return;
+        }
+
         DB::statement("ALTER TABLE transactions MODIFY transaction_type ENUM(
             'airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill', 'exam',
             'betting_funding', 'airtime_pin', 'data_pin', 'wallet_funding', 'manual_funding', 'bulksms',

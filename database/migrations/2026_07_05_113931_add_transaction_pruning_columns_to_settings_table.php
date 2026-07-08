@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('settings', 'prune_transactions_enabled')) {
+            return;
+        }
+
         Schema::table('settings', function (Blueprint $table) {
             $table->boolean('prune_transactions_enabled')->default(false);
             $table->unsignedInteger('prune_transactions_after_days')->default(365);

@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('data_plans', 'vtpass_cost_price')) {
+            return;
+        }
+
         Schema::table('data_plans', function (Blueprint $table) {
             // ADEX servers - cost price and margin profit
             for ($i = 1; $i <= 5; $i++) {

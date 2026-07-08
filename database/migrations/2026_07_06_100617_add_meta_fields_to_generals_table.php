@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Schema drift (dump imports): these columns may already exist without
+        // this migration being recorded — skip instead of aborting the run.
+        if (Schema::hasColumn('generals', 'meta_title')) {
+            return;
+        }
+
         Schema::table('generals', function (Blueprint $table) {
             // Browser tab title / SEO description — deliberately separate
             // from app_name since a page title often reads better as a
