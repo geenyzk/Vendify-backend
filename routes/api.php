@@ -34,6 +34,11 @@ use App\Http\Controllers\WalletWithdrawalController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\ChildCustomerContactController;
+use App\Http\Controllers\ChildCustomerMigrationController;
+use App\Http\Controllers\ChildDirectiveController;
+use App\Http\Controllers\ChildRegistrationController;
+use App\Http\Controllers\ResetWebsiteController;
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
@@ -47,6 +52,21 @@ Route::post("/forgot-password", [PasswordResetLinkController::class, 'apiStore']
 Route::post("/reset-password", [NewPasswordController::class, 'apiStore'])
     ->middleware('throttle:6,1');
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
+
+// Pull/ack half of the parent<->child channel — the child polls these on
+// its own cron cadence (see child_backend's ParentSyncPullDirectives).
+// This is a client-polling RPC, not an unsolicited webhook, so it gets its
+// own route group + middleware rather than sharing the {type}/{identifier}
+// shape above.
+Route::prefix('child')->middleware('verify.child.hmac')->group(function () {
+    Route::get('/{slug}/directives', [ChildDirectiveController::class, 'index']);
+    Route::post('/{slug}/directives/{id}/ack', [ChildDirectiveController::class, 'ack']);
+});
+
+// Not HMAC-protected — the child has no shared_secret yet at this point.
+// Trust is bootstrapped by the one-time registration_code itself (see
+// AdminController::generateChildRegistrationCode / ChildRegistrationController).
+Route::post('/child/register', [ChildRegistrationController::class, 'register']);
 
 // Universal Table API reads: any logged-in user (the customer dashboard's
 // service-availability widget reads /table/networks as a non-admin).
@@ -92,6 +112,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::get('/vtu/{service}/discount', [VTUServicesController::class, 'discountPreview']);
     Route::post('/transactions/report', [TransactionController::class, 'report']);
+    Route::get('/search', [SearchController::class, 'userSearch']);
 
     Route::get('/welcome-message', [WelcomeMessageController::class, 'show']);
     Route::post('/welcome-message/seen', [WelcomeMessageController::class, 'markSeen']);
@@ -192,6 +213,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/airtime-to-cash/{atc}/approve', [AirtimeToCashController::class, 'approve']);
             Route::post('/airtime-to-cash/{atc}/reject', [AirtimeToCashController::class, 'reject']);
         });
+
+        // Parent/child affiliate admin plumbing. Not scoped to a seeded
+        // permission — affiliate management is owner-level surface, same
+        // as /stats below.
+        Route::get('/child-instances/{id}/secret', [AdminController::class, 'childInstanceSecret']);
+        Route::post('/child-instances/{id}/regenerate-secret', [AdminController::class, 'regenerateChildInstanceSecret']);
+        Route::post('/child-instances/generate-code', [AdminController::class, 'generateChildRegistrationCode']);
+        Route::post('/child-instances/{id}/directives', [AdminController::class, 'createChildDirective']);
+        Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
+        Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
+        Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);
+
+        Route::post('/reset-website', [ResetWebsiteController::class, 'reset']);
 
         // Not clearly owned by any single permission slug — gated by
         // user_type:admin at the group level only.

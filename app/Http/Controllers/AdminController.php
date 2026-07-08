@@ -712,4 +712,83 @@ private function syncModelRelations(Model $model, array $item)
         }
     }
 
+    // ChildInstance::shared_secret is $hidden on the model (it's a real
+    // credential, not something that should leak into every generic
+    // /table/child_instances list/show response) — these two admin-only
+    // actions are the only way to actually see it, mirroring refreshToken()
+    // above for vendor identifiers.
+    function childInstanceSecret(string $id)
+    {
+        $instance = \App\Models\ChildInstance::find($id);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+        return $this->success(['secret' => $instance->shared_secret]);
+    }
+
+    function regenerateChildInstanceSecret(string $id)
+    {
+        $instance = \App\Models\ChildInstance::find($id);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+        $instance->shared_secret = Str::random(64);
+        $instance->save();
+        return $this->success(['secret' => $instance->shared_secret]);
+    }
+
+    // No manual "create affiliate" form — an admin only ever needs to give
+    // a new child a name and a one-time code. The child turns that code
+    // into its own real slug/secret via ChildRegistrationController::register()
+    // the first time it connects; nothing else about the connection (base_url,
+    // status) is admin-configured up front.
+    function generateChildRegistrationCode(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+        ]);
+
+        $instance = \App\Models\ChildInstance::create([
+            'name' => $validated['name'],
+            'registration_code' => Str::upper(Str::random(10)),
+            'registration_code_expires_at' => now()->addDay(),
+        ]);
+
+        return $this->success([
+            'id' => $instance->id,
+            'name' => $instance->name,
+            'registration_code' => $instance->registration_code,
+            'expires_at' => $instance->registration_code_expires_at,
+        ], 'Registration code generated');
+    }
+
+    // Admin-initiated half of the directive outbox. The other half —
+    // ChildDirectiveController::index()/ack() — is the child polling this
+    // same table for pending rows, gated by verify.child.hmac. Kept as its
+    // own dedicated endpoint rather than the generic /table/child_directives
+    // write path: the Universal Table CRUD's create routes all require an
+    // id up front (updateOrInsert keyed on it), so they only ever support
+    // editing an existing row, not creating a brand new one.
+    function createChildDirective(Request $request, string $id)
+    {
+        $instance = \App\Models\ChildInstance::find($id);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+
+        $validated = $request->validate([
+            'type' => 'required|string|max:100',
+            'payload' => 'nullable|array',
+        ]);
+
+        $directive = \App\Models\ChildDirective::create([
+            'child_instance_id' => $instance->id,
+            'type' => $validated['type'],
+            'payload' => $validated['payload'] ?? [],
+            'status' => 'pending',
+        ]);
+
+        return $this->success($directive, 'Directive queued');
+    }
+
 }
