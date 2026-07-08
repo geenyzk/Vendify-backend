@@ -190,13 +190,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     Route::prefix("admin")->middleware('admin')->group(function () {
-        Route::resource('users', UserController::class)
-            ->withoutMiddleware(['auth:sanctum', 'admin'])
-            ->only(['store']);
-
         Route::middleware('permission:customers')->group(function () {
+            // store used to be registered withoutMiddleware as a stub — now
+            // that it actually creates users it must sit behind admin+permission.
             Route::resource('users', UserController::class)
-                ->only(['show', 'update', 'destroy', 'index']);
+                ->only(['index', 'store', 'show', 'update', 'destroy']);
             Route::resource('roles', RoleController::class);
             Route::get('/roles/{id}/users', [RoleController::class, 'users']);
             Route::get('/permissions', [PermissionController::class, 'index']);
