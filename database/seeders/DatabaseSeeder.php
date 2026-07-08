@@ -20,7 +20,7 @@ class DatabaseSeeder extends Seeder
 
 
         General::create([
-            "app_name" => "Vendify"
+            "app_name" => "Laravel"
         ]);
 
         $this->call([

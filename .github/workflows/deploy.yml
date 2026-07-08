@@ -1,9 +1,10 @@
-name: Deploy Site to test
+name: Deploy Laravel to test
 
 on:
   push:
     branches:
       - main
+      - dev
 
 jobs:
   deploy:
@@ -38,7 +39,12 @@ jobs:
           chmod -R 775 storage bootstrap/cache
 
       - name: Generate Scribe docs
-        run: php artisan scribe:generate
+        run: |
+          if php artisan list --raw | grep -q '^scribe:generate$'; then
+            php artisan scribe:generate
+          else
+            echo "Scribe is not installed; skipping documentation generation."
+          fi
 
       - name: Deploy Backend
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
