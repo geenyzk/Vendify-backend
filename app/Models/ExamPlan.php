@@ -55,8 +55,6 @@ class ExamPlan extends Model
 
     public function getPriceAttribute(){
         $user = Auth::user();
-        Log::info($user?->user_type . "_discount");
-        Log::info(Auth::id());
-        return $this->{$user?->user_type . "_discount"} ?? 0;
+        return $this->{($user?->pricingTier() ?? "user") . "_discount"} ?? 0;
     }
 }

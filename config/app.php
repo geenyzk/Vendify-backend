@@ -54,6 +54,11 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // Where end users actually log in (the vtu_2 SPA) — as opposed to 'url',
+    // which is this API itself. Default matches config/cors.php. Used as the
+    // default redirect target when migrating a child affiliate's customer.
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

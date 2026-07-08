@@ -20,6 +20,10 @@ class Monnify extends PaymentBase
     // credited (the exception is swallowed by PaymentBase::webhook()'s catch).
     protected string $providerName = 'monnify';
 
+    // Was never declared — creditedAmount()'s Provider::whereName($this->providerName)
+    // lookup silently matched nothing (uninitialized typed property access is a
+    // \TypeError, not \Exception, so it used to fatal-crash the whole webhook).
+    protected string $providerName = 'monnify';
 
     function connect(): mixed
     {
@@ -65,7 +69,11 @@ class Monnify extends PaymentBase
     protected function getHeaders(): array
     {
         $apiKey = $this->provider->api_key;
-        $secretKey = $this->provider->secret_key; // Ensure this exists
+        // providers has no secret_key column (confirmed via SHOW COLUMNS) —
+        // this always read null, so every real Monnify API call's Basic auth
+        // was broken independent of the webhook bugs below. `password` is
+        // this table's existing convention for a provider's secret credential.
+        $secretKey = $this->provider->password;
         $authString = base64_encode("{$apiKey}:{$secretKey}");
 
         return [
@@ -114,6 +122,7 @@ class Monnify extends PaymentBase
         ];
     }
 
+<<<<<<<< HEAD:app/Classes/Payment/Provider/Monnify.php
     // Monnify does not expose a transfer/payout API in the current integration.
     // Override this when Monnify payout support is added.
 
@@ -142,14 +151,22 @@ class Monnify extends PaymentBase
         }
     }
 
+========
+    // Parsing only — see PaymentBase::callback() docblock. Wallet crediting
+    // and idempotency are centralized in PaymentBase::webhook().
+>>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/Monnify.php
     protected function callback(Request $request): array
     {
         $payload = $request->all();
 
-        if($payload['eventType'] !== "SUCCESSFUL_TRANSACTION") return [];
-        $data = $payload['eventData'];
+        if (($payload['eventType'] ?? null) !== "SUCCESSFUL_TRANSACTION") {
+            return [];
+        }
+
+        $data = $payload['eventData'] ?? [];
         $customer = $data['customer'] ?? [];
         $source = $data['paymentSourceInformation'][0] ?? [];
+<<<<<<<< HEAD:app/Classes/Payment/Provider/Monnify.php
         $user = User::where('email', $customer['email'] ?? '')->first();
         if (!$user) {
             Log::warning('Monnify webhook: no user found for email', ['email' => $customer['email'] ?? null]);
@@ -168,14 +185,19 @@ class Monnify extends PaymentBase
             $user->wallet_balance += $creditedAmount;
             $user->save();
         }
+========
+        $creditedAmount = $this->creditedAmount($data['amountPaid'] ?? 0);
+        $status = strtolower($data['paymentStatus'] ?? '') === 'paid' ? 'success' : 'fail';
+>>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/Monnify.php
 
         return [
-            "user_id" => $user->id,
+            'user_email' => $customer['email'] ?? null,
             'provider' => $this->providerName,
-            'transaction_reference' => $data['transactionReference'],
-            'payment_reference' => $data['paymentReference'],
-            'response_message' => $data['paymentStatus'],
+            'transaction_reference' => $data['transactionReference'] ?? null,
+            'payment_reference' => $data['paymentReference'] ?? null,
+            'response_message' => $data['paymentStatus'] ?? null,
             'completed_at' => $data['paidOn'] ?? now(),
+<<<<<<<< HEAD:app/Classes/Payment/Provider/Monnify.php
             // `funding_method` is a fixed DB enum (bank_transfer/credit_card/
             // manual/other) — Monnify's own paymentMethod string (e.g.
             // "ACCOUNT_TRANSFER") isn't one of those and would fail the
@@ -183,14 +205,40 @@ class Monnify extends PaymentBase
             // FlutterWave/PaymentPoint's callbacks.
             'funding_method' => 'bank_transfer',
             'service_fee' => (float) $data['totalPayable'] - (float) $data['settlementAmount'],
+========
+            'funding_method' => $data['paymentMethod'] ?? 'bank_transfer',
+            'service_fee' => (float) ($data['totalPayable'] ?? 0) - (float) ($data['settlementAmount'] ?? 0),
+>>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/Monnify.php
             'platform' => 'web',
             'transaction_type' => 'wallet_funding',
             'account_or_phone' => $source['accountNumber'] ?? null,
-            'amount' => $creditedAmount ?? 0.00,
-            'status' => strtolower($data['paymentStatus']) === 'paid' ? 'success' : 'failed',
+            'amount' => $creditedAmount,
+            'status' => $status,
             'receiver' => $data['destinationAccountInformation']['accountNumber'] ?? null,
         ];
     }
 
+    // Monnify signs the raw request body with HMAC-SHA512 using your Client
+    // Secret Key (the same secret used for Basic auth in getHeaders() above —
+    // Monnify has no separate "webhook secret" dashboard field) and sends the
+    // hex digest in the `monnify-signature` header.
+    protected function verifyWebhookSignature(Request $request): bool
+    {
+        $secret = $this->provider->password;
+        if (empty($secret)) {
+            Log::warning('Monnify webhook secret (password) not configured — rejecting webhook.', [
+                'provider_id' => $this->provider->id,
+            ]);
+            return false;
+        }
+
+        $received = $request->header('monnify-signature');
+        if (empty($received)) {
+            return false;
+        }
+
+        $expected = hash_hmac('sha512', $request->getContent(), $secret);
+        return hash_equals($expected, $received);
+    }
 
 }
