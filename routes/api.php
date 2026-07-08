@@ -33,7 +33,6 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\VTUServicesController;
 use App\Http\Controllers\WalletTransferController;
 use App\Http\Controllers\WalletWithdrawalController;
-<<<<<<< HEAD
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\WelcomeMessageController;
 use Illuminate\Support\Facades\Mail;
@@ -42,9 +41,6 @@ use Illuminate\Support\Facades\Route;
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
-=======
-use App\Http\Controllers\NotificationController;
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
@@ -158,11 +154,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/welcome-message', [WelcomeMessageController::class, 'show']);
     Route::post('/welcome-message/seen', [WelcomeMessageController::class, 'markSeen']);
 
-<<<<<<< HEAD
-=======
     // Own in-app notifications — shared by admin and customer alike (both
     // are just Users), scoped to whoever is logged in (no role gate).
->>>>>>> edbac78 (feat: Add in-app notifications for wallet transactions and airtime-to-cash requests, including admin alerts and user notifications)
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
