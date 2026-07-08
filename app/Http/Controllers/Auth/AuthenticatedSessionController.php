@@ -26,6 +26,10 @@ class AuthenticatedSessionController extends Controller
             $user = Auth::user();
             $token = $user->createToken($user->username);
             Payment::generateAccount($user);
+            // The SPA reads role.is_staff / role.permissions off the user
+            // object for its route guards and permission checks — relations
+            // only serialize when loaded.
+            $user->loadMissing('role.permissions');
             return $this->success(["user" =>$user, 'token' => $token->plainTextToken]);
         } catch (ValidationException $e) {
             return $this->fail( $e->errors(), "Validation Error", 422);
@@ -34,7 +38,7 @@ class AuthenticatedSessionController extends Controller
 
 
     public function index(Request $request){
-        return $this->success(["user" => $request->user()]);
+        return $this->success(["user" => $request->user()?->loadMissing('role.permissions')]);
     }
     /**
      * Destroy an authenticated session.
