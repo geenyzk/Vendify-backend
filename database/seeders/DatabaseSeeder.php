@@ -20,17 +20,24 @@ class DatabaseSeeder extends Seeder
 
 
         General::create([
-            "app_name" => "Spur Connect"
+            "app_name" => "Laravel"
         ]);
 
         $this->call([
+            PermissionSeeder::class,
             ServiceControlSeeder::class,
             DiscountsSeeder::class,
             DataPlanSeeder::class,
+            BillPlanSeeder::class,
             StockVendingSeeder::class,
             ProviderSeeder::class,
             MessageSeeder::class,
-            ExamPlan::class
+            TemplateSeeder::class,
+            ExamPlan::class,
+            AirtimeToCashRatesSeeder::class,
+            // Promotions used by frontend promotions UI
+            PromotionSeeder::class,
+            CashbackRateSeeder::class,
         ]);
     }
 }

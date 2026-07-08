@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
-use App\Class\Payment\Payment;
+use App\Classes\Payment\Payment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\HttpResponse;
@@ -18,35 +18,110 @@ class AuthenticatedSessionController extends Controller
 
     use HttpResponse;
 
+    /**
+     * Login a user
+     *
+     * @group Authentication
+     *
+     * This endpoint logs in a user and returns an API token.
+     *
+     * @bodyParam email string required The user's email. Example: user@example.com
+     * @bodyParam password string required The user's password. Example: password123
+     *
+     * @response 200 {
+     *   "status": true,
+     *   "message": "Request successful",
+     *   "data": {
+     *     "user": {
+     *       "id": 1,
+     *       "username": "john_doe",
+     *       "email": "user@example.com"
+     *     },
+     *     "token": "your-generated-token"
+     *   }
+     * }
+     */
     public function store(LoginRequest $request)
     {
 
-        try{
+        try {
             $request->authenticate();
             $user = Auth::user();
-            $token = $user->createToken($user->username);
-            Payment::generateAccount($user);
-            return $this->success(["user" =>$user, 'token' => $token->plainTextToken]);
+            $token = $user->createToken($user->username)->plainTextToken;
+
+            try {
+                Payment::generateAccount($user);
+            } catch (\Throwable $e) {
+                Log::warning('Virtual account generation failed during login', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $user->loginStamp();
+            } catch (\Throwable $e) {
+                Log::warning('Login timestamp update failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return $this->success([
+                'user' => $user->load('role.permissions'),
+                'token' => $token,
+            ]);
         } catch (ValidationException $e) {
-            return $this->fail( $e->errors(), "Validation Error", 422);
+            error_log($e);
+            return $this->fail($e->errors(), "Validation Error", 422);
+        } catch (\Throwable $e) {
+            Log::error('Login failed after credential validation', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->fail([], 'Unable to sign in right now. Please try again.', 500);
         }
     }
 
-
-    public function index(Request $request){
-        return $this->success(["user" => $request->user()]);
-    }
     /**
-     * Destroy an authenticated session.
+     * Get the current authenticated user
+     *
+     * @group Authentication
+     * @unauthenticated
+     *
+     * This endpoint returns the currently authenticated user's details.
+     *
+     * @response 200 {
+     *   "status": true,
+     *   "message": "Request successful",
+     *   "data": {
+     *     "user": {
+     *       "id": 1,
+     *       "username": "john_doe",
+     *       "email": "user@example.com"
+     *     }
+     *   }
+     * }
      */
-    public function destroy(Request $request): RedirectResponse
+    public function index(Request $request)
+    {
+        return $this->success(["user" => $request->user()->load('role.permissions')]);
+    }
+
+
+    /**
+     * Logout user
+    * @group Authentication
+     *
+     */
+    public function destroy(Request $request)
     {
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();
-
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        // For SPA clients, return a JSON success response instead of redirecting.
+        return $this->success(null, 'Logged out');
     }
 }
