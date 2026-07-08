@@ -22,7 +22,6 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PayscribeController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\PromotionController;
-use App\Http\Controllers\ResetWebsiteController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ServiceControlController;
