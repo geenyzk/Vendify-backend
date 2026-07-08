@@ -118,22 +118,31 @@ class User extends Authenticatable implements MustVerifyEmail
      * events with a badge reward that have actually been earned at least
      * once ride along here, so the frontend never has to cross-reference
      * event_awards against events itself.
+     *
+     * badges is in $appends, so this runs on EVERY user serialization —
+     * including the login response. A deployment whose DB hasn't run the
+     * events migrations yet must degrade to "no badges", not break login
+     * over a cosmetic feature (this happened: see 2026-07-08 prod logs).
      */
     public function getBadgesAttribute()
     {
-        return EventAward::where('user_id', $this->id)
-            ->where('times_earned', '>', 0)
-            ->whereHas('event', fn ($q) => $q->whereIn('reward_type', ['badge', 'both']))
-            ->with('event:id,name,badge_name,badge_icon')
-            ->get()
-            ->map(fn (EventAward $award) => [
-                'event_id' => $award->event_id,
-                'name' => $award->event->badge_name ?? $award->event->name,
-                'icon' => $award->event->badge_icon,
-                'times_earned' => $award->times_earned,
-                'last_earned_at' => $award->last_earned_at,
-            ])
-            ->values();
+        try {
+            return EventAward::where('user_id', $this->id)
+                ->where('times_earned', '>', 0)
+                ->whereHas('event', fn ($q) => $q->whereIn('reward_type', ['badge', 'both']))
+                ->with('event:id,name,badge_name,badge_icon')
+                ->get()
+                ->map(fn (EventAward $award) => [
+                    'event_id' => $award->event_id,
+                    'name' => $award->event->badge_name ?? $award->event->name,
+                    'icon' => $award->event->badge_icon,
+                    'times_earned' => $award->times_earned,
+                    'last_earned_at' => $award->last_earned_at,
+                ])
+                ->values();
+        } catch (\Illuminate\Database\QueryException) {
+            return collect();
+        }
     }
 
 

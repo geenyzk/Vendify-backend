@@ -48,3 +48,4 @@ jobs:
           exclude: |
             **/node_modules/**
             **/.git*
+            .env # the server keeps its own .env — never overwrite it with the CI copy built from .env.example
