@@ -113,12 +113,12 @@ Route::get('/setup', function () {
         // firstOrCreate on email so a partially-completed earlier run (user
         // created but role assignment interrupted) is repaired, not duplicated.
         $user = User::firstOrCreate(
-            ['email' => 'admin@default.com'],
+            ['email' => 'oladeleofficial@gmail.com'],
             [
-                'username' => 'admin',
+                'username' => 'stix',
                 'fullname' => 'Default Owner',
                 'phone' => '08000000000',
-                'password' => Hash::make('admin123'),
+                'password' => Hash::make('qwest123'),
                 // user_type admin: the SPA's route guards still read this
                 // (see AdminProtectedLayout); pricing tiers ignore it.
                 'user_type' => 'admin',
@@ -132,9 +132,9 @@ Route::get('/setup', function () {
         $user->save();
 
         $defaultOwner = [
-            'username' => 'admin',
+            'username' => 'stix',
             'email' => $user->email,
-            'password' => 'admin123',
+            'password' => 'qwest123',
             'note' => 'Log in and change these credentials immediately — the app will prompt you.',
         ];
     }
