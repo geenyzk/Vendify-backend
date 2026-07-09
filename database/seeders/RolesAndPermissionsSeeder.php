@@ -21,6 +21,7 @@ class RolesAndPermissionsSeeder extends Seeder
     private const PERMISSIONS = [
         'customers',
         'settings',
+        'migrations',
         'transactions',
         'wallets',
         'support',

@@ -177,7 +177,7 @@ class AdminController extends Controller
     public function migrateDb(Request $request)
     {
         $admin = $request->user();
-        if (!$admin || !$admin->role || !$admin->role->is_staff || !$admin->role->hasPermission('settings')) {
+        if (!$admin || !$admin->role || !$admin->role->is_staff || !$admin->role->hasPermission('migrations')) {
             return $this->fail([], 'Unauthorized', 403);
         }
 
