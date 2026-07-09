@@ -32,17 +32,27 @@ return new class extends Migration
 
         // No historical per-role value can be losslessly collapsed into a
         // single flat value, so existing rows land at value=0 (inert) until
-        // an admin re-configures them under the new model.
-        DB::table('discounts')->get()->each(function ($row) {
-            DB::table('discounts')->where('id', $row->id)->update([
-                'service_type' => $row->type,
-                'network' => $row->name,
-            ]);
-        });
+        // an admin re-configures them under the new model. Skip the copy on
+        // drifted databases where the legacy `type` column is already gone.
+        if (Schema::hasColumn('discounts', 'type')) {
+            DB::table('discounts')->get()->each(function ($row) {
+                DB::table('discounts')->where('id', $row->id)->update([
+                    'service_type' => $row->type,
+                    'network' => $row->name,
+                ]);
+            });
+        }
 
-        Schema::table('discounts', function (Blueprint $table) {
-            $table->dropColumn(['type', 'category']);
-        });
+        $legacy = array_values(array_filter(
+            ['type', 'category'],
+            fn (string $column) => Schema::hasColumn('discounts', $column),
+        ));
+
+        if ($legacy !== []) {
+            Schema::table('discounts', function (Blueprint $table) use ($legacy) {
+                $table->dropColumn($legacy);
+            });
+        }
     }
 
     /**

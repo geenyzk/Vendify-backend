@@ -12,9 +12,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Schema drift (dump imports): these columns may already exist without
-        // this migration being recorded — skip instead of aborting the run.
-        if (Schema::hasColumn('providerables', 'provider_id')) {
+        // Nothing to alter when the table/column isn't there — the guarded
+        // create_providerables migration covers fresh installs. Re-running
+        // the MODIFY on an already-nullable column is harmless.
+        if (!Schema::hasColumn('providerables', 'provider_id')) {
             return;
         }
 

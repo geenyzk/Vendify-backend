@@ -11,14 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Schema drift (dump imports): these columns may already exist without
-        // this migration being recorded — skip instead of aborting the run.
-        if (Schema::hasColumn('discounts', 'min')) {
+        // Schema drift (dump imports): some databases already dropped these —
+        // only drop the ones still present so the run doesn't abort.
+        $present = array_values(array_filter(
+            ['min', 'max'],
+            fn (string $column) => Schema::hasColumn('discounts', $column),
+        ));
+
+        if ($present === []) {
             return;
         }
 
-        Schema::table('discounts', function (Blueprint $table) {
-            $table->dropColumn(['min', 'max']);
+        Schema::table('discounts', function (Blueprint $table) use ($present) {
+            $table->dropColumn($present);
         });
     }
 

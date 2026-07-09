@@ -13,37 +13,45 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Schema drift (dump imports): these columns may already exist without
-        // this migration being recorded — skip instead of aborting the run.
-        if (Schema::hasColumn('discounts', 'user_discount')) {
+        $dead = [
+            'user_discount',
+            'bonanza_discount',
+            'agent_discount',
+            'api_discount',
+            'adex_server_1',
+            'adex_server_2',
+            'adex_server_3',
+            'adex_server_4',
+            'adex_server_5',
+            'spurs_server_1',
+            'spurs_server_2',
+            'spurs_server_3',
+            'spurs_server_4',
+            'spurs_server_5',
+            'msorg_server_1',
+            'msorg_server_2',
+            'msorg_server_3',
+            'msorg_server_4',
+            'msorg_server_5',
+            'vtpass',
+            'payscribe',
+            'sme_plug',
+        ];
+
+        // Schema drift (dump imports): some databases already dropped part or
+        // all of these — dropColumn() aborts on any missing column, so only
+        // drop the ones actually still present.
+        $present = array_values(array_filter(
+            $dead,
+            fn (string $column) => Schema::hasColumn('discounts', $column),
+        ));
+
+        if ($present === []) {
             return;
         }
 
-        Schema::table('discounts', function (Blueprint $table) {
-            $table->dropColumn([
-                'user_discount',
-                'bonanza_discount',
-                'agent_discount',
-                'api_discount',
-                'adex_server_1',
-                'adex_server_2',
-                'adex_server_3',
-                'adex_server_4',
-                'adex_server_5',
-                'spurs_server_1',
-                'spurs_server_2',
-                'spurs_server_3',
-                'spurs_server_4',
-                'spurs_server_5',
-                'msorg_server_1',
-                'msorg_server_2',
-                'msorg_server_3',
-                'msorg_server_4',
-                'msorg_server_5',
-                'vtpass',
-                'payscribe',
-                'sme_plug',
-            ]);
+        Schema::table('discounts', function (Blueprint $table) use ($present) {
+            $table->dropColumn($present);
         });
     }
 

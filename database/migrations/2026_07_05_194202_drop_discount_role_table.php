@@ -13,12 +13,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Schema drift (dump imports): the table may already exist without
-        // this migration being recorded — skip instead of aborting the run.
-        if (Schema::hasTable('discount_role')) {
-            return;
-        }
-
+        // dropIfExists is already a no-op when the table is gone.
         Schema::dropIfExists('discount_role');
     }
 

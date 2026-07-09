@@ -17,7 +17,14 @@ return new class extends Migration
             return;
         }
 
-        Schema::table('cable_plans', function (Blueprint $table) {
+        // Old per-role prices may be partially gone on drifted databases —
+        // only drop what's actually present.
+        $legacy = array_values(array_filter(
+            ['user_price', 'bonanza_price', 'agent_price', 'api_price'],
+            fn (string $column) => Schema::hasColumn('cable_plans', $column),
+        ));
+
+        Schema::table('cable_plans', function (Blueprint $table) use ($legacy) {
             // Cable subscription prices are fixed by the cable company
             // (DStv/GOtv/Startimes) — unlike a flat admin-entered price,
             // the actual cost is resolved from the attached Provider (the
@@ -27,7 +34,9 @@ return new class extends Migration
             // DataPlan's `pricing` JSON shape, but additive on top of the
             // provider's cost rather than a full replacement price).
             $table->json('charge_fee')->nullable()->after('plan_name');
-            $table->dropColumn(['user_price', 'bonanza_price', 'agent_price', 'api_price']);
+            if ($legacy !== []) {
+                $table->dropColumn($legacy);
+            }
         });
     }
 
