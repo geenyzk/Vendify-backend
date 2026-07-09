@@ -31,6 +31,7 @@ class ServiceRoutingController extends Controller
         'sns' => 'SNS',
         'gifting' => 'Gifting',
         'cooperate gifting' => 'Corporate Gifting',
+        'cg' => 'Corporate Gifting',
         'dstv' => 'DStv',
         'gotv' => 'GOtv',
         'startimes' => 'StarTimes',
@@ -137,7 +138,13 @@ class ServiceRoutingController extends Controller
 
     private function cableKeys(): array
     {
-        $raw = CablePlan::query()->whereNotNull('cable_network')->distinct()->pluck('cable_network');
+        // Cable networks (DStv/GOtv/StarTimes) are NetworkType rows with
+        // service_type = "cable" — the same catalog data/airtime categories
+        // live in — so read from there, plus any cable_network actually used on
+        // a plan for safety.
+        $raw = collect()
+            ->merge(NetworkType::where('service_type', 'cable')->pluck('name'))
+            ->merge(CablePlan::query()->whereNotNull('cable_network')->distinct()->pluck('cable_network'));
 
         return $this->dedupe($raw);
     }

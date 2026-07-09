@@ -180,12 +180,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/welcome-message', [WelcomeMessageController::class, 'adminShow']);
             Route::put('/welcome-message', [WelcomeMessageController::class, 'upsert']);
             Route::delete('/welcome-message', [WelcomeMessageController::class, 'destroy']);
-
-            // Dynamic vendor routing per service category (replaces the fixed
-            // stock_vendings screen) — see ServiceRoutingController.
-            Route::get('/service-routing', [ServiceRoutingController::class, 'index']);
-            Route::put('/service-routing', [ServiceRoutingController::class, 'update']);
         });
+
+        // Dynamic vendor routing per service category (replaces the fixed
+        // stock_vendings screen) — see ServiceRoutingController. Kept at plain
+        // admin level (not permission:settings) to match the APIs → Provider /
+        // Gateway screens it sits beside, which any admin can manage.
+        Route::get('/service-routing', [ServiceRoutingController::class, 'index']);
+        Route::put('/service-routing', [ServiceRoutingController::class, 'update']);
 
         // Transaction status override & refund (money-moving, admin-only).
         Route::middleware('permission:transactions')->group(function () {

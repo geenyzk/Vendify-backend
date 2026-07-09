@@ -35,10 +35,17 @@ class ServiceRoute extends Model
 
         // The routing table is tiny (a handful of rows per install), so match in
         // PHP rather than pushing DB-specific REPLACE() gymnastics into SQL.
-        $route = self::whereNotNull('provider_id')
-            ->get()
-            ->first(fn ($r) => $normalize($r->service_type) === $wantedType
-                && $normalize($r->route_key) === $wantedKey);
+        // Guarded so a code deploy that lands before `php artisan migrate` (the
+        // FTP deploy flow can) never breaks a live purchase — it just falls
+        // through to the legacy Stock Vending routing.
+        try {
+            $routes = self::whereNotNull('provider_id')->get();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $route = $routes->first(fn ($r) => $normalize($r->service_type) === $wantedType
+            && $normalize($r->route_key) === $wantedKey);
 
         if (!$route) {
             return null;
