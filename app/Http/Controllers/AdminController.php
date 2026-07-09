@@ -203,10 +203,46 @@ class AdminController extends Controller
     // instead — see AirtimeToCashController / WalletWithdrawalController.
     private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'wallet_withdrawals', 'broadcasts'];
 
+    // The ONLY tables a non-admin (a logged-in customer) may read through the
+    // generic table API — the product catalog the storefront needs to render.
+    // Everything else (providers with plaintext api_key/secret_key/password,
+    // users with wallet balances/PII, transactions, banks, settings, the
+    // child-sync tables, …) is admin-only: without this gate any registered
+    // customer could GET /table/providers and walk off with every vendor and
+    // payment-gateway credential.
+    private const PUBLIC_TABLES = [
+        'networks', 'network_types', 'data_plans', 'cable_plans',
+        'bill_plans', 'airtime_plans', 'exam_plans',
+        'airtime_pin_plans', 'data_pin_plans', 'disco_provider_ids',
+    ];
+
+    /**
+     * 403 unless the caller may read this table: catalog tables are open to
+     * any authenticated user; everything else requires a staff role. Returns
+     * a JsonResponse to short-circuit with, or null to proceed.
+     */
+    private function denyIfPrivateRead(Request $request, string $table): ?\Illuminate\Http\JsonResponse
+    {
+        if (in_array($table, self::PUBLIC_TABLES, true)) {
+            return null;
+        }
+
+        // Staff-ness is the role, not user_type (see EnsureUserIsAdmin).
+        if ($request->user()?->role?->is_staff) {
+            return null;
+        }
+
+        return $this->fail([], 'You are not allowed to read this resource.', 403);
+    }
+
     public function universalGet(Request $request, $modelSlug)
     {
         if (in_array($modelSlug, self::RESTRICTED_TABLES, true)) {
             return $this->fail([], 'This resource is not available via the generic table API.', 403);
+        }
+
+        if ($deny = $this->denyIfPrivateRead($request, $modelSlug)) {
+            return $deny;
         }
 
         $modelClass = $this->getModelClassFromTable($modelSlug);
@@ -315,6 +351,10 @@ class AdminController extends Controller
     {
         if (in_array($table, self::RESTRICTED_TABLES, true)) {
             return $this->fail([], 'This resource is not available via the generic table API.', 403);
+        }
+
+        if ($deny = $this->denyIfPrivateRead($request, $table)) {
+            return $deny;
         }
 
         $modelClass = $this->getModelClassFromTable($table);
