@@ -35,4 +35,25 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | OpenAI (AI Manager)
+    |--------------------------------------------------------------------------
+    |
+    | Powers the in-app AI Manager admin assistant. Uses OpenAI's Chat
+    | Completions API with function/tool calling so the model can read live
+    | site data (read-only tools, auto-executed) and *propose* mutating admin
+    | actions that require explicit human approval before they run.
+    |
+    */
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+        'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+        'model' => env('OPENAI_MODEL', 'gpt-4o'),
+        // Hard ceilings so a runaway conversation can't rack up spend.
+        'max_output_tokens' => (int) env('OPENAI_MAX_OUTPUT_TOKENS', 1500),
+        'max_tool_iterations' => (int) env('OPENAI_MAX_TOOL_ITERATIONS', 6),
+        'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+    ],
+
 ];

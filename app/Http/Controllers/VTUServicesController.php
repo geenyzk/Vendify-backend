@@ -158,6 +158,7 @@ class VTUServicesController extends Controller
         // the real (role-aware) price server-side and ignore whatever the
         // client sent.
         if ($service === 'data' && !empty($validated['data_plan'])) {
+            error_log("data");
             $dataPlan = DataPlan::find($validated['data_plan']);
             if ($dataPlan) {
                 $validated['amount'] = (float) $dataPlan->price;

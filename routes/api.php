@@ -34,6 +34,7 @@ use App\Http\Controllers\WalletWithdrawalController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\AiManagerController;
 use App\Http\Controllers\ChildCustomerContactController;
 use App\Http\Controllers\ChildCustomerMigrationController;
 use App\Http\Controllers\ChildDirectiveController;
@@ -203,6 +204,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/broadcast/audience-count', [BroadcastController::class, 'audienceCount']);
             Route::get('/broadcast/users-search', [BroadcastController::class, 'searchUsers']);
             Route::get('/broadcast/history', [BroadcastController::class, 'history']);
+        });
+
+        // AI Manager — in-app assistant that reads live site data and proposes
+        // gated admin actions. The `ai_manager` permission opens the assistant;
+        // any action it proposes is re-checked against that action's own
+        // permission at approval time (see AiManagerService::approve).
+        Route::middleware('permission:ai_manager')->prefix('ai')->group(function () {
+            Route::get('/conversations', [AiManagerController::class, 'index']);
+            Route::post('/conversations', [AiManagerController::class, 'store']);
+            Route::get('/conversations/{id}', [AiManagerController::class, 'show']);
+            Route::post('/conversations/{id}/messages', [AiManagerController::class, 'sendMessage']);
+            Route::delete('/conversations/{id}', [AiManagerController::class, 'destroy']);
+            Route::post('/actions/{id}/approve', [AiManagerController::class, 'approveAction']);
+            Route::post('/actions/{id}/reject', [AiManagerController::class, 'rejectAction']);
         });
 
         // Airtime to cash review queue — a distinct reviewer capability from

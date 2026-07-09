@@ -1,0 +1,199 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\HttpResponse;
+use App\Models\AiActionProposal;
+use App\Models\AiConversation;
+use App\Models\AiMessage;
+use App\Services\AiManager\AiManagerException;
+use App\Services\AiManager\AiManagerService;
+use App\Services\AiManager\Tools\ToolRegistry;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+/**
+ * @group AI Manager
+ *
+ * In-app admin assistant. Read-only tools run automatically to ground the
+ * assistant's answers in live site data; anything that changes state is held as
+ * a pending proposal (see AiActionProposal) that an admin must explicitly
+ * approve. Every endpoint is gated by the `ai_manager` permission; approving an
+ * action additionally re-checks the permission the action itself requires.
+ */
+class AiManagerController extends Controller
+{
+    use HttpResponse;
+
+    public function __construct(
+        private readonly AiManagerService $service,
+        private readonly ToolRegistry $registry,
+    ) {
+    }
+
+    /** List the signed-in admin's conversations, most recently active first. */
+    public function index(Request $request): JsonResponse
+    {
+        $conversations = AiConversation::where('user_id', $request->user()->id)
+            ->orderByDesc('last_activity_at')
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get(['id', 'title', 'last_activity_at', 'created_at']);
+
+        return $this->success($conversations);
+    }
+
+    /** Start a new conversation, optionally sending a first message. */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'message' => 'nullable|string|max:4000',
+        ]);
+
+        $conversation = $this->service->startConversation($request->user());
+
+        if (!empty($validated['message'])) {
+            try {
+                $this->service->sendMessage($conversation, $request->user(), $validated['message']);
+            } catch (AiManagerException $e) {
+                return $this->fail(['conversation_id' => $conversation->id], $e->getMessage(), 502);
+            }
+        }
+
+        return $this->success($this->conversationPayload($conversation->fresh()), 'Conversation started', 201);
+    }
+
+    /** Full conversation: messages plus pending/decided action proposals. */
+    public function show(Request $request, int $id): JsonResponse
+    {
+        $conversation = $this->ownedConversation($request, $id);
+        if (!$conversation) {
+            return $this->fail([], 'Conversation not found', 404);
+        }
+
+        return $this->success($this->conversationPayload($conversation));
+    }
+
+    /** Send a message and get the assistant's reply plus any new proposals. */
+    public function sendMessage(Request $request, int $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'message' => 'required|string|max:4000',
+        ]);
+
+        $conversation = $this->ownedConversation($request, $id);
+        if (!$conversation) {
+            return $this->fail([], 'Conversation not found', 404);
+        }
+
+        try {
+            $this->service->sendMessage($conversation, $request->user(), $validated['message']);
+        } catch (AiManagerException $e) {
+            return $this->fail([], $e->getMessage(), 502);
+        }
+
+        return $this->success($this->conversationPayload($conversation->fresh()));
+    }
+
+    public function destroy(Request $request, int $id): JsonResponse
+    {
+        $conversation = $this->ownedConversation($request, $id);
+        if (!$conversation) {
+            return $this->fail([], 'Conversation not found', 404);
+        }
+
+        $conversation->delete();
+
+        return $this->success([], 'Conversation deleted');
+    }
+
+    /** Approve and execute a pending action proposed by the assistant. */
+    public function approveAction(Request $request, int $id): JsonResponse
+    {
+        $proposal = $this->ownedProposal($request, $id);
+        if (!$proposal) {
+            return $this->fail([], 'Action not found', 404);
+        }
+
+        try {
+            $proposal = $this->service->approve($proposal, $request->user());
+        } catch (AiManagerException $e) {
+            return $this->fail([], $e->getMessage(), 422);
+        }
+
+        return $this->success($this->proposalPayload($proposal), 'Action approved and executed');
+    }
+
+    /** Reject a pending action so it can never run. */
+    public function rejectAction(Request $request, int $id): JsonResponse
+    {
+        $proposal = $this->ownedProposal($request, $id);
+        if (!$proposal) {
+            return $this->fail([], 'Action not found', 404);
+        }
+
+        try {
+            $proposal = $this->service->reject($proposal, $request->user());
+        } catch (AiManagerException $e) {
+            return $this->fail([], $e->getMessage(), 422);
+        }
+
+        return $this->success($this->proposalPayload($proposal), 'Action rejected');
+    }
+
+    private function ownedConversation(Request $request, int $id): ?AiConversation
+    {
+        return AiConversation::where('user_id', $request->user()->id)->find($id);
+    }
+
+    private function ownedProposal(Request $request, int $id): ?AiActionProposal
+    {
+        return AiActionProposal::whereHas(
+            'conversation',
+            fn ($q) => $q->where('user_id', $request->user()->id)
+        )->find($id);
+    }
+
+    private function conversationPayload(AiConversation $conversation): array
+    {
+        $messages = $conversation->messages()->orderBy('id')->get()
+            // The raw tool request/result plumbing is internal — the UI shows
+            // user/assistant text and the human-readable action notes only.
+            ->reject(fn (AiMessage $m) => $m->role === AiMessage::ROLE_TOOL || empty($m->content))
+            ->map(fn (AiMessage $m) => [
+                'id' => $m->id,
+                'role' => $m->role,
+                'content' => $m->content,
+                'created_at' => $m->created_at?->toDateTimeString(),
+            ])
+            ->values();
+
+        return [
+            'id' => $conversation->id,
+            'title' => $conversation->title,
+            'last_activity_at' => $conversation->last_activity_at?->toDateTimeString(),
+            'messages' => $messages,
+            'proposals' => $conversation->proposals()->get()
+                ->map(fn (AiActionProposal $p) => $this->proposalPayload($p))
+                ->values(),
+        ];
+    }
+
+    private function proposalPayload(AiActionProposal $proposal): array
+    {
+        return [
+            'id' => $proposal->id,
+            'conversation_id' => $proposal->ai_conversation_id,
+            'tool' => $proposal->tool,
+            'permission' => $proposal->permission,
+            'summary' => $proposal->summary,
+            'arguments' => $proposal->arguments,
+            'status' => $proposal->status,
+            'result' => $proposal->result,
+            'error' => $proposal->error,
+            'decided_at' => $proposal->decided_at?->toDateTimeString(),
+            'executed_at' => $proposal->executed_at?->toDateTimeString(),
+            'created_at' => $proposal->created_at?->toDateTimeString(),
+        ];
+    }
+}
