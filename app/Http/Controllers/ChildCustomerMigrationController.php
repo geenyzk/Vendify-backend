@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Class\Payment\Payment;
+use App\Classes\TransactionService;
 use App\Models\ChildCustomer;
 use App\Models\ChildDirective;
 use App\Models\ChildInstance;
@@ -25,11 +26,9 @@ use Illuminate\Support\Str;
  * stamp migrated_to_user_id, and queue a redirect_user directive so the
  * child tells this customer to move over next time it polls.
  *
- * Deliberately NOT moved here: the customer's child wallet balance. That
- * is real money sitting on the child's books — crediting it on the parent
- * automatically is Phase 3 (money-moving) territory. The balance at
- * migration time is returned so the admin can settle it manually via the
- * existing /admin/users/{id}/fund endpoint if that's the arrangement.
+ * Transferred here: the customer's child wallet balance is moved to the
+ * parent account on migration. The balance at migration time is returned
+ * so the admin can confirm how much was carried over.
  */
 class ChildCustomerMigrationController extends Controller
 {
@@ -75,7 +74,9 @@ class ChildCustomerMigrationController extends Controller
 
         $targetUrl = $validated['target_url'] ?? config('app.frontend_url');
 
-        [$user, $directive] = DB::transaction(function () use ($instance, $customer, $existing, $targetUrl) {
+        $walletBalanceAtMigration = (float) $customer->wallet_balance;
+
+        [$user, $directive] = DB::transaction(function () use ($instance, $customer, $existing, $targetUrl, $walletBalanceAtMigration) {
             $user = $existing ?? User::create([
                 'fullname' => $customer->username ?: Str::before($customer->email, '@'),
                 'username' => $this->availableUsername($customer),
@@ -89,6 +90,18 @@ class ChildCustomerMigrationController extends Controller
             ]);
 
             $customer->update(['migrated_to_user_id' => $user->id]);
+
+            if ($walletBalanceAtMigration > 0) {
+                TransactionService::fundUser(
+                    $user,
+                    $walletBalanceAtMigration,
+                    'credit',
+                    'Migrated affiliate wallet balance',
+                    'manual_funding',
+                    'admin'
+                );
+                $customer->update(['wallet_balance' => 0]);
+            }
 
             $directive = ChildDirective::create([
                 'child_instance_id' => $instance->id,
@@ -141,7 +154,7 @@ class ChildCustomerMigrationController extends Controller
             'linked_existing' => $linkedExisting,
             'invite_sent' => $inviteSent,
             'directive_id' => $directive->id,
-            'wallet_balance_at_migration' => (float) $customer->wallet_balance,
+            'wallet_balance_at_migration' => $walletBalanceAtMigration,
         ], $linkedExisting ? 'Linked to an existing parent account' : 'Parent account created');
     }
 

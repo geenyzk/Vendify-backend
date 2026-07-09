@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Classes\TransactionService;
 use App\Classes\Vendor\VendorFactory;
+use App\Models\ChildCustomer;
+use App\Models\ChildInstance;
+use App\Models\ChildTransaction;
 use App\Models\Discount;
 use App\Models\General;
 use App\Models\Provider;
@@ -38,6 +41,7 @@ class AdminController extends Controller
             'total_funding_today' => $this->getTodayFundingTotal(),
             'total_signups_today' => $this->getTodaySignupsCount(),
             'sales_chart' => $this->buildSalesChart(),
+            'affiliates' => $this->buildAffiliateSummary(),
             'transaction_status' => $this->getTransactionStatus(),
             'tx_chart' => $this->buildTransactionChart(),
             // 'api_balance' => VendorFactory::sumAllBalances()
@@ -115,6 +119,26 @@ class AdminController extends Controller
             $values[] = $txData[$day]->total ?? 0;
         }
         return ['labels' => $labels, 'datasets' => [['label' => 'Transactions', 'data' => $values, 'backgroundColor' => '#36A2EB', 'borderRadius' => 8]]];
+    }
+
+    private function buildAffiliateSummary(): array
+    {
+        $total = ChildInstance::count();
+        $active = ChildInstance::where('status', 'active')->count();
+        $pending = ChildInstance::where('status', 'pending')->count();
+        $stale = ChildInstance::where('status', 'active')
+            ->where('last_seen_at', '<', Carbon::now()->subMinutes(15))
+            ->count();
+
+        return [
+            'total' => $total,
+            'active' => $active,
+            'pending' => $pending,
+            'stale' => $stale,
+            'total_synced_customers' => ChildCustomer::count(),
+            'total_synced_transactions' => ChildTransaction::count(),
+            'total_synced_transaction_volume' => (float) ChildTransaction::sum('amount'),
+        ];
     }
 
     private function buildSalesChart(): array
