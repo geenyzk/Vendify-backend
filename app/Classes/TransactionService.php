@@ -2,6 +2,7 @@
 
 namespace App\Classes;
 
+use App\Exceptions\InsufficientBalanceException;
 use App\Jobs\SendTransactionCallback;
 use App\Models\CashbackRate;
 use App\Models\Setting;
@@ -16,46 +17,91 @@ use Illuminate\Support\Str;
 
 class TransactionService
 {
-    public static function process(array $apiData, ?User $user = null): array
+    /**
+     * Hold the purchase amount BEFORE the vendor is called, so value is
+     * never delivered on credit. Locks the wallet row, refuses (throws) if
+     * it can't cover the amount, then debits — all atomic. The caller
+     * (VendorBase::process) refunds via refund() if the vendor then fails.
+     *
+     * @return array{balance_before: float, balance_after: float}
+     */
+    public static function reserve(User $user, float $amount): array
     {
-        return DB::transaction(function () use ($apiData, $user) {
-            // Lock this user's row for the rest of the transaction. Without
-            // it, two concurrent purchases (a double-click, or a scripted
-            // reseller) both read the same wallet_balance and each save their
-            // own "balance - amount" — the second write silently refunds the
-            // first, so the customer gets two deliveries but is charged once.
-            // Re-reading under the lock makes the debits serialize correctly.
-            $user = User::whereKey($user->id)->lockForUpdate()->first() ?? $user;
+        return DB::transaction(function () use ($user, $amount) {
+            // Lock so two concurrent purchases can't both pass the check
+            // against the same balance and each debit — the lock makes them
+            // serialize, and the second sees the first's debit.
+            $locked = User::whereKey($user->id)->lockForUpdate()->first() ?? $user;
+            $before = (float) $locked->wallet_balance;
 
+            if ($amount > 0 && $before < $amount) {
+                throw new InsufficientBalanceException('Insufficient balance to complete this transaction.');
+            }
+
+            if ($amount > 0) {
+                $locked->decrement('wallet_balance', $amount);
+            }
+
+            return [
+                'balance_before' => $before,
+                'balance_after' => $before - $amount,
+            ];
+        });
+    }
+
+    /**
+     * Return a previously-reserved amount to the wallet — the fail path
+     * (vendor rejected, threw, or a pending purchase that ultimately failed).
+     */
+    public static function refund(User $user, float $amount): void
+    {
+        if ($amount <= 0) {
+            return;
+        }
+
+        DB::transaction(function () use ($user, $amount) {
+            $locked = User::whereKey($user->id)->lockForUpdate()->first();
+            if ($locked) {
+                $locked->increment('wallet_balance', $amount);
+            }
+        });
+    }
+
+    /**
+     * Record the transaction row for a purchase whose funds are ALREADY
+     * reserved (see reserve()). Does not move the wallet again — it only
+     * writes the row, fires notifications/callbacks, and (on an immediate
+     * success) pays out rewards. `$reservation` carries the balance figures
+     * captured at reserve time so the row reflects the real debit.
+     *
+     * @param array{balance_before: float, balance_after: float} $reservation
+     */
+    public static function record(array $apiData, User $user, array $reservation): array
+    {
+        return DB::transaction(function () use ($apiData, $user, $reservation) {
             $transactionType = $apiData['transaction_type'];
-
-            // Extract discount and pricing information
             $discountAmount = floatval($apiData['discount_amount'] ?? 0);
             $promotionId = $apiData['promotion_id'] ?? null;
 
-            // Get the final amount to charge user (after discount) from apiData
-            // Priority: final_amount > (amount - discount_amount) > amount
+            // Final amount user pays (after discount). Priority:
+            // final_amount > (amount - discount) > amount.
             $finalAmount = floatval(
-                $apiData['final_amount'] ?? 
-                (($apiData['amount'] ?? 0) - $discountAmount) ??
-                ($apiData['amount'] ?? 0)
+                $apiData['final_amount']
+                ?? (($apiData['amount'] ?? 0) - $discountAmount)
+                ?? ($apiData['amount'] ?? 0)
             );
-
-            // Get the original/API amount (before discount)
             $originalAmount = floatval($apiData['amount'] ?? 0);
+            $status = $apiData['status'];
 
-            // Calculate balance changes based on final amount (what user actually pays)
-            $balanceBefore = floatval($user->wallet_balance);
-            $balanceAfter = $apiData["status"] === "success" ? $balanceBefore - $finalAmount : $user->wallet_balance;
+            // The debit already happened in reserve(). A success/pending row
+            // shows that debit; an outright fail shows no net change because
+            // VendorBase::process refunds the reservation right after this.
+            $balanceBefore = (float) $reservation['balance_before'];
+            $balanceAfter = $status === 'fail'
+                ? $balanceBefore
+                : (float) $reservation['balance_after'];
 
-            // Deduct wallet only if transaction is successful
-            if ($apiData["status"] === "success") {
-                $user->wallet_balance = $balanceAfter;
-                $user->save();
-            }
-
-            // Log the transaction details for debugging
-            Log::info("Transaction Processing", [
+            Log::info("Transaction Recording", [
                 'user_id' => $user->id,
                 'original_amount' => $originalAmount,
                 'discount_amount' => $discountAmount,
@@ -63,56 +109,41 @@ class TransactionService
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
                 'promotion_id' => $promotionId,
-                'status' => $apiData["status"]
+                'status' => $status,
             ]);
 
-            // Create the transaction with proper discount and promotion tracking
             $tx_data = array_merge($apiData, [
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
                 'user_id' => $user->id,
-                'amount' => $finalAmount,           // Final amount user paid (after discount)
-                'discount_amount' => $discountAmount,  // Track discount separately
-                'promotion_id' => $promotionId,     // Link to promotion used
+                'amount' => $finalAmount,
+                'discount_amount' => $discountAmount,
+                'promotion_id' => $promotionId,
             ]);
-
-            // Remove final_amount from tx_data to avoid storage conflicts
             unset($tx_data['final_amount']);
 
             $transaction = Transaction::create($tx_data);
 
-            // Cashback: a flat, per-service-type wallet credit — replaces
-            // the old per-role Discount pricing. Only on success, and keyed
-            // off the same transaction_type stored on the row above (e.g.
-            // 'airtime_recharge'), not the Discount model's own "type".
-            if ($apiData['status'] === 'success') {
-                // Referral commission — only on a transaction that actually
-                // went through (previously fired unconditionally, so a
-                // failed purchase still paid the referrer).
-                self::distributeCommission($user, $finalAmount, $transactionType);
-
-                self::creditCashback($user, $finalAmount, $transactionType);
-
-                // Event rewards keyed off purchase/funding volume — computed
-                // fresh from Transaction data each time, so this is safe to
-                // call on every successful transaction (see EventService).
-                EventService::checkAndAward($user);
+            // Rewards only on a confirmed-now success. A pending purchase
+            // gets its rewards later, when the webhook settles it (see
+            // awardForSettledTransaction / VendorBase::webhook).
+            if ($status === 'success') {
+                self::awardAll($user, $finalAmount, $transactionType);
             }
 
             AdminNotifier::notifyTransaction($transaction);
 
             $label = ucwords(str_replace('_', ' ', $transactionType));
             $user->notify(new AppNotification(
-                $apiData['status'] === 'success' ? 'transaction_success' : 'transaction_failed',
-                $apiData['status'] === 'success' ? "{$label} successful" : "{$label} failed",
-                $apiData['status'] === 'success'
+                $status === 'success' ? 'transaction_success' : 'transaction_failed',
+                $status === 'success' ? "{$label} successful" : "{$label} failed",
+                $status === 'success'
                     ? "Your {$label} purchase of ₦{$finalAmount} was successful. Ref: {$transaction->transaction_reference}"
                     : "Your {$label} purchase of ₦{$finalAmount} could not be completed.",
             ));
 
             SendTransactionCallback::dispatch($user, $transaction);
 
-            // Enrich transaction response with discount info
             $transactionArray = $transaction->toArray();
             $transactionArray['discount_applied'] = [
                 'discount_amount' => $discountAmount,
@@ -123,6 +154,31 @@ class TransactionService
 
             return $transactionArray;
         });
+    }
+
+    /**
+     * Rewards for a purchase confirmed AFTER the fact — an async vendor's
+     * pending→success webhook. The funds were reserved at purchase time and
+     * stay debited; this only pays out cashback/referral/events, which
+     * record() would have done had the success been immediate. The caller
+     * guards idempotency on the transaction's locked DB status.
+     */
+    public static function awardForSettledTransaction(User $user, float $amount, string $transactionType): void
+    {
+        self::awardAll($user, $amount, $transactionType);
+    }
+
+    /**
+     * Cashback (flat per-service-type wallet credit), referral commission to
+     * the referrer, and volume-based event badges — the full reward set for
+     * a successful transaction, in one place so immediate and delayed
+     * successes stay consistent.
+     */
+    protected static function awardAll(User $user, float $amount, string $transactionType): void
+    {
+        self::distributeCommission($user, $amount, $transactionType);
+        self::creditCashback($user, $amount, $transactionType);
+        EventService::checkAndAward($user);
     }
 
     public static function generateTransactionReference(): string

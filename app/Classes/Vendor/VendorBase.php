@@ -5,6 +5,7 @@ namespace App\Classes\Vendor;
 use App\Classes\TemplateParser;
 use App\Classes\TransactionService;
 use App\Classes\Vendor\Interface\VendorInterface;
+use App\Exceptions\InsufficientBalanceException;
 use App\HttpResponse;
 use App\Models\Message;
 use App\Models\Transaction;
@@ -44,17 +45,44 @@ abstract class VendorBase implements VendorInterface
     }
      public function process(string $service, array $payload):JsonResponse
     {
+        $user = Auth::user();
+
+        // Amount the customer actually pays (after discounts, plus any bill
+        // service fee) — computed authoritatively in the controller and
+        // passed through. This is what we hold.
+        $chargeAmount = (float) ($payload['final_amount'] ?? $payload['amount'] ?? 0);
+
+        // ── Reserve BEFORE contacting the vendor ──────────────────────────
+        // Value must never be delivered on credit: hold the funds first,
+        // refusing outright if the wallet can't cover it. Everything the
+        // vendor delivers below is already paid for; the fail paths refund.
+        try {
+            $reservation = TransactionService::reserve($user, $chargeAmount);
+        } catch (InsufficientBalanceException $e) {
+            return $this->fail([], $e->getMessage(), 402);
+        }
 
         try {
             $formattedPayload = $this->formatPayload($service, $payload);
              if ($this->isSandbox) {
+                // Sandbox delivers nothing — release the hold so a test buy
+                // doesn't silently drain the wallet.
+                TransactionService::refund($user, $chargeAmount);
                 return $this->success([]);
             }
             $parser = TemplateParser::make();
             $response = $this->sendRequest($service, $formattedPayload) ?? [];
             // Merge API response with original payload to preserve discount/promotion data
             $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response ?? [], $payload));
-            $transaction = TransactionService::process($formattedResponse, Auth::user());
+            $transaction = TransactionService::record($formattedResponse, $user, $reservation);
+
+            // Outright rejection → give the money straight back. A 'pending'
+            // stays reserved: the webhook keeps it on success or refunds it
+            // on a confirmed failure (see webhook()).
+            if (($transaction['status'] ?? null) === 'fail') {
+                TransactionService::refund($user, $chargeAmount);
+            }
+
             $message = Message::wherePurpose($service . "_" . $transaction['status'])->first();
             // A custom Message template is optional — when none exists for
             // this purpose, fall straight through to the vendor's own
@@ -89,11 +117,11 @@ abstract class VendorBase implements VendorInterface
                 return $this->fail([], $responseMessage, 500);
             }
         } catch (\Throwable $e) {
-            // \Exception alone doesn't catch \Error/\TypeError — e.g. a
-            // vendor HTTP call that comes back null/non-JSON used to blow
-            // this up with an uncaught array_merge() TypeError instead of
-            // the graceful fail() response every other error path here
-            // returns.
+            // Vendor call blew up after we reserved (e.g. a null/non-JSON
+            // response — \Exception alone wouldn't catch the \TypeError).
+            // Release the hold so the customer isn't charged for a purchase
+            // that never left the building.
+            TransactionService::refund($user, $chargeAmount);
             Log::error("Transaction Error", [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -193,32 +221,26 @@ abstract class VendorBase implements VendorInterface
             $previousStatus = $transaction->status;
             $newStatus = $callback['status'] ?? $previousStatus;
 
-            // A purchase that was PENDING at process() time was never charged
-            // (the wallet is only debited on an immediate 'success'). When the
-            // vendor's async webhook finally resolves it to success, settle the
-            // debit here. Guarding on the DB status (which is flipped inside
-            // this same locked row below) makes a duplicate webhook a no-op
-            // instead of a double charge.
-            if ($previousStatus === 'pending' && $newStatus === 'success') {
+            // A pending purchase already had its funds reserved (debited) at
+            // purchase time. Only the transition OUT of pending needs money
+            // handling, and the guard on the DB status makes a duplicate
+            // webhook a no-op (the row is already terminal on the second hit).
+            if ($previousStatus === 'pending' && $newStatus !== 'pending') {
                 $user = User::whereKey($transaction->user_id)->lockForUpdate()->first();
-                if ($user) {
-                    $balanceBefore = (float) $user->wallet_balance;
-                    $user->decrement('wallet_balance', (float) $transaction->amount);
-                    $callback['balance_before'] = $balanceBefore;
-                    $callback['balance_after'] = (float) $user->fresh()->wallet_balance;
-                    $callback['completed_at'] = now();
 
-                    if ($balanceBefore < (float) $transaction->amount) {
-                        // Value was already delivered by the vendor, so the
-                        // charge stands even though the wallet dips negative —
-                        // flag it for reconciliation rather than lose the debit.
-                        Log::warning("Vendor webhook: wallet went negative settling a delayed success", [
-                            'tx_ref' => $ref,
-                            'user_id' => $user->id,
-                            'amount' => $transaction->amount,
-                            'balance_before' => $balanceBefore,
-                        ]);
-                    }
+                if ($newStatus === 'fail' && $user) {
+                    // Confirmed failure → return the reserved funds.
+                    $user->increment('wallet_balance', (float) $transaction->amount);
+                    $callback['balance_after'] = (float) $user->fresh()->wallet_balance;
+                } elseif ($newStatus === 'success' && $user) {
+                    // Funds already held; just pay out the rewards that an
+                    // immediate success would have earned at record() time.
+                    TransactionService::awardForSettledTransaction(
+                        $user,
+                        (float) $transaction->amount,
+                        $transaction->transaction_type,
+                    );
+                    $callback['completed_at'] = now();
                 }
             }
 
