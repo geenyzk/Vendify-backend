@@ -5,13 +5,14 @@ namespace App\Classes\VTUServices;
 use App\Classes\Vendor\VendorFactory;
 use App\Models\AirtimePlan;
 use App\Models\DataPlan;
+use App\Models\ServiceRoute;
 use App\Models\Vendor;
 use Illuminate\Support\Facades\Log;
 
 class VTUServiceFactory
 {
-    static function make ($service='', $sub="", $network=null, $planId=null) {
-        $provider = self::resolveProvider($service, $sub, $network, $planId);
+    static function make ($service='', $sub="", $network=null, $planId=null, $routeKey=null) {
+        $provider = self::resolveProvider($service, $sub, $network, $planId, $routeKey);
 
         if (!$provider) {
             // Return null rather than handing a null into VendorFactory::make()
@@ -46,7 +47,7 @@ class VTUServiceFactory
      * set — and for every other service — it falls back to the Stock Vending
      * assignment keyed by category/plan type (the pre-existing behaviour).
      */
-    private static function resolveProvider($service, $sub, $network, $planId = null): ?Vendor
+    private static function resolveProvider($service, $sub, $network, $planId = null, $routeKey = null): ?Vendor
     {
         if ($service === 'airtime' && $network) {
             $vendor = self::airtimePlanVendor($network, $sub);
@@ -58,12 +59,23 @@ class VTUServiceFactory
         // Data mirrors airtime: prefer the provider explicitly attached to the
         // specific Data Plan (the create/edit form's custom-provider toggle,
         // stored on the providerables pivot). Only when the plan has none do we
-        // fall back to the Stock Vending assignment keyed by plan_type below.
+        // fall back to the routing rules below.
         if ($service === 'data' && $planId) {
             $vendor = DataPlan::find($planId)?->resolveVendor();
             if ($vendor) {
                 return $vendor;
             }
+        }
+
+        // Dynamic Service Routing (admin: APIs → Service Routing): the vendor an
+        // admin assigned to this service's specific dimension — data plan_type,
+        // airtime category, cable network, disco, or the service itself for
+        // singletons. Data is stored, not columns, so new categories are
+        // routable with no migration. Unset keys fall through to the legacy
+        // Stock Vending assignment so existing behaviour is preserved.
+        $vendor = ServiceRoute::resolveVendor($service, $routeKey ?? $sub);
+        if ($vendor) {
+            return $vendor;
         }
 
         return Vendor::provider($sub ?? $service)->first();

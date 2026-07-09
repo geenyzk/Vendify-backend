@@ -9,6 +9,7 @@ use App\Http\Controllers\PayscribeController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\VTUServicesController;
 use App\Http\Controllers\ServiceControlController;
+use App\Http\Controllers\ServiceRoutingController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
@@ -179,6 +180,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/welcome-message', [WelcomeMessageController::class, 'adminShow']);
             Route::put('/welcome-message', [WelcomeMessageController::class, 'upsert']);
             Route::delete('/welcome-message', [WelcomeMessageController::class, 'destroy']);
+
+            // Dynamic vendor routing per service category (replaces the fixed
+            // stock_vendings screen) — see ServiceRoutingController.
+            Route::get('/service-routing', [ServiceRoutingController::class, 'index']);
+            Route::put('/service-routing', [ServiceRoutingController::class, 'update']);
         });
 
         // Transaction status override & refund (money-moving, admin-only).

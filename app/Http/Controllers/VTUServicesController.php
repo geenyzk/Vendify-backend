@@ -290,7 +290,18 @@ class VTUServicesController extends Controller
 
             $serviceType = $service;
 
-            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType, $validated['network'] ?? null, $validated['data_plan'] ?? null);
+            // The service's own routing dimension for Service Routing lookup:
+            // data → plan_type, airtime → network_type/category, cable → cable
+            // network, electricity → disco, and the service name for singletons
+            // (exam). Kept separate from the $sub arg (which stays the legacy
+            // stock-vending key) so cable/electricity route by the right value.
+            $routeKey = $validated['plan_type']
+                ?? $validated['network_type']
+                ?? $validated['cable_network']
+                ?? $validated['disco']
+                ?? $serviceType;
+
+            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType, $validated['network'] ?? null, $validated['data_plan'] ?? null, $routeKey);
 
             if (!$handler) {
                 return response()->json([
