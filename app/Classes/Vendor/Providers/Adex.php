@@ -149,6 +149,36 @@ class Adex extends VendorBase
         return $this->baseUrl() . $this->endpoint($service);
     }
 
+    /**
+     * The vendor's own ID for a catalog plan (data/cable). Adex-family vendors
+     * historically stored it in a column named after the vendor
+     * ("adex server 1" → data_plans.adex_server_1); vendors created with an
+     * arbitrary name — and the modern plan form's "Plan ID" field — store it on
+     * the providerables pivot (server_id) instead. Prefer the legacy column
+     * when it actually holds a value, else fall back to the pivot so an
+     * any-named vendor still resolves. Returns null when neither is set.
+     */
+    protected function resolveVendorPlanId($plan): ?string
+    {
+        $column = str_replace(' ', '_', $this->provider->name);
+        $legacy = $plan->{$column} ?? null;
+        if ($legacy !== null && $legacy !== '' && (string) $legacy !== '0') {
+            return (string) $legacy;
+        }
+
+        $pivotServerId = optional($plan->providers()->first())->pivot->server_id
+            ?? \Illuminate\Support\Facades\DB::table('providerables')
+                ->where('providerable_id', $plan->id)
+                ->where('providerable_type', get_class($plan))
+                ->value('server_id');
+
+        if ($pivotServerId === null || (string) $pivotServerId === '' || (string) $pivotServerId === '0') {
+            return null;
+        }
+
+        return (string) $pivotServerId;
+    }
+
     public function formatPayload(string $service, array $payload): array
     {
         switch ($service) {
@@ -166,11 +196,17 @@ class Adex extends VendorBase
                 if (!$dataPlan) {
                     throw new \InvalidArgumentException("Data plan [{$payload['data_plan']}] not found");
                 }
+                $dataVendorId = $this->resolveVendorPlanId($dataPlan);
+                if ($dataVendorId === null) {
+                    throw new \InvalidArgumentException(
+                        "No Adex plan ID for data plan #{$dataPlan->id} on vendor [{$this->provider->name}] — set the Plan ID on the data plan."
+                    );
+                }
                 return [
                     'network' => $this->networkIDs[$payload['network']],
                     'phone' => $payload['phone'],
                     'plan_type' => $payload['plan_type'] ?? 'GIFTING',
-                    'data_plan' => $dataPlan->{str_replace(" ", "_", $this->provider->name)},
+                    'data_plan' => $dataVendorId,
                     'bypass' => filter_var($payload['bypass'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'request-id' => $payload['tx_ref'],
                 ];
@@ -179,10 +215,16 @@ class Adex extends VendorBase
                 if (!$cablePlan) {
                     throw new \InvalidArgumentException("Cable plan [{$payload['cable_plan']}] not found");
                 }
+                $cableVendorId = $this->resolveVendorPlanId($cablePlan);
+                if ($cableVendorId === null) {
+                    throw new \InvalidArgumentException(
+                        "No Adex plan ID for cable plan #{$cablePlan->id} on vendor [{$this->provider->name}] — set the Plan ID on the cable plan."
+                    );
+                }
                 return [
                     'cable' => $this->networkIDs[$payload['cable_network']],
                     'iuc' => $payload['iuc'],
-                    'cable_plan' => $cablePlan->{str_replace(" ", "_", $this->provider->name)},
+                    'cable_plan' => $cableVendorId,
                     'bypass' => filter_var($payload['bypass'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'request-id' => $payload['tx_ref'],
                 ];
