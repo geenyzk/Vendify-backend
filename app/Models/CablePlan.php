@@ -13,7 +13,7 @@ class CablePlan extends Model
 
     protected $appends = [
         "status", "price", "servers", "price_ngn", "charge_fee_amount",
-        "provider", "use_provider_as_providerable",
+        "provider", "use_provider_as_providerable", "cost_price", "server_id",
     ];
     protected $casts = [
         "active" => "boolean",
@@ -81,6 +81,33 @@ class CablePlan extends Model
         }
 
         return $this->providers()->exists();
+    }
+
+    /**
+     * Cost price / vendor plan id from the providerables pivot, exposed at the
+     * top level so the edit form reloads them even when the plan has NO
+     * plan-specific provider attached (provider_id null) — the pivot row still
+     * carries them since cost price was decoupled from the provider toggle.
+     * Mirrors DataPlanResource's own cost_price/server_id fallback.
+     */
+    public function getCostPriceAttribute(): float
+    {
+        return $this->resolveCostPrice();
+    }
+
+    public function getServerIdAttribute()
+    {
+        $pivotServer = $this->providers()->first()?->pivot?->server_id;
+        if ($pivotServer !== null) {
+            return $pivotServer;
+        }
+
+        $row = \Illuminate\Support\Facades\DB::table('providerables')
+            ->where('providerable_id', $this->id)
+            ->where('providerable_type', self::class)
+            ->first();
+
+        return $row->server_id ?? null;
     }
 
     /**
