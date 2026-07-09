@@ -47,8 +47,10 @@ class WelcomeMessageController extends Controller
      */
     public function upsert(Request $request): JsonResponse
     {
+        // Title is no longer part of the UI — only the body is shown to
+        // users. Still accepted (optional) for backward compatibility.
         $validated = $request->validate([
-            'title' => 'required|string|max:255',
+            'title' => 'nullable|string|max:255',
             'body' => 'required|string',
             'active' => 'boolean',
         ]);
@@ -58,7 +60,10 @@ class WelcomeMessageController extends Controller
         if ($message) {
             $message->update($validated);
         } else {
-            $message = WelcomeMessage::create(array_merge(['active' => true], $validated));
+            // The legacy `title` column may still be NOT NULL on databases
+            // that haven't run the nullable migration — default it to '' so
+            // a create never trips the constraint.
+            $message = WelcomeMessage::create(array_merge(['active' => true, 'title' => ''], $validated));
         }
 
         return $this->success(['welcome_message' => $message], 'Welcome message updated');
