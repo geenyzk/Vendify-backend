@@ -16,7 +16,7 @@ class Vendor extends Model
     protected $appends = ['connection', 'balance', 'webhook'];
 
     protected $fillable = [
-        'name', 'base_url', 'username', 'password', 'api_key',
+        'name', 'code', 'base_url', 'username', 'password', 'api_key',
         'auth_type', 'identifier', 'category', 'sub_category',
         'charge_fee', 'charge_type', 'webhook_access', 'active',
         'auto_fund_enabled', 'auto_fund_threshold', 'auto_fund_amount',
@@ -35,6 +35,16 @@ class Vendor extends Model
     {
         static::addGlobalScope('vendorOnly', function (Builder $builder) {
             $builder->where('category', 'vendor');
+        });
+
+        // The global scope only filters READS — a row created through this
+        // model without an explicit category landed as NULL and instantly
+        // vanished from every Vendor query (the create-a-vendor form 404'd
+        // on its own result). Creating through Vendor MEANS category=vendor.
+        static::creating(function (Vendor $vendor) {
+            if (empty($vendor->category)) {
+                $vendor->category = 'vendor';
+            }
         });
     }
 
