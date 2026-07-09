@@ -61,16 +61,19 @@ class RolesAndPermissionsSeeder extends Seeder
         foreach (self::ROLES as $slug => $config) {
             $role = Role::where('slug', $slug)->orWhere('name', $slug)->first();
 
+            $isDefault = $slug === 'basic';
             if (!$role) {
                 $role = Role::create([
                     'name' => $slug,
                     'slug' => $slug,
                     'is_staff' => $config['is_staff'],
+                    'is_default' => $isDefault,
                 ]);
             } else {
                 $role->update([
                     'slug' => $role->slug ?: $slug,
                     'is_staff' => $config['is_staff'],
+                    'is_default' => $isDefault,
                 ]);
             }
 

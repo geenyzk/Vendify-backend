@@ -20,6 +20,7 @@ class RoleResource extends JsonResource
             'slug' => $this->slug,
             'description' => $this->description,
             'is_active' => $this->is_active,
+            'is_default' => $this->is_default ?? false,
             'upgradable' => $this->upgradable,
             'upgrade_cost' => $this->upgrade_cost,
             'service_cost_margins' => ServiceCostMarginResource::collection($this->whenLoaded('serviceCostMargins')),

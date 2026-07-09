@@ -86,7 +86,7 @@ class ChildCustomerMigrationController extends Controller
                 // through the normal "forgot password" email flow.
                 'password' => Hash::make(Str::random(40)),
                 'status' => 'active',
-                'role_id' => Role::where('slug', 'basic')->orWhere('name', 'basic')->value('id'),
+                'role_id' => Role::where('is_default', true)->value('id') ?? Role::where('slug', 'basic')->orWhere('name', 'basic')->value('id'),
             ]);
 
             $customer->update(['migrated_to_user_id' => $user->id]);

@@ -63,7 +63,7 @@ class UserController extends Controller
 
         $role = isset($validated['role_id'])
             ? Role::find($validated['role_id'])
-            : Role::where('slug', 'basic')->orWhere('name', 'basic')->first();
+            : Role::where('is_default', true)->first() ?? Role::where('slug', 'basic')->orWhere('name', 'basic')->first();
 
         $user = User::create([
             'fullname' => $validated['fullname'],
