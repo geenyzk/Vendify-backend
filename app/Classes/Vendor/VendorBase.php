@@ -170,6 +170,25 @@ abstract class VendorBase implements VendorInterface
         return $this->getPlans($payload);
     }
 
+    /**
+     * Parse a vendor-supplied balance/amount that may arrive as a
+     * comma-grouped string ("4,495.00"), a plain numeric string, or a
+     * number. A bare (float) cast stops at the first non-numeric character —
+     * so `(float) "4,495"` is 4.0, not 4495 — which is why provider balances
+     * were showing up truncated. Strip grouping separators, currency symbols
+     * and whitespace first, then cast.
+     */
+    protected function normalizeAmount($value): float
+    {
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+
+        $clean = preg_replace('/[^0-9.\-]/', '', (string) $value);
+
+        return is_numeric($clean) ? (float) $clean : 0.0;
+    }
+
     abstract protected function getSupportedServices(): array;
     abstract protected function getPlans(?array $payload=null): array|JsonResponse;
     abstract protected function callback(Request $request):array;

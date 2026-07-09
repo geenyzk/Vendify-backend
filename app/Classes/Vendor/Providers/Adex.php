@@ -44,12 +44,12 @@ class Adex extends VendorBase
     {
        try {
          $res = $this->login();
-        // The cast binds tighter than ?? — casting a missing key warned
-        // before the fallback could apply; coalesce inside the cast instead.
-        return (float) ($res['balance'] ?? 0);
+        // normalizeAmount handles comma-grouped strings ("4,495") that a
+        // plain (float) cast would truncate to 4.
+        return (string) $this->normalizeAmount($res['balance'] ?? 0);
        } catch (\Throwable $th) {
         //throw $th;
-        return (float) 0;
+        return "0";
        }
     }
 

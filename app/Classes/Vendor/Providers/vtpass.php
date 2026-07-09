@@ -31,10 +31,12 @@ class Vtpass extends VendorBase
                 ->get($this->baseUrl() . '/balance')
                 ->json();
 
-            return isset($res['contents']['balance']) ? (float) $res['contents']['balance'] : 0;
+            return isset($res['contents']['balance'])
+                ? (string) $this->normalizeAmount($res['contents']['balance'])
+                : "0";
         } catch (\Throwable $th) {
             Log::error("VTPass balance error: " . $th->getMessage());
-            return 0;
+            return "0";
         }
     }
 

@@ -38,7 +38,9 @@ class SMEPlug extends VendorBase
     public function checkBalance(): string
     {
         $res = $this->login();
-        return $res['balance'] ?? "";
+        // Normalize so a comma-grouped balance ("4,495") isn't later
+        // truncated to 4 by a downstream (float) cast.
+        return (string) $this->normalizeAmount($res['balance'] ?? 0);
     }
 
      public function verifyTransaction(string $tx_ref): array
