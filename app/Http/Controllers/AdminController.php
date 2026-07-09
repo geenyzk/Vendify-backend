@@ -199,8 +199,30 @@ class AdminController extends Controller
             $table = (new $modelClass)->getTable();
 
             // 1. Dynamic Filtering
+            if ($request->filled('query')) {
+                $search = trim($request->get('query'));
+                if ($search !== '') {
+                    $query->where(function ($subQuery) use ($search, $table) {
+                        $columns = Schema::getColumnListing($table);
+                        $searchable = array_filter($columns, function ($column) use ($table) {
+                            return in_array(Schema::getColumnType($table, $column), ['string', 'text', 'char', 'varchar'], true);
+                        });
+
+                        foreach ($searchable as $column) {
+                            $subQuery->orWhere($column, 'like', "%{$search}%");
+                        }
+
+                        if (is_numeric($search) && Schema::hasColumn($table, 'id')) {
+                            $subQuery->orWhere('id', $search);
+                        }
+                    });
+                }
+            }
+
             foreach ($request->query() as $column => $value) {
-                if ($column === 'with' || $column === 'sort' || $column === 'page') continue;
+                if (in_array($column, ['with', 'sort', 'page', 'per_page', 'query'], true)) {
+                    continue;
+                }
 
                 if (Schema::hasColumn($table, $column)) {
                     $query->where($column, $value);
@@ -222,9 +244,36 @@ class AdminController extends Controller
                 $query->latest(); // Default sort
             }
 
+            // 4. Pagination / get
+            if ($request->has('page') || $request->has('per_page')) {
+                $perPage = max(1, (int) $request->get('per_page', 10));
+                $page = max(1, (int) $request->get('page', 1));
+                $records = $query->paginate($perPage, ['*'], 'page', $page);
+
+                $items = $records->items();
+                $resourceClass = $this->resolveResourceClass($modelClass);
+                if ($resourceClass && count($items) > 0) {
+                    $items = $resourceClass::collection(collect($items))->resolve();
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'successful',
+                    'type' => 'success',
+                    'data' => $items,
+                    'meta' => [
+                        'current_page' => $records->currentPage(),
+                        'last_page' => $records->lastPage(),
+                        'per_page' => $records->perPage(),
+                        'total' => $records->total(),
+                        'from' => $records->firstItem(),
+                        'to' => $records->lastItem(),
+                    ],
+                ]);
+            }
+
             $records = $query->get();
 
-            // 4. Resource Response
             if ($records->isNotEmpty()) {
                 $resourceClass = $this->resolveResourceClass($modelClass);
                 if ($resourceClass) {

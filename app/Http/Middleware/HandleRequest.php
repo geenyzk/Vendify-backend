@@ -39,14 +39,14 @@ class HandleRequest
             $meta = $this->share($request);
 
             if (is_array($data) && !array_is_list($data)) {
-                // Merge meta into the controller's own envelope (message/
-                // success/data/type from the HttpResponse trait, or an
-                // equivalent plain response()->json([...]) body) instead of
-                // wrapping it in another layer. This keeps the real payload
-                // exactly one `.data` deep for every endpoint — no more
-                // double-wrapping that silently swallowed created-record IDs
-                // on the frontend.
-                $data['meta'] = $meta;
+                // Merge meta into the controller's own envelope. Preserve
+                // any existing meta from prior response formatting and add
+                // our standard request metadata.
+                if (isset($data['meta']) && is_array($data['meta'])) {
+                    $data['meta'] = array_merge($data['meta'], $meta);
+                } else {
+                    $data['meta'] = $meta;
+                }
                 $response->setContent(json_encode($data));
             } else {
                 // Fallback for the rare response that isn't a JSON object at
