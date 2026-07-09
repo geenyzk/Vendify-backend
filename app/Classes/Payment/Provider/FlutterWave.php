@@ -101,9 +101,6 @@ class FlutterWave extends PaymentBase
             'expired_at' => now()->addYears(1)
         ];
     }
-
-
-<<<<<<<< HEAD:app/Classes/Payment/Provider/FlutterWave.php
     /**
      * Push funds to a vendor's bank account via Flutterwave Transfers API.
      */
@@ -172,41 +169,10 @@ class FlutterWave extends PaymentBase
     protected function callback(HttpRequest $request): array
     {
         $payload = $request->all();
-        $data = $payload['data'];
-        $customer = $data['customer'];
-        $user = User::where('email', $customer['email'])->first();
-        if (!$user) {
-            Log::warning('FlutterWave webhook: no user found for email', ['email' => $customer['email'] ?? null]);
-            return [];
-        }
-
-        $creditedAmount = $this->creditedAmount($data['amount']);
-        $isSuccess = $data['status'] == "successful";
-
-        // Gateways retry webhooks (missed 200, network hiccup, etc.) — only
-        // credit the wallet the first time this tx_ref is seen as
-        // successful, otherwise a retry double-credits the user.
-        $alreadyCredited = Transaction::where('transaction_reference', $data['tx_ref'])
-            ->where('status', 'success')
-            ->exists();
-        if ($isSuccess && !$alreadyCredited) {
-            $user->wallet_balance += $creditedAmount;
-            $user->save();
-        }
-========
-    // Parsing only — no wallet credit / no $user->save() here. Centralized
-    // in PaymentBase::webhook() so it happens exactly once, only after
-    // signature verification + idempotency checks pass. This used to
-    // credit the wallet unconditionally right here, before the
-    // success/fail status below was even evaluated.
-    protected function callback(HttpRequest $request): array
-    {
-        $payload = $request->all();
         $data = $payload['data'] ?? [];
         $customer = $data['customer'] ?? [];
         $status = ($data['status'] ?? null) === 'successful' ? 'success' : 'fail';
         $creditedAmount = $this->creditedAmount($data['amount'] ?? 0);
->>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/FlutterWave.php
 
         return [
             'user_email' => $customer['email'] ?? null,
@@ -215,18 +181,13 @@ class FlutterWave extends PaymentBase
             'payment_reference' => $data['flw_ref'] ?? null,
             'response_message' => $data['processor_response'] ?? ($status === 'success' ? 'Transaction successful' : 'Transaction failed'),
             'completed_at' => now(),
-            "funding_method" => "bank_transfer",
+            'funding_method' => 'bank_transfer',
             'service_fee' => $data['app_fee'] ?? 0.00,
             'platform' => 'web',
             'transaction_type' => 'wallet_funding',
             'account_or_phone' => $customer['phone_number'] ?? null,
-<<<<<<<< HEAD:app/Classes/Payment/Provider/FlutterWave.php
-            'amount' => $creditedAmount ?? 0.00,
-            'status' => $isSuccess ? "success" : "fail",
-========
             'amount' => $creditedAmount,
             'status' => $status,
->>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/FlutterWave.php
             'receiver' => $customer['phone_number'] ?? null,
         ];
     }

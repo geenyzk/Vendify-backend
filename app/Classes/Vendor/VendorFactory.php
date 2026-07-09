@@ -31,7 +31,7 @@ class VendorFactory
         // a real purchase request instead of a clear, catchable error.
         return match ($match) {
             "adex"=> new Adex($provider),
-            "sandbox"=> new SandboxService() ,
+            "sandbox"=> new SandboxService($provider) ,
             "sme plug"=> new SMEPlug($provider),
             "spurs"=> new Adex($provider),
             "msorg"=> new Adex($provider),

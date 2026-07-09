@@ -92,19 +92,6 @@ abstract class PaymentBase implements PaymentInterface
             }
 
             $callback = $this->callback($request);
-
-<<<<<<<< HEAD:app/Classes/Payment/PaymentBase.php
-            $transaction = Transaction::updateOrCreate(
-                ['transaction_reference' => $callback['transaction_reference']],
-                $callback
-            );
-
-            if ($transaction->status === 'success') {
-                AdminNotifier::notifyFunding($transaction);
-            }
-
-        } catch (\Exception $e) {
-========
             if (empty($callback) || empty($callback['transaction_reference'])) {
                 Log::warning('Missing transaction_reference in callback.', ['callback' => $callback]);
                 return true;
@@ -166,7 +153,6 @@ abstract class PaymentBase implements PaymentInterface
             // uninitialized-typed-property bug that used to make Monnify's
             // and PaymentPoint's webhooks fatal-crash on every call,
             // bypassing this catch entirely.
->>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/PaymentBase.php
             Log::error('Webhook processing failed.', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()

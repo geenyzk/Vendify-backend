@@ -13,16 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class Monnify extends PaymentBase
 {
-    // Without this, creditedAmount()'s Provider::whereName($this->providerName)
-    // lookup reads an uninitialized typed property and throws, which — since
-    // creditedAmount() runs before the wallet_balance credit in callback() —
-    // meant a real successful Monnify payment would silently never be
-    // credited (the exception is swallowed by PaymentBase::webhook()'s catch).
-    protected string $providerName = 'monnify';
-
-    // Was never declared — creditedAmount()'s Provider::whereName($this->providerName)
-    // lookup silently matched nothing (uninitialized typed property access is a
-    // \TypeError, not \Exception, so it used to fatal-crash the whole webhook).
+    // Ensure providerName is set so creditedAmount() can find the DB row
     protected string $providerName = 'monnify';
 
     function connect(): mixed
@@ -122,7 +113,6 @@ class Monnify extends PaymentBase
         ];
     }
 
-<<<<<<<< HEAD:app/Classes/Payment/Provider/Monnify.php
     // Monnify does not expose a transfer/payout API in the current integration.
     // Override this when Monnify payout support is added.
 
@@ -150,11 +140,6 @@ class Monnify extends PaymentBase
             return [];
         }
     }
-
-========
-    // Parsing only — see PaymentBase::callback() docblock. Wallet crediting
-    // and idempotency are centralized in PaymentBase::webhook().
->>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/Monnify.php
     protected function callback(Request $request): array
     {
         $payload = $request->all();
@@ -166,29 +151,8 @@ class Monnify extends PaymentBase
         $data = $payload['eventData'] ?? [];
         $customer = $data['customer'] ?? [];
         $source = $data['paymentSourceInformation'][0] ?? [];
-<<<<<<<< HEAD:app/Classes/Payment/Provider/Monnify.php
-        $user = User::where('email', $customer['email'] ?? '')->first();
-        if (!$user) {
-            Log::warning('Monnify webhook: no user found for email', ['email' => $customer['email'] ?? null]);
-            return [];
-        }
-
-        $creditedAmount = $this->creditedAmount($data['amountPaid']);
-
-        // Gateways retry webhooks (missed 200, network hiccup, etc.) — only
-        // credit the wallet the first time this transaction_reference is
-        // seen as successful, otherwise a retry double-credits the user.
-        $alreadyCredited = Transaction::where('transaction_reference', $data['transactionReference'])
-            ->where('status', 'success')
-            ->exists();
-        if (!$alreadyCredited) {
-            $user->wallet_balance += $creditedAmount;
-            $user->save();
-        }
-========
         $creditedAmount = $this->creditedAmount($data['amountPaid'] ?? 0);
         $status = strtolower($data['paymentStatus'] ?? '') === 'paid' ? 'success' : 'fail';
->>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/Monnify.php
 
         return [
             'user_email' => $customer['email'] ?? null,
@@ -197,18 +161,8 @@ class Monnify extends PaymentBase
             'payment_reference' => $data['paymentReference'] ?? null,
             'response_message' => $data['paymentStatus'] ?? null,
             'completed_at' => $data['paidOn'] ?? now(),
-<<<<<<<< HEAD:app/Classes/Payment/Provider/Monnify.php
-            // `funding_method` is a fixed DB enum (bank_transfer/credit_card/
-            // manual/other) — Monnify's own paymentMethod string (e.g.
-            // "ACCOUNT_TRANSFER") isn't one of those and would fail the
-            // insert, so this is always a bank transfer, same as
-            // FlutterWave/PaymentPoint's callbacks.
-            'funding_method' => 'bank_transfer',
-            'service_fee' => (float) $data['totalPayable'] - (float) $data['settlementAmount'],
-========
             'funding_method' => $data['paymentMethod'] ?? 'bank_transfer',
             'service_fee' => (float) ($data['totalPayable'] ?? 0) - (float) ($data['settlementAmount'] ?? 0),
->>>>>>>> d00a16b3fbdfa6668d2bb5d0af13afd0eb17f353:app/Class/Payment/Provider/Monnify.php
             'platform' => 'web',
             'transaction_type' => 'wallet_funding',
             'account_or_phone' => $source['accountNumber'] ?? null,

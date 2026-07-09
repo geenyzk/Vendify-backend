@@ -3,6 +3,7 @@
 namespace App\Classes\Vendor\Providers;
 
 use App\Classes\Vendor\VendorBase;
+use App\Models\Vendor;
 use App\Http\Controllers\AdminController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,7 +12,10 @@ use Illuminate\Support\Str;
 class SandboxService extends VendorBase
 {
 
-    public function __construct() {
+    public function __construct(Vendor $provider)
+    {
+        parent::__construct($provider);
+        $this->isSandbox = true;
     }
     protected string $providerName = 'sandbox';
 
