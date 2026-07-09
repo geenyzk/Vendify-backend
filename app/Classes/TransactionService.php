@@ -19,6 +19,14 @@ class TransactionService
     public static function process(array $apiData, ?User $user = null): array
     {
         return DB::transaction(function () use ($apiData, $user) {
+            // Lock this user's row for the rest of the transaction. Without
+            // it, two concurrent purchases (a double-click, or a scripted
+            // reseller) both read the same wallet_balance and each save their
+            // own "balance - amount" — the second write silently refunds the
+            // first, so the customer gets two deliveries but is charged once.
+            // Re-reading under the lock makes the debits serialize correctly.
+            $user = User::whereKey($user->id)->lockForUpdate()->first() ?? $user;
+
             $transactionType = $apiData['transaction_type'];
 
             // Extract discount and pricing information

@@ -8,9 +8,11 @@ use App\Classes\Vendor\Interface\VendorInterface;
 use App\HttpResponse;
 use App\Models\Message;
 use App\Models\Transaction;
+use App\Models\User;
 use App\Models\Vendor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
@@ -169,7 +171,58 @@ abstract class VendorBase implements VendorInterface
 
     public function webhook(Request $request):void{
         $callback = $this->callback($request);
-        Transaction::where("transaction_reference", $callback['tx_ref'])
-        ->update($callback);
+        $ref = $callback['tx_ref'] ?? null;
+
+        if (!$ref) {
+            Log::warning("Vendor webhook: callback carried no tx_ref", [
+                'provider' => $this->providerName ?? null,
+            ]);
+            return;
+        }
+
+        DB::transaction(function () use ($callback, $ref) {
+            $transaction = Transaction::where("transaction_reference", $ref)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$transaction) {
+                Log::warning("Vendor webhook: no transaction for reference", ['tx_ref' => $ref]);
+                return;
+            }
+
+            $previousStatus = $transaction->status;
+            $newStatus = $callback['status'] ?? $previousStatus;
+
+            // A purchase that was PENDING at process() time was never charged
+            // (the wallet is only debited on an immediate 'success'). When the
+            // vendor's async webhook finally resolves it to success, settle the
+            // debit here. Guarding on the DB status (which is flipped inside
+            // this same locked row below) makes a duplicate webhook a no-op
+            // instead of a double charge.
+            if ($previousStatus === 'pending' && $newStatus === 'success') {
+                $user = User::whereKey($transaction->user_id)->lockForUpdate()->first();
+                if ($user) {
+                    $balanceBefore = (float) $user->wallet_balance;
+                    $user->decrement('wallet_balance', (float) $transaction->amount);
+                    $callback['balance_before'] = $balanceBefore;
+                    $callback['balance_after'] = (float) $user->fresh()->wallet_balance;
+                    $callback['completed_at'] = now();
+
+                    if ($balanceBefore < (float) $transaction->amount) {
+                        // Value was already delivered by the vendor, so the
+                        // charge stands even though the wallet dips negative —
+                        // flag it for reconciliation rather than lose the debit.
+                        Log::warning("Vendor webhook: wallet went negative settling a delayed success", [
+                            'tx_ref' => $ref,
+                            'user_id' => $user->id,
+                            'amount' => $transaction->amount,
+                            'balance_before' => $balanceBefore,
+                        ]);
+                    }
+                }
+            }
+
+            $transaction->update($callback);
+        });
     }
 }
