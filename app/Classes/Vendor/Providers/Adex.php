@@ -289,7 +289,12 @@ class Adex extends VendorBase
                     'account_or_phone' => $response['phone_number'] ?? null,
                     'amount' => $response['amount'] ?? 0.00,
                     'discount_amount' => 0.00,
-                    'quantity' => $this->convertDataPlanToGB($response['dataplan']),
+                    // Guard the key: a failed/other-shaped Adex reply may omit
+                    // 'dataplan', and every sibling field here already defaults.
+                    // convertDataPlanToGB('') just yields 0.0 — better than a
+                    // TypeError/undefined-key crash that fails the whole
+                    // transaction even after the vendor may have delivered.
+                    'quantity' => $this->convertDataPlanToGB($response['dataplan'] ?? ''),
                     'status' => $response['status'],
                     'receiver' => $response['phone_number'] ?? null,
                     'plan_type' => $response['plan_type'] ?? null,
