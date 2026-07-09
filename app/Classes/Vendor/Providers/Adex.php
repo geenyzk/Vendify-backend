@@ -44,7 +44,9 @@ class Adex extends VendorBase
     {
        try {
          $res = $this->login();
-        return (float) $res['balance'] ?? "0.00";
+        // The cast binds tighter than ?? — casting a missing key warned
+        // before the fallback could apply; coalesce inside the cast instead.
+        return (float) ($res['balance'] ?? 0);
        } catch (\Throwable $th) {
         //throw $th;
         return (float) 0;
