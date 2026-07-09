@@ -227,6 +227,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::post('/reset-website', [ResetWebsiteController::class, 'reset']);
 
+        // Run framework/database migrations from the admin UI (dangerous)
+        Route::post('/migrate-db', [AdminController::class, 'migrateDb']);
+
         // Not clearly owned by any single permission slug — gated by
         // user_type:admin at the group level only.
         Route::get('/stats', [AdminController::class, 'stats']);

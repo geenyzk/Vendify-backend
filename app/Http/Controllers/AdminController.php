@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 
 /**
@@ -168,6 +169,25 @@ class AdminController extends Controller
     {
         $discounts = Discount::where('service_type', 'airtime')->get();
         return $this->success(['discount' => $discounts]);
+    }
+
+    /**
+     * Run pending framework/database migrations (admin-only).
+     */
+    public function migrateDb(Request $request)
+    {
+        $admin = $request->user();
+        if (!$admin || !$admin->role || !$admin->role->is_staff) {
+            return $this->fail([], 'Unauthorized', 403);
+        }
+
+        try {
+            $exit = Artisan::call('migrate', ['--force' => true]);
+            $output = Artisan::output();
+            return $this->success(['exit_code' => $exit, 'output' => $output], 'Migrations executed');
+        } catch (\Throwable $e) {
+            return $this->fail(['error' => $e->getMessage()], 'Migration failed', 500);
+        }
     }
 
     // --- Optimized Universal Methods ---
