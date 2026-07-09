@@ -43,6 +43,7 @@ class RoleController extends Controller
             'name' => 'required|string|unique:roles',
             'slug' => 'required|string|unique:roles',
             'description' => 'nullable|string',
+            'is_default' => 'boolean',
             'is_active' => 'boolean',
             'upgradable' => 'boolean',
             'upgrade_cost' => 'nullable|numeric|min:0|required_if:upgradable,true',
@@ -51,6 +52,11 @@ class RoleController extends Controller
         ]);
 
         $role = Role::create(collect($validated)->except('permission_ids')->all());
+
+        // If this role is set as default, unset default on others.
+        if (!empty($validated['is_default'])) {
+            Role::where('id', '!=', $role->id)->update(['is_default' => false]);
+        }
 
         if (array_key_exists('permission_ids', $validated)) {
             $role->permissions()->sync($validated['permission_ids']);
@@ -76,6 +82,7 @@ class RoleController extends Controller
             'name' => 'string|unique:roles,name,' . $id,
             'slug' => 'string|unique:roles,slug,' . $id,
             'description' => 'nullable|string',
+            'is_default' => 'boolean',
             'is_active' => 'boolean',
             'upgradable' => 'boolean',
             'upgrade_cost' => 'nullable|numeric|min:0|required_if:upgradable,true',
@@ -87,6 +94,10 @@ class RoleController extends Controller
 
         if (array_key_exists('permission_ids', $validated)) {
             $role->permissions()->sync($validated['permission_ids']);
+        }
+
+        if (array_key_exists('is_default', $validated) && !empty($validated['is_default'])) {
+            Role::where('id', '!=', $role->id)->update(['is_default' => false]);
         }
 
         $role->load('permissions');
