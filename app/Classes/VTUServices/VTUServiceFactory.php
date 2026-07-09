@@ -4,13 +4,14 @@ namespace App\Classes\VTUServices;
 
 use App\Classes\Vendor\VendorFactory;
 use App\Models\AirtimePlan;
+use App\Models\DataPlan;
 use App\Models\Vendor;
 use Illuminate\Support\Facades\Log;
 
 class VTUServiceFactory
 {
-    static function make ($service='', $sub="", $network=null) {
-        $provider = self::resolveProvider($service, $sub, $network);
+    static function make ($service='', $sub="", $network=null, $planId=null) {
+        $provider = self::resolveProvider($service, $sub, $network, $planId);
 
         if (!$provider) {
             // Return null rather than handing a null into VendorFactory::make()
@@ -45,10 +46,21 @@ class VTUServiceFactory
      * set — and for every other service — it falls back to the Stock Vending
      * assignment keyed by category/plan type (the pre-existing behaviour).
      */
-    private static function resolveProvider($service, $sub, $network): ?Vendor
+    private static function resolveProvider($service, $sub, $network, $planId = null): ?Vendor
     {
         if ($service === 'airtime' && $network) {
             $vendor = self::airtimePlanVendor($network, $sub);
+            if ($vendor) {
+                return $vendor;
+            }
+        }
+
+        // Data mirrors airtime: prefer the provider explicitly attached to the
+        // specific Data Plan (the create/edit form's custom-provider toggle,
+        // stored on the providerables pivot). Only when the plan has none do we
+        // fall back to the Stock Vending assignment keyed by plan_type below.
+        if ($service === 'data' && $planId) {
+            $vendor = DataPlan::find($planId)?->resolveVendor();
             if ($vendor) {
                 return $vendor;
             }

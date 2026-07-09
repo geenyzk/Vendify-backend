@@ -290,7 +290,7 @@ class VTUServicesController extends Controller
 
             $serviceType = $service;
 
-            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType, $validated['network'] ?? null);
+            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType, $validated['network'] ?? null, $validated['data_plan'] ?? null);
 
             if (!$handler) {
                 return response()->json([

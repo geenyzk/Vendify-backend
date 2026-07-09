@@ -185,6 +185,27 @@ class DataPlan extends Model
         return $this->providers()->exists();
     }
 
+    /**
+     * The Vendor that should fulfil a purchase of this data plan: the provider
+     * explicitly attached via the Data Plan form's custom-provider toggle (the
+     * `providerables` pivot). Returns null when no plan-specific provider is
+     * set, so callers fall back to the Stock Vending assignment — mirrors
+     * AirtimePlan::resolveVendor().
+     *
+     * `providers()` yields a Provider (a raw `providers` row with no scope);
+     * re-resolve it as a Vendor so it carries the category=vendor global scope
+     * that VendorFactory::make() and the vendor classes expect.
+     */
+    public function resolveVendor(): ?Vendor
+    {
+        $provider = $this->providers()->first();
+        if (!$provider) {
+            return null;
+        }
+
+        return Vendor::find($provider->id);
+    }
+
     protected function getPriceNgnAttribute()
     {
         return '₦' . number_format($this->price, 2);

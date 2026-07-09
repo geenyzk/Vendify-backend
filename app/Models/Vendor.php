@@ -120,17 +120,41 @@ class Vendor extends Model
     public function scopeProvider(Builder $query, string $service)
     {
         $stock = StockVending::first();
-        if (!$stock || !isset($stock->{$service})) {
+        if (!$stock) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        // The requested service arrives as free text: a data plan_type or
+        // airtime category. Vendor sync stores uppercase codes ("SME",
+        // "GIFTING") and callers pass "cooperate_gifting" while the actual
+        // column is "cooperate gifting" — so a plain isset($stock->{$service})
+        // missed every one of them and fell through to "no vendor found".
+        // Match the requested service against the stock_vendings columns
+        // case- and separator-insensitively before reading the assignment.
+        $normalizeKey = fn (string $value): string => strtolower(str_replace(['_', '-'], ' ', trim($value)));
+        $wanted = $normalizeKey($service);
+
+        $column = null;
+        foreach (array_keys($stock->getAttributes()) as $col) {
+            if (in_array($col, ['id', 'created_at', 'updated_at'], true)) {
+                continue;
+            }
+            if ($normalizeKey($col) === $wanted) {
+                $column = $col;
+                break;
+            }
+        }
+
+        if ($column === null) {
             return $query->whereRaw('0 = 1');
         }
 
         // stock_vendings' own migration defaults every column to
         // "adex_server_1" (underscored), but real provider rows are named
         // "adex server 1" (spaced) — normalize both sides so that mismatch
-        // (and any future case/spacing slip, since this has no admin UI to
-        // manage it and is edited only via raw table writes today) doesn't
-        // silently resolve to "no vendor found".
-        $normalized = strtolower(str_replace('_', ' ', $stock->{$service}));
+        // (and any future case/spacing slip) doesn't silently resolve to
+        // "no vendor found".
+        $normalized = strtolower(str_replace('_', ' ', (string) $stock->{$column}));
 
         return $query->whereRaw('LOWER(REPLACE(name, "_", " ")) = ?', [$normalized]);
     }
