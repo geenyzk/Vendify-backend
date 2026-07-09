@@ -70,13 +70,18 @@ class ServiceRequest extends FormRequest
     private function ruleMaker(string $service, bool $bypass = false, ?string $network = null) {
         switch($service){
             case "data":
-                // `cooperate_gifting` (underscore) is the real value stored
-                // on data_plans.plan_type — the old "cooperate gifting"
-                // (space) here never matched a real row, so that plan type
-                // was permanently unpurchasable.
+                // plan_type is provider/admin-defined free text, not a fixed
+                // enum: vendor sync stores uppercase codes (e.g. "SME",
+                // "GIFTING", "CG" — see Ogdams::syncPlans / SMEPlug / Adex) and
+                // the admin plan form lets you type your own. Pinning it to a
+                // fixed lowercase list here rejected every synced plan with
+                // "The selected plan type is invalid". The closure on data_plan
+                // below is the real guard — the submitted plan_type must equal
+                // the chosen plan's actual plan_type — so a free string here is
+                // both correct and sufficient.
                 return [
                     'network' => 'required|string|in:mtn,airtel,glo,9mobile',
-                    'plan_type' => 'required|string|in:sme,gifting,cooperate_gifting',
+                    'plan_type' => 'required|string',
                     'data_plan' => [
                         'required',
                         'exists:data_plans,id',
