@@ -4,7 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Classes\TemplateParser;
 use App\HttpResponse;
+use App\Mail\AdminNotificationMail;
 use App\Models\Broadcast;
+use App\Models\ChildCustomer;
+use App\Models\ChildInstance;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\BroadcastNotification;
@@ -12,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * Full audience-targeting broadcast messaging: who (real roles, specific
@@ -27,7 +31,8 @@ class BroadcastController extends Controller
     private function filterRules(): array
     {
         return [
-            'audience_mode' => 'required|in:criteria,individuals',
+            'audience_mode' => 'required|in:criteria,individuals,child_customers',
+            'child_instance_id' => 'required_if:audience_mode,child_customers|integer|exists:child_instances,id',
             'user_ids' => 'required_if:audience_mode,individuals|array',
             'user_ids.*' => 'integer',
             'role_ids' => 'nullable|array',
@@ -124,8 +129,25 @@ class BroadcastController extends Controller
         return $query;
     }
 
+    /**
+     * Child-affiliate customers with a synced email address — the only
+     * channel we can reach them on (they have no login on the parent for
+     * in-app, and SMS is reserved for our own users).
+     */
+    private function childCustomerAudience(array $filters): Builder
+    {
+        return ChildCustomer::where('child_instance_id', $filters['child_instance_id'])
+            ->whereNotNull('email')
+            ->where('email', '!=', '');
+    }
+
     private function describeAudience(array $filters): string
     {
+        if (($filters['audience_mode'] ?? 'criteria') === 'child_customers') {
+            $name = ChildInstance::find($filters['child_instance_id'] ?? null)?->name ?? 'affiliate';
+            return "{$name} customers (email)";
+        }
+
         if (($filters['audience_mode'] ?? 'criteria') === 'individuals') {
             $count = count($filters['user_ids'] ?? []);
             return "{$count} selected user" . ($count === 1 ? '' : 's');
@@ -162,7 +184,10 @@ class BroadcastController extends Controller
     public function audienceCount(Request $request): JsonResponse
     {
         $validated = $request->validate($this->filterRules());
-        $count = $this->resolveAudience($validated)->count();
+
+        $count = $validated['audience_mode'] === 'child_customers'
+            ? $this->childCustomerAudience($validated)->count()
+            : $this->resolveAudience($validated)->count();
 
         return $this->success(['count' => $count]);
     }
@@ -207,6 +232,12 @@ class BroadcastController extends Controller
     public function send(Request $request): JsonResponse
     {
         $validated = $request->validate(array_merge($this->filterRules(), $this->contentRules()));
+
+        // Child-affiliate customers aren't Users — they get their own
+        // email-only send path instead of the Notifiable pipeline.
+        if ($validated['audience_mode'] === 'child_customers') {
+            return $this->sendToChildCustomers($validated);
+        }
 
         $audience = $this->resolveAudience($validated);
         $audienceLabel = $this->describeAudience($validated);
@@ -262,12 +293,95 @@ class BroadcastController extends Controller
     }
 
     /**
+     * The child_customers half of send(): emails every synced customer of
+     * one affiliate through the parent's own mail infra, with the same
+     * {{ user.* }} placeholders the one-off contact modal supports —
+     * resolved against the ChildCustomer row.
+     */
+    private function sendToChildCustomers(array $validated): JsonResponse
+    {
+        if (empty($validated['emailSubject']) || empty($validated['emailBody'])) {
+            return $this->fail([], 'Email subject and body are required for affiliate customer broadcasts.', 422);
+        }
+
+        $audienceLabel = $this->describeAudience($validated);
+
+        if (!$validated['sendNow']) {
+            $recipientCount = $this->childCustomerAudience($validated)->count();
+
+            Broadcast::create([
+                'name' => $validated['name'] ?? null,
+                'title' => $validated['emailSubject'],
+                'message' => null,
+                'channels' => ['Email'],
+                'payload' => $validated,
+                'audience_label' => $audienceLabel,
+                'recipient_count' => $recipientCount,
+                'scheduled_at' => $validated['scheduleDate'],
+                'sent' => false,
+            ]);
+
+            return $this->success(
+                ['notified' => 0, 'recipient_count' => $recipientCount],
+                "Broadcast scheduled for {$recipientCount} affiliate customers",
+            );
+        }
+
+        $count = $this->emailChildCustomers($validated);
+
+        Broadcast::create([
+            'name' => $validated['name'] ?? null,
+            'title' => $validated['emailSubject'],
+            'message' => null,
+            'channels' => ['Email'],
+            'payload' => $validated,
+            'audience_label' => $audienceLabel,
+            'recipient_count' => $count,
+            'scheduled_at' => null,
+            'sent' => true,
+        ]);
+
+        return $this->success(['notified' => $count], "Emails processed for {$count} affiliate customers");
+    }
+
+    private function emailChildCustomers(array $validated): int
+    {
+        $count = 0;
+        $this->childCustomerAudience($validated)->chunkById(200, function ($customers) use ($validated, &$count) {
+            foreach ($customers as $customer) {
+                try {
+                    $parser = TemplateParser::make()->with(['user' => $customer]);
+                    Mail::to($customer->email)->send(new AdminNotificationMail(
+                        $parser->parse($validated['emailSubject']),
+                        $parser->parse($validated['emailBody']),
+                    ));
+                    $count++;
+                } catch (\Throwable $e) {
+                    Log::warning('Broadcast: failed to email child customer', [
+                        'child_customer_id' => $customer->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        });
+
+        return $count;
+    }
+
+    /**
      * Executes a previously-scheduled, not-yet-sent Broadcast row — called
      * by the broadcasts:send-scheduled command once scheduled_at is due.
      */
     public function executeScheduled(Broadcast $broadcast): void
     {
         $validated = $broadcast->payload ?? [];
+
+        if (($validated['audience_mode'] ?? null) === 'child_customers') {
+            $count = $this->emailChildCustomers($validated);
+            $broadcast->update(['sent' => true, 'recipient_count' => $count]);
+            return;
+        }
+
         $audience = $this->resolveAudience($validated);
 
         $count = 0;

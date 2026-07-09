@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\ChildSync\ChildAuthenticator;
+use App\Classes\ChildSync\ChildSyncFactory;
 use App\Classes\Payment\Payment;
 use App\Classes\Vendor\VendorFactory;
 use Illuminate\Http\Request;
@@ -37,6 +39,13 @@ class WebhookController extends Controller
                 case 'payment':
                     return Payment::webhook($request, $identifier) ;
 
+                // The push half of the parent<->child channel: the child
+                // uploads customer/transaction snapshots here. This branch
+                // was silently dropped by the 2026-07-08 merge, which left
+                // ChildSyncFactory with no caller — affiliates never synced.
+                case 'child':
+                    return $this->childWebhook($request, $identifier);
+
                 case 'vendor':
                 default:
                     return VendorFactory::webhook($request, $identifier) ;
@@ -45,5 +54,19 @@ class WebhookController extends Controller
             //throw $th;
             $this->fail([], "Unauthorized", 401);
         }
+    }
+
+    // Same {type}/{identifier} shape as the vendor/payment cases above, but
+    // unlike those (which have no payload verification at all), a growing
+    // set of less-trusted child instances needs the request signature
+    // checked before ChildSyncFactory touches anything.
+    protected function childWebhook(Request $request, string $identifier)
+    {
+        [$instance, $error] = ChildAuthenticator::verify($request, $identifier);
+        if (!$instance) {
+            return $this->fail([], $error, 401);
+        }
+
+        return ChildSyncFactory::webhook($request, $instance);
     }
 }
