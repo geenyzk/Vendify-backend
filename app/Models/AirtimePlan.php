@@ -72,4 +72,24 @@ class AirtimePlan extends Model
 
         return $this->providers()->exists();
     }
+
+    /**
+     * The Vendor that should fulfil an airtime purchase of this plan: the
+     * provider explicitly attached via the create/edit form's custom-provider
+     * toggle (the `providerables` pivot). Returns null when no plan-specific
+     * provider is set, so callers fall back to the Stock Vending assignment.
+     *
+     * `providers()` yields a Provider (a raw `providers` row with no scope);
+     * re-resolve it as a Vendor so it carries the category=vendor global scope
+     * that VendorFactory::make() and the vendor classes expect.
+     */
+    public function resolveVendor(): ?Vendor
+    {
+        $provider = $this->providers()->first();
+        if (!$provider) {
+            return null;
+        }
+
+        return Vendor::find($provider->id);
+    }
 }
