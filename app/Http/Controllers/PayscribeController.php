@@ -25,7 +25,12 @@ class PayscribeController extends Controller
             'amount'    => 'required|numeric',
             'ported'    => 'boolean',
             'ref'       => 'required|string',
+            'pin'       => 'required|string',
         ]);
+
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
 
         return response()->json(
             $this->payscribe->purchaseAirtime(
@@ -53,7 +58,12 @@ class PayscribeController extends Controller
             'recipient' => 'required|string',
             'network'   => 'required|string',
             'ref'       => 'required|string',
+            'pin'       => 'required|string',
         ]);
+
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
 
         return response()->json(
             $this->payscribe->purchaseData($data['plan'], $data['recipient'], $data['network'], $data['ref'])
@@ -74,7 +84,12 @@ class PayscribeController extends Controller
             'qty' => 'required|integer|min:1',
             'id'  => 'required|string',
             'ref' => 'required|string',
+            'pin' => 'required|string',
         ]);
+
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
 
         return response()->json($this->payscribe->purchasePin($data['qty'], $data['id'], $data['ref']));
     }
@@ -127,7 +142,12 @@ class PayscribeController extends Controller
             'phone'         => 'required|string',
             'email'         => 'required|email',
             'month'         => 'required|integer',
+            'pin'           => 'required|string',
         ]);
+
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
 
         return response()->json(
             $this->payscribe->payCableTv(
@@ -154,7 +174,12 @@ class PayscribeController extends Controller
             'phone'         => 'required|string',
             'email'         => 'required|email',
             'month'         => 'required|integer',
+            'pin'           => 'required|string',
         ]);
+
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
 
         return response()->json(
             $this->payscribe->topUpTv(
@@ -194,7 +219,12 @@ class PayscribeController extends Controller
             'plan_id' => 'required|string',
             'qty'     => 'required|integer|min:1',
             'ref'     => 'required|string',
+            'pin'     => 'required|string',
         ]);
+
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
 
         return response()->json($this->payscribe->purchaseSpectranetPins($data['plan_id'], $data['qty'], $data['ref']));
     }
@@ -226,7 +256,12 @@ class PayscribeController extends Controller
             'phone'         => 'required|string',
             'customer_name' => 'required|string',
             'ref'           => 'required|string',
+            'pin'           => 'required|string',
         ]);
+
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
 
         return response()->json(
             $this->payscribe->electricityPayment(

@@ -43,7 +43,7 @@ class ServiceRequest extends FormRequest
             'network'   => 'required|string|in:mtn,airtel,glo,9mobile',
             "plan_type" => "|required|exists:airtime_pin_plans,id",
             'tx_ref'    => 'required|unique:transactions,transaction_reference',
-            'pin'       => 'sometimes|nullable',
+            'pin'       => 'required|string',
             'card_name'  => 'required|string',
             'quantity'  => 'required|integer|min:1',
             'amount'    => 'required|numeric|min:1',
@@ -58,7 +58,7 @@ class ServiceRequest extends FormRequest
         return [
             'amount'           => 'required|numeric|min:1',
             'bypass'           => 'required|boolean',
-            'pin'              => 'sometimes|nullable',
+            'pin'              => 'required|string',
             'code'             => 'sometimes|nullable|string|max:50',
             'product'          => 'sometimes|nullable|string',
             'discount_amount'  => 'sometimes|numeric',
@@ -193,7 +193,7 @@ class ServiceRequest extends FormRequest
                     'exam_id'  => 'required|exists:exam_plans,name',
                     'quantity' => 'required|integer|min:1',
                     'tx_ref'   => 'required|unique:transactions,transaction_reference',
-                    'pin'      => 'sometimes|nullable',
+                    'pin'      => 'required|string',
                     'amount'   => 'required|numeric|min:1',
                 ];
             case "artime_recharge":

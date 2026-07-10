@@ -312,11 +312,11 @@ Route::prefix('vtu')->group(function () {
     Route::get('/validate/iuc', [VTUServicesController::class, 'validateIUC']);
     Route::get('/validate/meter', [VTUServicesController::class, 'validateMeter']);
 
-    Route::post('/airtime/funding', [VTUServicesController::class, 'airtimeFunding']);
-    Route::post('/airtime/topup', [VTUServicesController::class, 'airtimeTopup']);
-    Route::post('/data/purchase', [VTUServicesController::class, 'dataPurchase']);
-    Route::post('/cable', [VTUServicesController::class, 'cableSubscription']);
-    Route::post('/electricity', [VTUServicesController::class, 'electricityPayment']);
+    Route::post('/airtime/funding', [VTUServicesController::class, 'airtimeFunding'])->middleware('auth:sanctum');
+    Route::post('/airtime/topup', [VTUServicesController::class, 'airtimeTopup'])->middleware('auth:sanctum');
+    Route::post('/data/purchase', [VTUServicesController::class, 'dataPurchase'])->middleware('auth:sanctum');
+    Route::post('/cable', [VTUServicesController::class, 'cableSubscription'])->middleware('auth:sanctum');
+    Route::post('/electricity', [VTUServicesController::class, 'electricityPayment'])->middleware('auth:sanctum');
 });
 
 /**
@@ -324,32 +324,32 @@ Route::prefix('vtu')->group(function () {
  */
 Route::prefix('payscribe')->group(function () {
     // Airtime
-    Route::post('/airtime', [PayscribeController::class, 'purchaseAirtime']);
+    Route::post('/airtime', [PayscribeController::class, 'purchaseAirtime'])->middleware('auth:sanctum');
 
     // Data
     Route::get('/data/{network}', [PayscribeController::class, 'dataLookup']);
-    Route::post('/data', [PayscribeController::class, 'purchaseData']);
+    Route::post('/data', [PayscribeController::class, 'purchaseData'])->middleware('auth:sanctum');
 
     // ePins
     Route::get('/epins', [PayscribeController::class, 'availableEPins']);
-    Route::post('/epins', [PayscribeController::class, 'purchasePin']);
+    Route::post('/epins', [PayscribeController::class, 'purchasePin'])->middleware('auth:sanctum');
     Route::post('/epins/jamb', [PayscribeController::class, 'jambUserLookup']);
     Route::get('/epins/{trans_id}', [PayscribeController::class, 'retrieveEPin']);
 
     // Cable
     Route::get('/cable/bouquets/{service}', [PayscribeController::class, 'fetchBouquets']);
     Route::post('/cable/validate', [PayscribeController::class, 'validateSmartCard']);
-    Route::post('/cable/pay', [PayscribeController::class, 'payCableTv']);
-    Route::post('/cable/topup', [PayscribeController::class, 'topUpTv']);
+    Route::post('/cable/pay', [PayscribeController::class, 'payCableTv'])->middleware('auth:sanctum');
+    Route::post('/cable/topup', [PayscribeController::class, 'topUpTv'])->middleware('auth:sanctum');
 
     // Internet
     Route::post('/internet/list', [PayscribeController::class, 'listInternetServices']);
     Route::get('/internet/spectranet/plans', [PayscribeController::class, 'getSpectranetPinPlans']);
-    Route::post('/internet/spectranet/vend', [PayscribeController::class, 'purchaseSpectranetPins']);
+    Route::post('/internet/spectranet/vend', [PayscribeController::class, 'purchaseSpectranetPins'])->middleware('auth:sanctum');
 
     // Electricity
     Route::post('/electricity/validate', [PayscribeController::class, 'validateElectricity']);
-    Route::post('/electricity/pay', [PayscribeController::class, 'electricityPayment']);
+    Route::post('/electricity/pay', [PayscribeController::class, 'electricityPayment'])->middleware('auth:sanctum');
 
     // Requery
     Route::get('/requery/{id}', [PayscribeController::class, 'requeryTransaction']);
