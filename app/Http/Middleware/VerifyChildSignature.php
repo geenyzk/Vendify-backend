@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Class\ChildSync\ChildAuthenticator;
+use App\Classes\ChildSync\ChildAuthenticator;
 use Closure;
 use Illuminate\Http\Request;
 
