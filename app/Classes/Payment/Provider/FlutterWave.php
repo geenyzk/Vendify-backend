@@ -33,7 +33,7 @@ class FlutterWave extends PaymentBase
         try {
             $payloadResponse = $this->formatPayload($payload);
             $response = Http::withHeaders($this->getHeaders())
-                ->post($this->provider->base_url . "/virtual-account-numbers", $payloadResponse);
+                ->post($this->baseUrl() . "/virtual-account-numbers", $payloadResponse);
 
             Log::info("Generating virtual account for {$payload->email}...", [
                 'response' => $response->json()
@@ -57,10 +57,18 @@ class FlutterWave extends PaymentBase
     }
 
 
+    // Same host for every Flutterwave instance — the base URL isn't collected
+    // per-provider (only the credentials are), so it lives here in the class.
+    protected function baseUrl(): string
+    {
+        return 'https://api.flutterwave.com/v3';
+    }
+
     protected function getHeaders(): array
     {
+        // v3 authenticates with the Secret key.
         return [
-            "Authorization" => "Bearer " . $this->provider->api_key
+            "Authorization" => "Bearer " . $this->provider->secret_key,
         ];
     }
 
@@ -108,7 +116,7 @@ class FlutterWave extends PaymentBase
     {
         try {
             $response = Http::withHeaders($this->getHeaders())
-                ->post($this->provider->base_url . '/transfers', [
+                ->post($this->baseUrl() . '/transfers', [
                     'account_bank'    => $payload['account_bank'],
                     'account_number'  => $payload['account_number'],
                     'amount'          => $payload['amount'],
@@ -148,7 +156,7 @@ class FlutterWave extends PaymentBase
     {
         try {
             $response = Http::withHeaders($this->getHeaders())
-                ->get($this->provider->base_url . '/banks/NG');
+                ->get($this->baseUrl() . '/banks/NG');
 
             if ($response->successful()) {
                 $banks = $response->json('data') ?? [];

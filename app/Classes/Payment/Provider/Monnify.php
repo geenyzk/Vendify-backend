@@ -16,6 +16,13 @@ class Monnify extends PaymentBase
     // Ensure providerName is set so creditedAmount() can find the DB row
     protected string $providerName = 'monnify';
 
+    // Same host for every Monnify instance — not collected per-provider.
+    // NB: verify this matches your Monnify environment (live vs sandbox).
+    protected function baseUrl(): string
+    {
+        return 'https://api.monnify.com';
+    }
+
     function connect(): mixed
     {
         return "";
@@ -33,7 +40,7 @@ class Monnify extends PaymentBase
         try {
             $payloadResponse = $this->formatPayload($payload);
             $response = Http::withHeaders($this->getHeaders())
-                ->post($this->provider->base_url . "/virtual-account-numbers", $payloadResponse);
+                ->post($this->baseUrl() . "/virtual-account-numbers", $payloadResponse);
 
             Log::info("Generating virtual account for {$payload->email}...", [
                 'response' => $response->json()
@@ -123,7 +130,7 @@ class Monnify extends PaymentBase
     {
         try {
             $response = Http::withHeaders($this->getHeaders())
-                ->get($this->provider->base_url . '/banks');
+                ->get($this->baseUrl() . '/banks');
 
             if ($response->successful()) {
                 $banks = $response->json('responseBody') ?? [];

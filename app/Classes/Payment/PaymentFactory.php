@@ -28,8 +28,10 @@ class PaymentFactory
     // column, so Monnify's secret lives in `password` (its own convention).
     private const GATEWAY_META = [
         'Flutterwave' => [
-            ['api_key', 'Secret key', true],
-            ['webhook_access', 'Webhook verif-hash', true],
+            ['public_key', 'Public key', false],
+            ['secret_key', 'Secret key', true],
+            ['encryption_key', 'Encryption key', true],
+            ['webhook_access', 'Webhook secret hash', true],
         ],
         'Monnify' => [
             ['api_key', 'API key', false],

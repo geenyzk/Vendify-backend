@@ -17,6 +17,13 @@ class PaymentPoint extends PaymentBase
     // this matching to find the configured provider row.
     protected string $providerName = 'payment point';
 
+    // Same host for every PaymentPoint instance — not collected per-provider.
+    // NB: verify this matches PaymentPoint's current API base.
+    protected function baseUrl(): string
+    {
+        return 'https://api.paymentpoint.co/api/v1';
+    }
+
     public function connect(): mixed
     {
         return '';
@@ -40,7 +47,7 @@ class PaymentPoint extends PaymentBase
     {
         try {
             $payload = $this->formatPayload($user);
-            $url = $this->provider->base_url . "/createVirtualAccount";
+            $url = $this->baseUrl() . "/createVirtualAccount";
             $response = Http::withHeaders($this->getHeaders())->post($url, $payload);
 
             Log::info("PaymentPoint: Creating virtual account for {$user->email}", [
