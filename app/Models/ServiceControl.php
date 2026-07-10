@@ -11,9 +11,10 @@ class ServiceControl extends Model
     /** @use HasFactory<\Database\Factories\ServiceControlFactory> */
     use HasFactory;
 
-    protected $fillable = ["isActive"];
+    protected $fillable = ["name", "category", "sub_category", "isActive", "isDevLock"];
     protected $casts = [
-        "isActive" => "boolean"
+        "isActive" => "boolean",
+        "isDevLock" => "boolean",
     ];
 
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\HttpResponse;
+use App\Models\Provider;
 use App\Models\ServiceControl;
 use Illuminate\Http\Request;
 
@@ -49,7 +50,28 @@ class ServiceControlController extends Controller
 
     public function index()
     {
-        //
+        // Keep the payment-gateway controls in sync with the actual configured
+        // gateways (providers, category=payment) so the admin toggles
+        // availability here instead of hand-seeding service_controls rows — a
+        // newly added gateway shows up automatically (off by default) with no
+        // DB surgery. The name must match the provider's exactly, since
+        // Provider::scopeGetPaymentProviders gates Payment::generateAccount on
+        // service_controls.name being active.
+        foreach (Provider::where('category', 'payment')->get(['id', 'name']) as $gateway) {
+            $name = trim((string) $gateway->name);
+            if ($name === '') {
+                continue;
+            }
+            ServiceControl::firstOrCreate(
+                [
+                    'category' => 'transaction',
+                    'sub_category' => 'payment gateway',
+                    'name' => $name,
+                ],
+                ['isActive' => false, 'isDevLock' => false],
+            );
+        }
+
         $services = ServiceControl::where("isDevLock", 0)->orderBy('category')
         ->orderBy('name') // Or 'sub_category'
         ->get()
