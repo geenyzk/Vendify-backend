@@ -8,13 +8,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class WalletWithdrawal extends Model
 {
     protected $fillable = [
-        'user_id', 'amount', 'bank_code', 'bank_name', 'account_number', 'account_name',
+        'user_id', 'amount', 'fee', 'bank_code', 'bank_name', 'account_number', 'account_name',
         'status', 'rejection_reason', 'gateway_reference', 'transaction_reference',
         'reviewed_by', 'reviewed_at',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'fee' => 'decimal:2',
         'reviewed_at' => 'datetime',
     ];
 

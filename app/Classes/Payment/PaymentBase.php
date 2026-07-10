@@ -213,5 +213,36 @@ abstract class PaymentBase implements PaymentInterface
         return $amount;
     }
 
+    /**
+     * The withdrawal fee this gateway charges on a payout of $amount — flat
+     * ("fiat") or a percentage ("percent") of the amount, per its configured
+     * withdrawal_fee/withdrawal_fee_type. 0 when unset.
+     */
+    public function withdrawalFee(float $amount): float
+    {
+        $fee = (float) ($this->provider->withdrawal_fee ?? 0);
+        if ($fee <= 0) {
+            return 0.0;
+        }
+
+        $type = $this->provider->withdrawal_fee_type ?? 'fiat';
+
+        return $type === 'percent'
+            ? round($amount * $fee / 100, 2)
+            : round($fee, 2);
+    }
+
+    /**
+     * The raw withdrawal-fee config, so callers (the banks endpoint) can hand
+     * it to the storefront to preview the fee before a request is submitted.
+     */
+    public function withdrawalFeeConfig(): array
+    {
+        return [
+            'fee' => (float) ($this->provider->withdrawal_fee ?? 0),
+            'type' => $this->provider->withdrawal_fee_type ?? 'fiat',
+        ];
+    }
+
 
 }
