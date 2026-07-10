@@ -36,7 +36,14 @@ class WalletWithdrawalController extends Controller
             return $this->success(['available' => false, 'banks' => []]);
         }
 
-        return $this->success(['available' => true, 'banks' => $gateway->getBanks()]);
+        $feeConfig = $gateway->withdrawalFeeConfig();
+
+        return $this->success([
+            'available' => true,
+            'banks' => $gateway->getBanks(),
+            'withdrawal_fee' => $feeConfig['fee'],
+            'withdrawal_fee_type' => $feeConfig['type'],
+        ]);
     }
 
     /**
@@ -67,14 +74,23 @@ class WalletWithdrawalController extends Controller
             return $this->fail(['pin' => ['Invalid pin']], '', 422);
         }
 
-        if ((float) $user->wallet_balance < (float) $validated['amount']) {
-            return $this->fail([], 'Insufficient wallet balance.', 422);
+        // The payout gateway's withdrawal fee is charged on TOP of the amount
+        // the customer receives, so the wallet is debited amount + fee. The bank
+        // still gets `amount`; the fee is recorded on the request so a later
+        // refund (reject/failed payout) returns amount + fee.
+        $amount = (float) $validated['amount'];
+        $feeGateway = PaymentFactory::makeTransferCapable();
+        $fee = $feeGateway ? $feeGateway->withdrawalFee($amount) : 0.0;
+        $total = $amount + $fee;
+
+        if ((float) $user->wallet_balance < $total) {
+            return $this->fail([], 'Insufficient wallet balance for the amount plus fee.', 422);
         }
 
-        $withdrawal = DB::transaction(function () use ($user, $validated) {
+        $withdrawal = DB::transaction(function () use ($user, $validated, $amount, $fee, $total) {
             $reservation = TransactionService::fundUser(
                 $user,
-                (float) $validated['amount'],
+                $total,
                 'debit',
                 'Wallet withdrawal to ' . $validated['bank_name'] . ' ' . $validated['account_number'],
                 'wallet_withdrawal',
@@ -84,7 +100,8 @@ class WalletWithdrawalController extends Controller
 
             return WalletWithdrawal::create([
                 'user_id' => $user->id,
-                'amount' => $validated['amount'],
+                'amount' => $amount,
+                'fee' => $fee,
                 'bank_code' => $validated['bank_code'],
                 'bank_name' => $validated['bank_name'],
                 'account_number' => $validated['account_number'],
@@ -142,9 +159,10 @@ class WalletWithdrawalController extends Controller
 
         DB::transaction(function () use ($withdrawal, $validated) {
             $user = User::findOrFail($withdrawal->user_id);
+            // Refund the full debit: what they'd have received + the fee charged.
             TransactionService::fundUser(
                 $user,
-                (float) $withdrawal->amount,
+                (float) $withdrawal->amount + (float) $withdrawal->fee,
                 'credit',
                 "Withdrawal rejected: {$validated['reason']}",
                 'wallet_withdrawal',
@@ -220,9 +238,10 @@ class WalletWithdrawalController extends Controller
     {
         DB::transaction(function () use ($withdrawal, $reason) {
             $user = User::findOrFail($withdrawal->user_id);
+            // Refund the full debit: the payout amount plus the fee charged.
             TransactionService::fundUser(
                 $user,
-                (float) $withdrawal->amount,
+                (float) $withdrawal->amount + (float) $withdrawal->fee,
                 'credit',
                 "Withdrawal payout failed, refunded: {$reason}",
                 'wallet_withdrawal',
