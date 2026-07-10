@@ -74,6 +74,10 @@ abstract class VendorBase implements VendorInterface
             $response = $this->sendRequest($service, $formattedPayload) ?? [];
             // Merge API response with original payload to preserve discount/promotion data
             $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response ?? [], $payload));
+            // Record the vendor cost of goods for this sale (formatResponse drops
+            // the plan ids, so compute it here where $payload is still intact) —
+            // profit = amount − cost on the admin dashboard.
+            $formattedResponse['cost'] = $this->resolveCost($service, $payload);
             $transaction = TransactionService::record($formattedResponse, $user, $reservation);
 
             // Outright rejection → give the money straight back. A 'pending'
@@ -128,6 +132,43 @@ abstract class VendorBase implements VendorInterface
             ]);
             return $this->fail([], $e->getMessage(), 500);
         }
+    }
+
+    /**
+     * The vendor cost of goods for this sale, or null when it can't be known.
+     * Data/cable read the plan's cost price off the providerables pivot;
+     * electricity's cost of goods is the token itself ($payload['amount'] is
+     * the pre-fee token the disco charges — the platform's margin is the
+     * service fee added on top). Everything else (airtime, exam, …) has no
+     * tracked cost yet and is left out of the profit figure.
+     */
+    protected function resolveCost(string $service, array $payload): ?float
+    {
+        switch ($service) {
+            case 'data':
+                return self::planCost(\App\Models\DataPlan::class, $payload['data_plan'] ?? null);
+            case 'cable':
+                return self::planCost(\App\Models\CablePlan::class, $payload['cable_plan'] ?? null);
+            case 'electricity':
+                $token = (float) ($payload['amount'] ?? 0);
+                return $token > 0 ? $token : null;
+            default:
+                return null;
+        }
+    }
+
+    private static function planCost(string $modelClass, $planId): ?float
+    {
+        if (!$planId) {
+            return null;
+        }
+
+        $cost = DB::table('providerables')
+            ->where('providerable_id', $planId)
+            ->where('providerable_type', $modelClass)
+            ->value('cost_price');
+
+        return $cost !== null ? (float) $cost : null;
     }
 
     abstract public function sendRequest(string $service, array $payload): array;

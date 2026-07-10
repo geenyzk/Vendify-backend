@@ -90,8 +90,20 @@ class AnalyticsController extends Controller
             ->whereNotIn('transaction_type', self::FUNDING_TYPES)
             ->sum('amount');
 
+        // Profit is measured only over sales that carry a recorded vendor cost
+        // (see VendorBase::resolveCost) — older/untracked sales are excluded
+        // rather than counted as pure margin. profit = tracked revenue − cost.
+        $costBase = (clone $base)->where('status', 'success')
+            ->whereNotIn('transaction_type', self::FUNDING_TYPES)
+            ->whereNotNull('cost');
+        $totalCost = (float) (clone $costBase)->sum('cost');
+        $trackedRevenue = (float) (clone $costBase)->sum('amount');
+        $totalProfit = $trackedRevenue - $totalCost;
+
         return [
             'total_revenue' => (float) $totalRevenue,
+            'total_cost' => $totalCost,
+            'total_profit' => $totalProfit,
             'total_transactions' => $totalTransactions,
             'successful_transactions' => $successCount,
             'failed_transactions' => $failedCount,

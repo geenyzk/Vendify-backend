@@ -12,7 +12,7 @@ class Transaction extends Model
 {
     //
     protected $fillable = [
-        'user_id', 'transaction_type', 'provider', 'account_or_phone', 'amount',
+        'user_id', 'transaction_type', 'provider', 'account_or_phone', 'amount', 'cost',
         'quantity', 'status', 'transaction_reference', 'payment_reference',
         'funding_method', 'balance_before', 'balance_after', 'completed_at',
         'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token',
