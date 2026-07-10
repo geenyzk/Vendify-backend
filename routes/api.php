@@ -258,6 +258,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // user_type:admin at the group level only.
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::get('/analytics', [AnalyticsController::class, 'index']);
+        Route::get('/provider-types', [AdminController::class, 'providerTypes']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
         Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans']);

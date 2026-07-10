@@ -15,6 +15,42 @@ use Illuminate\Support\Facades\Log;
 class VendorFactory
 {
     /**
+     * Single source of truth: which vendor class fulfils each provider "type"
+     * key (matched against sub_category, or name when sub_category="simhost").
+     * make() and availableProviders() both read this so they never drift.
+     */
+    private const REGISTRY = [
+        'adex'     => Adex::class,
+        'spurs'    => Adex::class,
+        'msorg'    => Adex::class,
+        'sme plug' => SMEPlug::class,
+        'vtpass'   => Vtpass::class,
+        'ogdams'   => Ogdams::class,
+        'sandbox'  => SandboxService::class,
+    ];
+
+    // Provider credential columns each integration authenticates with, plus the
+    // label/secret hint the admin form should render for each field.
+    private const CREDENTIAL_FIELDS = [
+        'username'   => ['label' => 'API username', 'secret' => false],
+        'password'   => ['label' => 'API password / secret', 'secret' => true],
+        'api_key'    => ['label' => 'API key', 'secret' => true],
+        'public_key' => ['label' => 'Public key', 'secret' => false],
+    ];
+
+    // Admin-selectable provider types: [label, credential columns, has base_url].
+    // "sandbox" is a global test switch, not a per-provider type, so it's here
+    // in REGISTRY (for make) but deliberately not offered to admins.
+    private const PROVIDER_META = [
+        'adex'     => ['Adex', ['username', 'password'], true],
+        'spurs'    => ['Spurs', ['username', 'password'], true],
+        'msorg'    => ['Msorg', ['username', 'password'], true],
+        'sme plug' => ['SME Plug', ['api_key'], true],
+        'ogdams'   => ['Ogdams', ['api_key'], true],
+        'vtpass'   => ['VTpass', ['api_key', 'public_key'], true],
+    ];
+
+    /**
      * Create a new class instance.
      */
     public function __construct(){}
@@ -22,29 +58,44 @@ class VendorFactory
     static function make (Vendor $provider) {
         $useSandbox = env('USE_SANDBOX', false);
 
-        $match = $useSandbox ? "sandbox":($provider->sub_category === "simhost" ? $provider->name : $provider->sub_category);
+        $match = $useSandbox ? "sandbox" : ($provider->sub_category === "simhost" ? $provider->name : $provider->sub_category);
 
-        // No `default` arm used to mean an unmapped sub_category (a typo, a
-        // new provider added via the admin table with no matching class
-        // yet, or "vtpass" — a fully-built provider class that was simply
-        // never wired in here) threw an UnhandledMatchError straight out of
-        // a real purchase request instead of a clear, catchable error.
-        return match ($match) {
-            "adex"=> new Adex($provider),
-            "sandbox"=> new SandboxService($provider) ,
-            "sme plug"=> new SMEPlug($provider),
-            "spurs"=> new Adex($provider),
-            "msorg"=> new Adex($provider),
-            "vtpass"=> new Vtpass($provider),
-            // Matched either via sub_category="ogdams" directly, or the
-            // sub_category="simhost" + name="ogdams" convention above (the
-            // same one the pre-existing "simhost" special-case was clearly
-            // set up for, just never had a matching arm).
-            "ogdams"=> new Ogdams($provider),
-            default => throw new \InvalidArgumentException(
+        // An unmapped sub_category (a typo, a new provider added via the admin
+        // table with no matching class yet) resolves to null here — throw a
+        // clear, catchable error instead of an UnhandledMatchError straight out
+        // of a real purchase request.
+        $class = self::REGISTRY[$match] ?? null;
+        if (!$class) {
+            throw new \InvalidArgumentException(
                 "No vendor class mapped for sub_category/name [{$match}] (provider #{$provider->id}, {$provider->name})."
-            ),
-        };
+            );
+        }
+
+        return new $class($provider);
+    }
+
+    /**
+     * The provider integrations an admin can configure, each with its label,
+     * whether it takes a base URL, and the exact credential fields it needs —
+     * so the "add provider" form can list every supported type and render the
+     * right credential inputs for the one chosen.
+     */
+    public static function availableProviders(): array
+    {
+        $out = [];
+        foreach (self::PROVIDER_META as $value => [$label, $creds, $hasBaseUrl]) {
+            $out[] = [
+                'value' => $value,
+                'label' => $label,
+                'base_url' => $hasBaseUrl,
+                'credentials' => array_map(fn ($key) => [
+                    'key' => $key,
+                    'label' => self::CREDENTIAL_FIELDS[$key]['label'],
+                    'secret' => self::CREDENTIAL_FIELDS[$key]['secret'],
+                ], $creds),
+            ];
+        }
+        return $out;
     }
 
 

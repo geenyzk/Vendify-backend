@@ -805,6 +805,16 @@ private function syncModelRelations(Model $model, array $item)
     }
 
     /**
+     * The provider integrations the "add provider" form can offer, each with
+     * its credential-field schema — sourced from VendorFactory so the form
+     * always reflects exactly what the code supports.
+     */
+    public function providerTypes()
+    {
+        return $this->success(VendorFactory::availableProviders());
+    }
+
+    /**
      * Pulls a vendor's live plan catalogue and upserts it into local
      * DataPlan rows (see Ogdams::syncPlans()) so purchases never call the
      * vendor's API just to resolve a plan ID. Not every vendor class
