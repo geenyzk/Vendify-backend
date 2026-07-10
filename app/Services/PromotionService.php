@@ -159,15 +159,26 @@ class PromotionService
     {
         $target = $promotion->target;
 
+        // No target / "all" / legacy "both" → everyone is eligible.
+        if (!$target || $target === 'both' || $target === 'all') {
+            return true;
+        }
+
+        // Legacy coarse audiences (kept for pre-existing promos).
         if ($target === 'customer') {
             return $user->user_type === 'customer' || $user->user_type === 'user';
         }
-
         if ($target === 'reseller') {
             return in_array($user->user_type, ['reseller', 'agent', 'admin']);
         }
 
-        return true; // both
+        // Otherwise the target names a specific Role — match by slug or name.
+        $role = $user->role;
+        if (!$role) {
+            return false;
+        }
+
+        return in_array($target, array_filter([$role->slug ?? null, $role->name ?? null]), true);
     }
 
     /**
