@@ -113,6 +113,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::get('/vtu/{service}/discount', [VTUServicesController::class, 'discountPreview']);
+    Route::get('/vtu/{service}/active-discount', [VTUServicesController::class, 'activeDiscount']);
     Route::post('/transactions/report', [TransactionController::class, 'report']);
     Route::get('/search', [SearchController::class, 'userSearch']);
 

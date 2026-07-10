@@ -390,6 +390,25 @@ class VTUServicesController extends Controller
         ]);
     }
 
+    /**
+     * The active discount RULE (type + value) for a service/network, so the
+     * storefront can strike through and discount every listed plan price in a
+     * single call instead of previewing each amount separately. Mirrors
+     * Discount::findApplicable — returns null when nothing is currently live.
+     */
+    public function activeDiscount(Request $request, string $service): JsonResponse
+    {
+        $network = $request->query('network');
+        $discount = Discount::findApplicable($service, $network);
+
+        return $this->success([
+            'discount' => $discount ? [
+                'discount_type' => $discount->discount_type,
+                'value' => (float) $discount->value,
+            ] : null,
+        ]);
+    }
+
     public function plan(Request $request, string $service){
         Log::info($request);
         $servicePlansObject = [
