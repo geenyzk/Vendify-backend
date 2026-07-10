@@ -29,6 +29,12 @@ class ChildSyncFactory
 {
     use HttpResponse;
 
+    // Records committed per DB transaction. A batch is ingested in chunks of
+    // this size rather than one big transaction so a large push makes durable,
+    // resumable progress even if the child's HTTP timeout cuts the request off
+    // mid-way (each committed chunk survives; the rest replays next run).
+    private const CHUNK_SIZE = 25;
+
     public static function webhook(Request $request, ChildInstance $instance): JsonResponse
     {
         return (new self())->ingest($request, $instance);
@@ -53,20 +59,25 @@ class ChildSyncFactory
             return $this->success(['skipped' => true], 'Already processed');
         }
 
-        $count = DB::transaction(function () use ($instance, $resource, $records, $eventId) {
-            $count = $resource === 'customers'
-                ? $this->ingestCustomers($instance, $records)
-                : $this->ingestTransactions($instance, $records);
+        // Ingest in small, independently-committed chunks. Every write is an
+        // idempotent upsert keyed on (child_instance_id, external_id), so a
+        // chunk that a timed-out earlier attempt already committed is simply
+        // re-applied harmlessly on retry — progress is never lost or doubled.
+        $count = 0;
+        foreach (array_chunk($records, self::CHUNK_SIZE) as $chunk) {
+            $count += DB::transaction(fn () => $resource === 'customers'
+                ? $this->ingestCustomers($instance, $chunk)
+                : $this->ingestTransactions($instance, $chunk));
+        }
 
-            ChildSyncEvent::create([
-                'child_instance_id' => $instance->id,
-                'event_id' => $eventId,
-                'resource' => $resource,
-                'record_count' => $count,
-            ]);
-
-            return $count;
-        });
+        // Marker written only once the whole batch is in, so a half-finished
+        // batch replays (cheaply, via the idempotent upserts) next time rather
+        // than being wrongly skipped. firstOrCreate guards the unique
+        // (child_instance_id, event_id) index against a duplicate on replay.
+        ChildSyncEvent::firstOrCreate(
+            ['child_instance_id' => $instance->id, 'event_id' => $eventId],
+            ['resource' => $resource, 'record_count' => $count],
+        );
 
         return $this->success(['ingested' => $count], 'Synced');
     }

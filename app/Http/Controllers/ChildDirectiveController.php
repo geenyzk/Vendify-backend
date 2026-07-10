@@ -29,12 +29,16 @@ class ChildDirectiveController extends Controller
         return $this->success($directives);
     }
 
-    public function ack(Request $request, int $id): JsonResponse
+    public function ack(Request $request, string $id): JsonResponse
     {
         /** @var ChildInstance $instance */
         $instance = $request->attributes->get('childInstance');
 
-        $directive = ChildDirective::where('child_instance_id', $instance->id)->find($id);
+        // Route parameters arrive as strings; on PHP 8.x under the framework's
+        // strict-typed dispatcher a numeric string is NOT coerced to an `int`
+        // parameter — it throws a TypeError (500) before the method body runs.
+        // Accept it as a string and cast for the lookup.
+        $directive = ChildDirective::where('child_instance_id', $instance->id)->find((int) $id);
         if (!$directive) {
             return $this->fail([], 'Directive not found', 404);
         }
