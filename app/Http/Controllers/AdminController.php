@@ -815,6 +815,16 @@ private function syncModelRelations(Model $model, array $item)
     }
 
     /**
+     * The payment gateways the "add gateway" form can offer, each with its
+     * credential-field schema — sourced from PaymentFactory so the form always
+     * reflects exactly which engines the code supports.
+     */
+    public function gatewayTypes()
+    {
+        return $this->success(\App\Classes\Payment\PaymentFactory::availableGateways());
+    }
+
+    /**
      * Pulls a vendor's live plan catalogue and upserts it into local
      * DataPlan rows (see Ogdams::syncPlans()) so purchases never call the
      * vendor's API just to resolve a plan ID. Not every vendor class

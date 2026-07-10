@@ -259,6 +259,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::get('/analytics', [AnalyticsController::class, 'index']);
         Route::get('/provider-types', [AdminController::class, 'providerTypes']);
+        Route::get('/gateway-types', [AdminController::class, 'gatewayTypes']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
         Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans']);
