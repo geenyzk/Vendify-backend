@@ -79,7 +79,7 @@ class WalletTransferController extends Controller
             return $this->fail([], 'No user found with that username, email, or phone number.', 404);
         }
 
-        if (!ServiceControlService::verify($sender->id, $validated['pin'])) {
+        if (!ServiceControlService::verifyTransactionPin($sender->id, $validated['pin'])) {
             return $this->fail(['pin' => ['Invalid pin']], '', 422);
         }
 

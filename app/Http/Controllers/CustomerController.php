@@ -137,7 +137,7 @@ class CustomerController extends Controller
 
         // This moves real money out of the wallet, same as any other
         // purchase — require the transaction PIN like every other spend.
-        if (!ServiceControlService::verify($user->id, $request->input('pin'))) {
+        if (!ServiceControlService::verifyTransactionPin($user->id, $request->input('pin'))) {
             return response()->json(['error' => 'Invalid pin'], 422);
         }
 

@@ -63,7 +63,7 @@ class WalletWithdrawalController extends Controller
 
         $user = Auth::user();
 
-        if (!ServiceControlService::verify($user->id, $validated['pin'])) {
+        if (!ServiceControlService::verifyTransactionPin($user->id, $validated['pin'])) {
             return $this->fail(['pin' => ['Invalid pin']], '', 422);
         }
 

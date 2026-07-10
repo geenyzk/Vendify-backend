@@ -85,27 +85,52 @@ class VTUServicesController extends Controller
 
     public function airtimeFunding(Request $request)
     {
-        return $this->makeRequest('post', 'Airtime_funding/', $request->all());
+        $request->validate(['pin' => 'required|string']);
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
+
+        return $this->makeRequest('post', 'Airtime_funding/', $request->except('pin'));
     }
 
     public function airtimeTopup(Request $request)
     {
-        return $this->makeRequest('post', 'topup/', $request->all());
+        $request->validate(['pin' => 'required|string']);
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
+
+        return $this->makeRequest('post', 'topup/', $request->except('pin'));
     }
 
     public function dataPurchase(Request $request)
     {
-        return $this->makeRequest('post', 'data/', $request->all());
+        $request->validate(['pin' => 'required|string']);
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
+
+        return $this->makeRequest('post', 'data/', $request->except('pin'));
     }
 
     public function cableSubscription(Request $request)
     {
-        return $this->makeRequest('post', 'cablesub/', $request->all());
+        $request->validate(['pin' => 'required|string']);
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
+
+        return $this->makeRequest('post', 'cablesub/', $request->except('pin'));
     }
 
     public function electricityPayment(Request $request)
     {
-        return $this->makeRequest('post', 'billpayment/', $request->all());
+        $request->validate(['pin' => 'required|string']);
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
+
+        return $this->makeRequest('post', 'billpayment/', $request->except('pin'));
     }
 
 
@@ -149,6 +174,10 @@ class VTUServicesController extends Controller
     {
 
         $validated = $request->validated();
+        if ($pinFailure = $this->transactionPinFailure($request)) {
+            return $pinFailure;
+        }
+
         // Amount validation now done in ServiceRequest rules for airtime (min:50, max:5000)
 
         // Data and Cable are both fixed-price catalog items — the vendor
@@ -171,12 +200,6 @@ class VTUServicesController extends Controller
             }
         }
 
-        $isVerifiable = ServiceControlService::verify(Auth::id(),$validated['pin']??'');
-        if (!$isVerifiable) {
-            return $this->fail([
-                "pin" => ["Invalid pin"]
-            ], "", 422);
-        }
         // $validated['tx_ref'] = Transaction::generateTransactionId();
 
         $user = Auth::user();
