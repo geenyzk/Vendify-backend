@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class EmailVerificationNotificationController extends Controller
 {
@@ -15,20 +15,33 @@ class EmailVerificationNotificationController extends Controller
     {
         if ($request->user()->hasVerifiedEmail()) {
             if ($request->wantsJson() || $request->expectsJson()) {
-                error_log("Email already verified");
-                return response()->json(['message' => 'Email already verified'], 200);
+                return response()->json(['message' => 'Email already verified.'], 200);
             }
 
             return redirect()->intended(route('dashboard', absolute: false));
         }
 
-        $request->user()->sendEmailVerificationNotification();
+        try {
+            $request->user()->sendEmailVerificationNotification();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to resend email verification notification', [
+                'user_id' => $request->user()->id,
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+
+            if ($request->wantsJson() || $request->expectsJson()) {
+                return response()->json([
+                    'message' => 'We could not send the email. Please try again.',
+                ], 500);
+            }
+
+            return back()->withErrors(['email' => 'We could not send the email. Please try again.']);
+        }
 
         if ($request->wantsJson() || $request->expectsJson()) {
-            error_log("verification link sent");
-            return response()->json(['message' => 'verification-link-sent'], 200);
+            return response()->json(['message' => 'Verification email sent.'], 200);
         }
-            error_log("verification link sent 2");
 
         return back()->with('status', 'verification-link-sent');
     }

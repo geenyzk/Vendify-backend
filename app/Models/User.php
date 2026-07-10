@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Carbon\Carbon;
 use App\Models\Transaction;
+use App\Notifications\VendifyResetPasswordNotification;
+use App\Notifications\VendifyVerifyEmailNotification;
 use App\Traits\HasRole;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -53,6 +55,16 @@ class User extends Authenticatable implements MustVerifyEmail
                 $user->referral_code = self::generateUniqueReferralCode();
             }
         });
+    }
+
+    public function sendEmailVerificationNotification(): void
+    {
+        $this->notify(new VendifyVerifyEmailNotification());
+    }
+
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new VendifyResetPasswordNotification($token));
     }
 
     public static function generateUniqueReferralCode(): string

@@ -77,7 +77,7 @@ class AppServiceProvider extends ServiceProvider
                 Config::set('mail.mailers.smtp.password', $settings->mail_password);
             }
             if ($settings->mail_encryption) {
-                Config::set('mail.mailers.smtp.encryption', $settings->mail_encryption);
+                Config::set('mail.mailers.smtp.scheme', $settings->mail_encryption === 'none' ? null : $settings->mail_encryption);
             }
             if ($settings->mail_from_address) {
                 Config::set('mail.from.address', $settings->mail_from_address);

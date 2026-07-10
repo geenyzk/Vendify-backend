@@ -9,7 +9,6 @@ use App\Classes\TransactionService;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Models\User;
-use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -158,11 +157,11 @@ class RegisteredUserController extends Controller
             // and is logged in at this point regardless of whether the
             // verification email goes out.
             try {
-                event(new Registered($user));
                 $user->sendEmailVerificationNotification();
             } catch (\Throwable $e) {
                 Log::warning('Failed to send email verification notification', [
                     'user_id' => $user->id,
+                    'exception' => $e::class,
                     'error' => $e->getMessage(),
                 ]);
             }

@@ -66,11 +66,14 @@ class PasswordResetLinkController extends Controller
             Password::sendResetLink($request->only('email'));
         } catch (\Throwable $e) {
             Log::warning('Failed to send password reset link', [
-                'email' => $request->input('email'),
+                'email_hash' => hash('sha256', strtolower((string) $request->input('email'))),
+                'exception' => $e::class,
                 'error' => $e->getMessage(),
             ]);
+
+            return $this->fail([], 'We could not send the email. Please try again.', 500);
         }
 
-        return $this->success(null, 'If an account exists for that email, a reset link has been sent.');
+        return $this->success(null, 'Password reset link sent.');
     }
 }

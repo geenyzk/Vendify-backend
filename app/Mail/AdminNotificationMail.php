@@ -17,7 +17,13 @@ class AdminNotificationMail extends Mailable
     public function build()
     {
         return $this->subject($this->subjectLine)
-            ->view('emails.admin-notification')
-            ->with(['body' => $this->bodyText]);
+            ->view('emails.base')
+            ->with([
+                'preheader' => $this->subjectLine,
+                'heading' => $this->subjectLine,
+                'intro' => 'A Vendify admin notification needs your attention.',
+                'body' => $this->bodyText,
+                'footerNote' => 'Automated admin notification from Vendify.',
+            ]);
     }
 }
