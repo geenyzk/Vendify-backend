@@ -13,7 +13,9 @@ class CashbackRateSeeder extends Seeder
      */
     public function run(): void
     {
-        foreach (['airtime_recharge', 'data_subscription', 'cable_subscription', 'electricity_bill'] as $type) {
+        // NB: "electric_bill" (matches Transaction::transaction_type), not
+        // "electricity_bill" — the latter never matched creditCashback's lookup.
+        foreach (['airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill'] as $type) {
             CashbackRate::firstOrCreate(['service_type' => $type], ['percentage' => 0, 'active' => true]);
         }
     }
