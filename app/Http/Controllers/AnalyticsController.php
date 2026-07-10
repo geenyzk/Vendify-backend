@@ -100,10 +100,17 @@ class AnalyticsController extends Controller
         $trackedRevenue = (float) (clone $costBase)->sum('amount');
         $totalProfit = $trackedRevenue - $totalCost;
 
+        // Data volume sold, in GB — quantity is recorded from the plan size at
+        // purchase (see VendorBase::resolveDataGb).
+        $dataGb = (float) (clone $base)->where('status', 'success')
+            ->where('transaction_type', 'data_subscription')
+            ->sum('quantity');
+
         return [
             'total_revenue' => (float) $totalRevenue,
             'total_cost' => $totalCost,
             'total_profit' => $totalProfit,
+            'data_gb' => round($dataGb, 2),
             'total_transactions' => $totalTransactions,
             'successful_transactions' => $successCount,
             'failed_transactions' => $failedCount,

@@ -78,6 +78,15 @@ abstract class VendorBase implements VendorInterface
             // the plan ids, so compute it here where $payload is still intact) —
             // profit = amount − cost on the admin dashboard.
             $formattedResponse['cost'] = $this->resolveCost($service, $payload);
+            // For data, record the plan's volume in GB as the quantity so the
+            // dashboard can report data sold in GB reliably (the vendor reply's
+            // own quantity is frequently missing).
+            if ($service === 'data') {
+                $gb = $this->resolveDataGb($payload);
+                if ($gb !== null) {
+                    $formattedResponse['quantity'] = $gb;
+                }
+            }
             $transaction = TransactionService::record($formattedResponse, $user, $reservation);
 
             // Outright rejection → give the money straight back. A 'pending'
@@ -169,6 +178,27 @@ abstract class VendorBase implements VendorInterface
             ->value('cost_price');
 
         return $cost !== null ? (float) $cost : null;
+    }
+
+    /**
+     * The data plan's volume in GB, parsed from its advertised size (e.g.
+     * "500MB" → 0.488, "2GB" → 2.0), or null when it can't be determined.
+     */
+    protected function resolveDataGb(array $payload): ?float
+    {
+        $planId = $payload['data_plan'] ?? null;
+        if (!$planId) {
+            return null;
+        }
+
+        $plan = \App\Models\DataPlan::find($planId);
+        if (!$plan) {
+            return null;
+        }
+
+        $gb = $this->convertDataPlanToGB((string) $plan->plan);
+
+        return $gb > 0 ? $gb : null;
     }
 
     abstract public function sendRequest(string $service, array $payload): array;
