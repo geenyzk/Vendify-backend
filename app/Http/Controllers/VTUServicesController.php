@@ -324,7 +324,9 @@ class VTUServicesController extends Controller
                 ?? $validated['disco']
                 ?? $serviceType;
 
-            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType, $validated['network'] ?? null, $validated['data_plan'] ?? null, $routeKey);
+            // $originalAmount (not final_amount) is the value actually vended,
+            // which is what SIM-stock eligibility must be measured against.
+            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType, $validated['network'] ?? null, $validated['data_plan'] ?? null, $routeKey, (float) $originalAmount);
 
             if (!$handler) {
                 return response()->json([

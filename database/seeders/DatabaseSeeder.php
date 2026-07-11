@@ -38,6 +38,9 @@ class DatabaseSeeder extends Seeder
             // Promotions used by frontend promotions UI
             PromotionSeeder::class,
             CashbackRateSeeder::class,
+            // SIM vending vendor row + default airtime/data routing —
+            // must run after the plan/network seeders it enumerates.
+            SimVendingSeeder::class,
         ]);
     }
 }

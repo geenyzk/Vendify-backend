@@ -288,7 +288,18 @@ abstract class VendorBase implements VendorInterface
 }
 
     public function webhook(Request $request):void{
-        $callback = $this->callback($request);
+        $this->settleCallback($this->callback($request));
+    }
+
+    /**
+     * Settle a pending transaction from a provider-shaped callback array
+     * (['status' => success|fail, 'tx_ref' => ..., ...]). Split out of
+     * webhook() so non-HTTP completion paths — the SIM-vend job ack and
+     * expiry sweeper — reuse the exact same locking, refund and reward
+     * semantics without fabricating a Request.
+     */
+    public function settleCallback(array $callback): void
+    {
         $ref = $callback['tx_ref'] ?? null;
 
         if (!$ref) {

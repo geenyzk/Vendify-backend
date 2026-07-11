@@ -2,6 +2,7 @@
 
 namespace App\Classes\VTUServices;
 
+use App\Classes\Vendor\Providers\SimVending;
 use App\Classes\Vendor\VendorFactory;
 use App\Models\AirtimePlan;
 use App\Models\DataPlan;
@@ -11,8 +12,8 @@ use Illuminate\Support\Facades\Log;
 
 class VTUServiceFactory
 {
-    static function make ($service='', $sub="", $network=null, $planId=null, $routeKey=null) {
-        $provider = self::resolveProvider($service, $sub, $network, $planId, $routeKey);
+    static function make ($service='', $sub="", $network=null, $planId=null, $routeKey=null, ?float $amount=null) {
+        $provider = self::resolveProvider($service, $sub, $network, $planId, $routeKey, $amount);
 
         if (!$provider) {
             // Return null rather than handing a null into VendorFactory::make()
@@ -46,11 +47,17 @@ class VTUServiceFactory
      * network/category to a chosen vendor. When no plan-specific provider is
      * set — and for every other service — it falls back to the Stock Vending
      * assignment keyed by category/plan type (the pre-existing behaviour).
+     *
+     * Every layer passes through usable(): when a layer resolves the SIM
+     * Vending vendor but no physical SIM can actually fulfil the vend right
+     * now, that layer yields null and resolution falls through to the next —
+     * the auto-failover that keeps purchases flowing to API providers while
+     * devices are offline or SIM stock is depleted.
      */
-    private static function resolveProvider($service, $sub, $network, $planId = null, $routeKey = null): ?Vendor
+    private static function resolveProvider($service, $sub, $network, $planId = null, $routeKey = null, ?float $amount = null): ?Vendor
     {
         if ($service === 'airtime' && $network) {
-            $vendor = self::airtimePlanVendor($network, $sub);
+            $vendor = self::usable(self::airtimePlanVendor($network, $sub), $service, $network, $planId, $amount);
             if ($vendor) {
                 return $vendor;
             }
@@ -61,7 +68,7 @@ class VTUServiceFactory
         // stored on the providerables pivot). Only when the plan has none do we
         // fall back to the routing rules below.
         if ($service === 'data' && $planId) {
-            $vendor = DataPlan::find($planId)?->resolveVendor();
+            $vendor = self::usable(DataPlan::find($planId)?->resolveVendor(), $service, $network, $planId, $amount);
             if ($vendor) {
                 return $vendor;
             }
@@ -73,12 +80,33 @@ class VTUServiceFactory
         // singletons. Data is stored, not columns, so new categories are
         // routable with no migration. Unset keys fall through to the legacy
         // Stock Vending assignment so existing behaviour is preserved.
-        $vendor = ServiceRoute::resolveVendor($service, $routeKey ?? $sub);
+        $vendor = self::usable(ServiceRoute::resolveVendor($service, $routeKey ?? $sub), $service, $network, $planId, $amount);
         if ($vendor) {
             return $vendor;
         }
 
-        return Vendor::provider($sub ?? $service)->first();
+        return self::usable(Vendor::provider($sub ?? $service)->first(), $service, $network, $planId, $amount);
+    }
+
+    /**
+     * A resolved vendor, unless it is the SIM Vending vendor and no eligible
+     * SIM can serve this vend right now — then null, so the caller's
+     * precedence chain continues to the next layer. Runs before any funds
+     * are reserved, so an ineligible SIM route costs the customer nothing.
+     */
+    private static function usable(?Vendor $vendor, string $service, ?string $network, $planId, ?float $amount): ?Vendor
+    {
+        if ($vendor
+            && $vendor->sub_category === 'simvend'
+            && !SimVending::canServe($service, $network, $amount, $planId)) {
+            Log::info('SimVending cannot serve this vend — falling through to next provider layer', [
+                'service' => $service,
+                'network' => $network,
+            ]);
+            return null;
+        }
+
+        return $vendor;
     }
 
     /**

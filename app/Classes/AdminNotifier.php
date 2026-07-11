@@ -6,6 +6,8 @@ use App\Mail\AdminNotificationMail;
 use App\Models\AirtimeToCashRequest;
 use App\Models\General;
 use App\Models\Setting;
+use App\Models\Sim;
+use App\Models\SimVendJob;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WalletWithdrawal;
@@ -159,5 +161,50 @@ class AdminNotifier
             self::send('New wallet withdrawal request', $body);
         }
         self::notifyAdminUsers('admin_pending_wallet_withdrawal', 'New wallet withdrawal request', $body, 'wallets');
+    }
+
+    /**
+     * A vending SIM's reported stock dropped below its threshold — routing
+     * is (or is about to start) skipping it, so it needs a physical top-up.
+     * Rate-limited by the caller (SimDeviceController::maybeAlertLowBalance).
+     */
+    public static function notifySimLowBalance(Sim $sim): void
+    {
+        $body = "SIM #{$sim->id} ({$sim->network}, slot {$sim->slot_index}, device #{$sim->sim_device_id}) is low on stock: "
+            . "airtime ₦{$sim->airtime_balance}, data {$sim->data_balance_mb}MB. Top it up so SIM vending keeps serving {$sim->network}.";
+
+        self::send('SIM vending: low SIM balance', $body);
+        self::notifyAdminUsers('admin_sim_low_balance', 'SIM vending: low SIM balance', $body);
+    }
+
+    /**
+     * A claimed vend job's lease expired without an ack, so the customer was
+     * refunded — but the device may have delivered the value before dying.
+     * Someone must reconcile against the SIM's transfer history.
+     */
+    public static function notifySimJobExpired(SimVendJob $job): void
+    {
+        $body = "SIM vend job #{$job->id} ({$job->service} ₦{$job->amount} to {$job->phone}, ref {$job->transaction_reference}) "
+            . "expired without an ack from device #{$job->sim_device_id}. The customer was refunded — check the SIM's transfer "
+            . "history to confirm nothing was actually delivered.";
+
+        self::send('SIM vending: job expired, refunded', $body);
+        self::notifyAdminUsers('admin_sim_job_expired', 'SIM vending: job expired, refunded', $body);
+    }
+
+    /**
+     * A device acked "executed" on a job that had already been settled as
+     * failed (customer refunded). Value likely left the SIM AND the wallet
+     * was refunded — manual reconciliation required. No money is ever moved
+     * automatically for this case.
+     */
+    public static function notifySimVendDiscrepancy(SimVendJob $job): void
+    {
+        $body = "Device #{$job->sim_device_id} reported job #{$job->id} (ref {$job->transaction_reference}, "
+            . "{$job->service} ₦{$job->amount} to {$job->phone}) as DELIVERED after it was already refunded. "
+            . "Reconcile manually — the customer may have received both the value and the refund.";
+
+        self::send('SIM vending: delivery/refund discrepancy', $body);
+        self::notifyAdminUsers('admin_sim_vend_discrepancy', 'SIM vending: delivery/refund discrepancy', $body);
     }
 }

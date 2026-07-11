@@ -43,6 +43,10 @@ use App\Http\Controllers\ChildDirectiveController;
 use App\Http\Controllers\ChildRegistrationController;
 use App\Http\Controllers\ChildTunnelController;
 use App\Http\Controllers\ResetWebsiteController;
+use App\Http\Controllers\SimDeviceAdminController;
+use App\Http\Controllers\SimDeviceController;
+use App\Http\Controllers\SimDeviceRegistrationController;
+use App\Http\Controllers\SimJobController;
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
@@ -72,6 +76,19 @@ Route::prefix('child')->middleware('verify.child.hmac')->group(function () {
 // Trust is bootstrapped by the one-time registration_code itself (see
 // AdminController::generateChildRegistrationCode / ChildRegistrationController).
 Route::post('/child/register', [ChildRegistrationController::class, 'register']);
+
+// SIM vending device channel — Android agents hosting the platform's own
+// SIMs heartbeat their stock, claim queued vend jobs, and ack outcomes.
+// Same HMAC scheme as the child channel (see SIM_VENDING_PROTOCOL.md).
+Route::prefix('sim')->middleware('verify.sim.hmac')->group(function () {
+    Route::post('/{slug}/heartbeat', [SimDeviceController::class, 'heartbeat']);
+    Route::post('/{slug}/jobs/claim', [SimJobController::class, 'claim']);
+    Route::post('/{slug}/jobs/{id}/ack', [SimJobController::class, 'ack']);
+});
+
+// Not HMAC-protected — trust bootstrapped by the one-time registration
+// code, exactly like /child/register above.
+Route::post('/sim/register', [SimDeviceRegistrationController::class, 'register']);
 
 // Route tunneling — this app doubles as an adex-protocol provider so a
 // reroute_provider directive can point a child's provider slot HERE and the
@@ -261,6 +278,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
         Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
         Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);
+
+        // SIM vending fleet — its own admin section, deliberately separate
+        // from external-provider ("APIs") management: these are the
+        // platform's own SIMs/agent phones, not a configurable vendor.
+        // Owner-level surface like child-instances (no permission slug).
+        Route::get('/sim-vending/overview', [SimDeviceAdminController::class, 'overview']);
+        Route::post('/sim-vending/devices/generate-code', [SimDeviceAdminController::class, 'generateCode']);
+        Route::post('/sim-vending/devices/{id}/regenerate-secret', [SimDeviceAdminController::class, 'regenerateSecret']);
+        Route::put('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'updateDevice']);
+        Route::delete('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'deleteDevice']);
+        Route::put('/sim-vending/devices/{id}/sims/{simId}', [SimDeviceAdminController::class, 'updateSim']);
 
         Route::post('/reset-website', [ResetWebsiteController::class, 'reset']);
 

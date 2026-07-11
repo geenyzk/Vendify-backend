@@ -5,6 +5,7 @@ namespace App\Classes\Vendor;
 use App\Classes\Vendor\Providers\Adex;
 use App\Classes\Vendor\Providers\Ogdams;
 use App\Classes\Vendor\Providers\SandboxService;
+use App\Classes\Vendor\Providers\SimVending;
 use App\Classes\Vendor\Providers\SMEPlug;
 use App\Classes\Vendor\Providers\Vtpass;
 use App\Models\Vendor;
@@ -27,6 +28,12 @@ class VendorFactory
         'vtpass'   => Vtpass::class,
         'ogdams'   => Ogdams::class,
         'sandbox'  => SandboxService::class,
+        // Deliberately absent from PROVIDER_META: SIM vending is the
+        // platform's own fleet, managed under its dedicated admin surface
+        // (/admin/sim-vending), never through the "add provider" form. Its
+        // single Vendor row is created by SimVendingSeeder so the routing
+        // pipeline can target it.
+        'simvend'  => SimVending::class,
     ];
 
     // Provider credential columns each integration authenticates with, plus the

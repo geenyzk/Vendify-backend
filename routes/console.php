@@ -38,6 +38,16 @@ Schedule::command('vendors:sync-plans')
         \Illuminate\Support\Facades\Log::error('vendors:sync-plans scheduled run failed.');
     });
 
+// Refunds SIM vend jobs whose device lease or pending TTL lapsed without an
+// ack — the customer-facing safety net for the SIM vending channel (see
+// ExpireSimVendJobs for why expired leases are never re-dispatched).
+Schedule::command('sim:expire-jobs')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('sim:expire-jobs scheduled run failed.');
+    });
+
 // Sends any admin broadcast scheduled for "later" once its time is due —
 // see BroadcastController::send()'s sendNow=false path.
 Schedule::command('broadcasts:send-scheduled')
