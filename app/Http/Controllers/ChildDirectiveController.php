@@ -29,7 +29,13 @@ class ChildDirectiveController extends Controller
         return $this->success($directives);
     }
 
-    public function ack(Request $request, string $id): JsonResponse
+    // Both route params ({slug}, {id}) must be declared IN ORDER — Laravel
+    // passes route parameters to controller methods positionally, so a
+    // signature of just (Request, string $id) silently receives the SLUG in
+    // $id, (int)-casts it to 0, and 404s every ack. That left every directive
+    // eternally 'pending' on the parent (and re-executed by the child each
+    // poll, since the child treats an ack 404 as success).
+    public function ack(Request $request, string $slug, string $id): JsonResponse
     {
         /** @var ChildInstance $instance */
         $instance = $request->attributes->get('childInstance');
