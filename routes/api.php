@@ -40,6 +40,7 @@ use App\Http\Controllers\ChildCustomerContactController;
 use App\Http\Controllers\ChildCustomerMigrationController;
 use App\Http\Controllers\ChildDirectiveController;
 use App\Http\Controllers\ChildRegistrationController;
+use App\Http\Controllers\ChildTunnelController;
 use App\Http\Controllers\ResetWebsiteController;
 
 // Public — read before login (landing page, auth screens) so they can show
@@ -69,6 +70,15 @@ Route::prefix('child')->middleware('verify.child.hmac')->group(function () {
 // Trust is bootstrapped by the one-time registration_code itself (see
 // AdminController::generateChildRegistrationCode / ChildRegistrationController).
 Route::post('/child/register', [ChildRegistrationController::class, 'register']);
+
+// Route tunneling — this app doubles as an adex-protocol provider so a
+// reroute_provider directive can point a child's provider slot HERE and the
+// parent performs the child's transactions (see ChildTunnelController).
+// Paths must match what the child's ApiSending::AdexApi client calls; POST
+// /user does not collide with the sanctum GET /user above.
+Route::post('/user', [ChildTunnelController::class, 'authenticate']);
+Route::post('/data', [ChildTunnelController::class, 'data']);
+Route::post('/topup', [ChildTunnelController::class, 'topup']);
 
 // Universal Table API reads: any logged-in user (the customer dashboard's
 // service-availability widget reads /table/networks as a non-admin).
@@ -245,6 +255,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/child-instances/{id}/regenerate-secret', [AdminController::class, 'regenerateChildInstanceSecret']);
         Route::post('/child-instances/generate-code', [AdminController::class, 'generateChildRegistrationCode']);
         Route::post('/child-instances/{id}/directives', [AdminController::class, 'createChildDirective']);
+        Route::delete('/child-instances/{id}/directives/{directiveId}', [AdminController::class, 'deleteChildDirective']);
         Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
         Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
         Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);

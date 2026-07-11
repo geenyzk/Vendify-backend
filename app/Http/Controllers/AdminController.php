@@ -944,4 +944,34 @@ private function syncModelRelations(Model $model, array $item)
         return $this->success($directive, 'Directive queued');
     }
 
+    // Retract (while still pending — the child never sees it) or delete
+    // (already acked — history cleanup) a directive. Both route params are
+    // declared in order: Laravel binds controller params POSITIONALLY, so a
+    // signature missing $id would silently receive the instance id in
+    // $directiveId (the exact bug that once broke every directive ack).
+    function deleteChildDirective(Request $request, string $id, string $directiveId)
+    {
+        $instance = \App\Models\ChildInstance::find($id);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+
+        $directive = \App\Models\ChildDirective::where('child_instance_id', $instance->id)
+            ->find((int) $directiveId);
+        if (!$directive) {
+            return $this->fail([], 'Directive not found', 404);
+        }
+
+        $wasPending = $directive->status === 'pending';
+        $directive->delete();
+
+        // A pending directive vanishes from the pull feed, so deleting it IS
+        // the retraction; if the child fetched it in this same poll window,
+        // its ack simply 404s (which the child treats as done).
+        return $this->success(
+            ['retracted' => $wasPending],
+            $wasPending ? 'Directive retracted before delivery' : 'Directive deleted'
+        );
+    }
+
 }

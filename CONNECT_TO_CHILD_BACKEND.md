@@ -86,6 +86,20 @@ The parent exposes these routes for the sync channel:
 - `POST /api/child/{slug}/directives/{id}/ack`
 - `POST /api/webhook/child/{slug}`
 
+The ack accepts an optional signed JSON body reporting the execution
+outcome, which the admin UI shows per directive:
+
+```json
+{ "result": "executed" | "failed" | "skipped", "note": "human-readable detail" }
+```
+
+An empty ack body is still accepted (legacy children) and is recorded as
+`delivered` — acknowledged, outcome unknown. Directive types the child
+executes: `redirect_user` (one customer, matched by `external_id`),
+`redirect_all_users`, `update_settings` (allowlisted flags), `reroute_provider`
+(web_api slot URLs), and `message` (logged). Anything else is acked as
+`skipped` so it never shows as applied when it wasn't.
+
 ## 6. Test the sync flow
 
 From the child app, you can test the connection without sending real data:
