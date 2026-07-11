@@ -43,7 +43,26 @@ class ChildDirectiveController extends Controller
             return $this->fail([], 'Directive not found', 404);
         }
 
-        $directive->update(['status' => 'delivered', 'delivered_at' => now()]);
+        // Phase 2 children report the real outcome in the (signed) ack body:
+        // {"result": "executed"|"failed"|"skipped", "note": "..."}. A legacy
+        // child acks with an empty body — keep recording that as 'delivered'
+        // (fetched and acted on, outcome unknown). getContent() is used
+        // (not $request->input()) because HMAC verification already pinned
+        // these exact bytes.
+        $body = json_decode($request->getContent(), true);
+        $result = is_array($body) && in_array($body['result'] ?? null, ['executed', 'failed', 'skipped'], true)
+            ? $body['result']
+            : 'delivered';
+        $note = is_array($body) && isset($body['note']) && $body['note'] !== null
+            ? mb_substr((string) $body['note'], 0, 1000)
+            : null;
+
+        $directive->update([
+            'status' => $result,
+            'delivered_at' => now(),
+            'executed_at' => $result === 'executed' ? now() : null,
+            'result_note' => $note,
+        ]);
 
         return $this->success(null, 'Acknowledged');
     }

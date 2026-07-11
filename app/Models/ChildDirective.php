@@ -13,11 +13,14 @@ class ChildDirective extends Model
         'payload',
         'status',
         'delivered_at',
+        'executed_at',
+        'result_note',
     ];
 
     protected $casts = [
         'payload' => 'array',
         'delivered_at' => 'datetime',
+        'executed_at' => 'datetime',
     ];
 
     public function childInstance(): BelongsTo
