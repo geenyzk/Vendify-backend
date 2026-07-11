@@ -46,6 +46,12 @@ class Vendor extends Model
                 $vendor->category = 'vendor';
             }
         });
+
+        static::saving(function (Vendor $vendor) {
+            if ($vendor->sub_category === 'ogdams') {
+                $vendor->sub_category = 'simhost';
+            }
+        });
     }
 
     public function newQuery()
@@ -190,4 +196,3 @@ class Vendor extends Model
             ->withTimestamps();
     }
 }
-

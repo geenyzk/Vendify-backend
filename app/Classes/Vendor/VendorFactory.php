@@ -46,7 +46,7 @@ class VendorFactory
         'spurs'    => ['Spurs', ['username', 'password'], true],
         'msorg'    => ['Msorg', ['username', 'password'], true],
         'sme plug' => ['SME Plug', ['api_key'], true],
-        'ogdams'   => ['Ogdams', ['api_key'], true],
+        'simhost'  => ['ogdams', ['api_key'], true],
         'vtpass'   => ['VTpass', ['api_key', 'public_key'], true],
     ];
 
@@ -58,7 +58,7 @@ class VendorFactory
     static function make (Vendor $provider) {
         $useSandbox = env('USE_SANDBOX', false);
 
-        $match = $useSandbox ? "sandbox" : ($provider->sub_category === "simhost" ? $provider->name : $provider->sub_category);
+        $match = $useSandbox ? "sandbox" : ($provider->sub_category === "simhost" ? self::normalizeProviderName((string) $provider->name) : $provider->sub_category);
 
         // An unmapped sub_category (a typo, a new provider added via the admin
         // table with no matching class yet) resolves to null here — throw a
@@ -96,6 +96,16 @@ class VendorFactory
             ];
         }
         return $out;
+    }
+
+    private static function normalizeProviderName(string $name): string
+    {
+        $normalized = strtolower(trim($name));
+
+        return match (str_replace([' ', '_', '-'], '', $normalized)) {
+            'ogdams' => 'ogdams',
+            default => $normalized,
+        };
     }
 
 
