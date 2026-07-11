@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\WebhookController;
+use App\Http\Controllers\OgdamsWebhookController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\PayscribeController;
 use App\Http\Controllers\TransactionController;
@@ -55,6 +56,7 @@ Route::post("/forgot-password", [PasswordResetLinkController::class, 'apiStore']
 Route::post("/reset-password", [NewPasswordController::class, 'apiStore'])
     ->middleware('throttle:6,1');
 Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
+Route::get('/webhooks/ogdams', OgdamsWebhookController::class);
 
 // Pull/ack half of the parent<->child channel — the child polls these on
 // its own cron cadence (see child_backend's ParentSyncPullDirectives).
