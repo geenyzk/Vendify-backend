@@ -44,6 +44,10 @@ class SimDeviceAdminController extends Controller
                 'data_balance_mb' => $s->data_balance_mb,
                 'airtime_low_threshold' => $s->airtime_low_threshold,
                 'data_low_threshold_mb' => $s->data_low_threshold_mb,
+                // Never the PIN itself — the UI only needs to know whether
+                // one is configured (vends fail without it).
+                'has_pin' => (bool) $s->transfer_pin,
+                'balance_ussd' => $s->balance_ussd,
                 'enabled' => $s->enabled,
                 'balance_reported_at' => $s->balance_reported_at,
                 'low' => ($s->supports_airtime && $s->airtime_balance < $s->airtime_low_threshold)
@@ -159,6 +163,39 @@ class SimDeviceAdminController extends Controller
     }
 
     /**
+     * Admin-defined SIM: the vend config (network, transfer PIN, balance
+     * USSD) lives HERE in the database, not in the hub's local files — the
+     * hub pulls it via GET /api/sim/{slug}/config. Devices may also
+     * auto-create sims via registration/heartbeat; this endpoint is for
+     * defining them up front or adding one to a live device.
+     */
+    public function createSim(Request $request, string $id): JsonResponse
+    {
+        $device = SimDevice::find($id);
+        if (!$device) {
+            return $this->fail([], 'Device not found', 404);
+        }
+
+        $validated = $request->validate([
+            'slot_index' => 'required|integer|min:0|max:255',
+            'network' => 'required|string|max:50',
+            'phone_number' => 'nullable|string|max:30',
+            'transfer_pin' => 'nullable|string|max:20',
+            'balance_ussd' => 'nullable|string|max:30',
+            'supports_airtime' => 'sometimes|boolean',
+            'supports_data' => 'sometimes|boolean',
+        ]);
+        $validated['network'] = strtolower(trim($validated['network']));
+
+        $sim = $device->sims()->updateOrCreate(
+            ['slot_index' => $validated['slot_index']],
+            $validated,
+        );
+
+        return $this->success($sim, 'SIM saved');
+    }
+
+    /**
      * Both route params declared in order — Laravel binds POSITIONALLY, so a
      * signature missing $id would hand the device id in as $simId (the bug
      * that once broke every child directive ack).
@@ -177,6 +214,8 @@ class SimDeviceAdminController extends Controller
             'supports_data' => 'sometimes|boolean',
             'airtime_low_threshold' => 'sometimes|numeric|min:0',
             'data_low_threshold_mb' => 'sometimes|numeric|min:0',
+            'transfer_pin' => 'sometimes|nullable|string|max:20',
+            'balance_ussd' => 'sometimes|nullable|string|max:30',
             'enabled' => 'sometimes|boolean',
             'notes' => 'sometimes|nullable|string|max:255',
         ]);

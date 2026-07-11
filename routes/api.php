@@ -81,6 +81,7 @@ Route::post('/child/register', [ChildRegistrationController::class, 'register'])
 // SIMs heartbeat their stock, claim queued vend jobs, and ack outcomes.
 // Same HMAC scheme as the child channel (see SIM_VENDING_PROTOCOL.md).
 Route::prefix('sim')->middleware('verify.sim.hmac')->group(function () {
+    Route::get('/{slug}/config', [SimDeviceController::class, 'config']);
     Route::post('/{slug}/heartbeat', [SimDeviceController::class, 'heartbeat']);
     Route::post('/{slug}/jobs/claim', [SimJobController::class, 'claim']);
     Route::post('/{slug}/jobs/{id}/ack', [SimJobController::class, 'ack']);
@@ -288,6 +289,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/sim-vending/devices/{id}/regenerate-secret', [SimDeviceAdminController::class, 'regenerateSecret']);
         Route::put('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'updateDevice']);
         Route::delete('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'deleteDevice']);
+        Route::post('/sim-vending/devices/{id}/sims', [SimDeviceAdminController::class, 'createSim']);
         Route::put('/sim-vending/devices/{id}/sims/{simId}', [SimDeviceAdminController::class, 'updateSim']);
 
         Route::post('/reset-website', [ResetWebsiteController::class, 'reset']);

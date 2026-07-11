@@ -18,6 +18,37 @@ use Illuminate\Support\Facades\Cache;
  */
 class SimDeviceController extends Controller
 {
+    /**
+     * The device's own vend configuration, admin-managed in the database
+     * (Admin → APIs → SIM Vending) rather than hand-edited on the hub. The
+     * hub pulls this on startup and re-pulls periodically, so PIN/network
+     * changes apply without touching the hub's filesystem. transfer_pin is
+     * decrypted here — this endpoint is HMAC-signed and only ever answers
+     * the device that owns the SIMs.
+     */
+    public function config(Request $request, string $slug): JsonResponse
+    {
+        /** @var SimDevice $device */
+        $device = $request->attributes->get('simDevice');
+
+        return $this->success([
+            'sims' => $device->sims->map(fn (Sim $sim) => [
+                'slot_index' => $sim->slot_index,
+                'network' => $sim->network,
+                'phone_number' => $sim->phone_number,
+                'supports_airtime' => $sim->supports_airtime,
+                'supports_data' => $sim->supports_data,
+                'enabled' => $sim->enabled,
+                'transfer_pin' => $sim->transfer_pin,
+                'balance_ussd' => $sim->balance_ussd,
+            ])->values(),
+            'config' => [
+                'poll_interval' => (int) config('simvending.poll_interval'),
+                'lease_seconds' => (int) config('simvending.lease_seconds'),
+            ],
+        ]);
+    }
+
     public function heartbeat(Request $request, string $slug): JsonResponse
     {
         /** @var SimDevice $device */

@@ -19,12 +19,22 @@ class Sim extends Model
         'data_balance_mb',
         'airtime_low_threshold',
         'data_low_threshold_mb',
+        'transfer_pin',
+        'balance_ussd',
         'enabled',
         'balance_reported_at',
         'notes',
     ];
 
+    // The transfer PIN authorizes moving real airtime off the SIM — never
+    // serialized by default; only the signed device-config endpoint
+    // (SimDeviceController::config) exposes it, decrypted, to its own hub.
+    protected $hidden = [
+        'transfer_pin',
+    ];
+
     protected $casts = [
+        'transfer_pin' => 'encrypted',
         'supports_airtime' => 'boolean',
         'supports_data' => 'boolean',
         'enabled' => 'boolean',
