@@ -97,8 +97,35 @@ An empty ack body is still accepted (legacy children) and is recorded as
 `delivered` — acknowledged, outcome unknown. Directive types the child
 executes: `redirect_user` (one customer, matched by `external_id`),
 `redirect_all_users`, `update_settings` (allowlisted flags), `reroute_provider`
-(web_api slot URLs), and `message` (logged). Anything else is acked as
-`skipped` so it never shows as applied when it wasn't.
+(web_api slot URL + adex_api slot credentials), `retry_transaction`
+(re-dispatches a STUCK data purchase — debited but unconfirmed — with its
+original transid; refunds on a definitive fail), and `message` (logged).
+Anything else is acked as `skipped` so it never shows as applied when it
+wasn't.
+
+A pending directive can be retracted from the admin Directives page (or
+`DELETE /api/admin/child-instances/{id}/directives/{directiveId}`) — it
+disappears from the pull feed before the child ever sees it.
+
+## Route tunneling
+
+The parent doubles as an adex-protocol provider (`POST /api/user/`,
+`/api/data/`, `/api/topup/` — see `ChildTunnelController`), so a
+`reroute_provider` directive can point a child's provider slot at the parent
+itself and the parent performs the child's transactions:
+
+1. Create (and fund) a parent account that should pay for the child's
+   tunneled transactions.
+2. On the affiliate's Controls page, set the slot's URL to this app's base
+   URL and enter that account's username + password — the child stores them
+   in its `adex_api` slot credentials.
+3. Map the child's `data_plan.adex{slot}` column values to THIS platform's
+   data plan ids (the tunnel resolves `data_plan` against the parent
+   catalog), and its `network.adex_id` to 1=mtn, 2=airtel, 3=glo, 4=9mobile.
+
+Tunneled vends are idempotent per `request-id` (child_tunnel_requests
+ledger) — a retried stuck transaction never charges the funding account
+twice.
 
 ## 6. Test the sync flow
 
