@@ -57,6 +57,10 @@ class AiManagerService
         $conversation->last_activity_at = now();
         $conversation->save();
 
+        if ($approval = $this->tryHandleVerbalApproval($conversation, $actor, $content)) {
+            return $approval;
+        }
+
         $tools = $this->registry->openAiSchemasForUser($actor);
         $maxIterations = (int) config('services.openai.max_tool_iterations', 6);
 
@@ -160,6 +164,141 @@ class AiManagerService
             'summary' => $proposal->summary,
             'note' => 'This action was NOT executed. It is queued as a pending proposal and will only run after an admin explicitly approves it. Explain to the admin what you are proposing and why, and that they must approve it.',
         ];
+    }
+
+    /**
+     * Convert a clear chat approval into the same execution path used by the
+     * approve button. Ambiguous approvals with multiple pending actions are
+     * paused so the admin can choose a specific action or approve all.
+     *
+     * @return null|array{assistant: AiMessage, proposals: array<int, AiActionProposal>}
+     */
+    private function tryHandleVerbalApproval(AiConversation $conversation, User $actor, string $content): ?array
+    {
+        if (!$this->isVerbalApproval($content)) {
+            return null;
+        }
+
+        $pending = $conversation->proposals()
+            ->where('status', AiActionProposal::STATUS_PENDING)
+            ->orderBy('id')
+            ->get();
+
+        if ($pending->isEmpty()) {
+            return null;
+        }
+
+        $requestedId = $this->requestedProposalId($content);
+        if ($requestedId !== null) {
+            $pending = $pending->where('id', $requestedId)->values();
+
+            if ($pending->isEmpty()) {
+                $assistant = $conversation->messages()->create([
+                    'role' => AiMessage::ROLE_ASSISTANT,
+                    'content' => "I couldn't find a pending action #{$requestedId} in this conversation. Please check the action number or approve one of the pending action cards.",
+                ]);
+
+                return ['assistant' => $assistant, 'proposals' => []];
+            }
+        } elseif ($pending->count() > 1 && !$this->isApproveAll($content)) {
+            $actions = $pending
+                ->map(fn (AiActionProposal $proposal): string => "#{$proposal->id}: {$proposal->summary}")
+                ->implode("\n");
+
+            $assistant = $conversation->messages()->create([
+                'role' => AiMessage::ROLE_ASSISTANT,
+                'content' => "I found multiple pending actions, so I need a clearer approval before running anything.\n\n{$actions}\n\nReply with \"approve all\" to run every pending action, or \"approve #ID\" for one action.",
+            ]);
+
+            return ['assistant' => $assistant, 'proposals' => $pending->all()];
+        }
+
+        $approved = [];
+        $failed = [];
+
+        foreach ($pending as $proposal) {
+            try {
+                $approved[] = $this->approve($proposal, $actor);
+            } catch (AiManagerException $e) {
+                $fresh = $proposal->fresh() ?? $proposal;
+                $failed[] = ['proposal' => $fresh, 'error' => $e->getMessage()];
+            }
+        }
+
+        $assistant = $conversation->messages()->create([
+            'role' => AiMessage::ROLE_ASSISTANT,
+            'content' => $this->verbalApprovalMessage($approved, $failed),
+        ]);
+
+        $failedProposals = array_map(fn (array $failure): AiActionProposal => $failure['proposal'], $failed);
+
+        return [
+            'assistant' => $assistant,
+            'proposals' => array_merge($approved, $failedProposals),
+        ];
+    }
+
+    private function isVerbalApproval(string $content): bool
+    {
+        $normalized = Str::of($content)->lower()->squish()->toString();
+
+        if (preg_match('/\b(no|nope|reject|cancel|stop|never|don\'t|do not|dont|not now)\b/', $normalized)) {
+            return false;
+        }
+
+        return (bool) preg_match('/\b(yes|yep|yeah|approve|approved|confirm|confirmed|proceed|execute|run it|go ahead|do it|ok|okay)\b/', $normalized);
+    }
+
+    private function isApproveAll(string $content): bool
+    {
+        $normalized = Str::of($content)->lower()->squish()->toString();
+
+        return (bool) preg_match('/\b(all|everything|every|both)\b/', $normalized);
+    }
+
+    private function requestedProposalId(string $content): ?int
+    {
+        if (preg_match('/(?:#|action\s*)\s*(\d+)/i', $content, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<int, AiActionProposal> $approved
+     * @param array<int, array{proposal: AiActionProposal, error: string}> $failed
+     */
+    private function verbalApprovalMessage(array $approved, array $failed): string
+    {
+        $lines = [];
+
+        if (!empty($approved)) {
+            $lines[] = count($approved) === 1
+                ? 'Approved and executed this action:'
+                : 'Approved and executed these actions:';
+
+            foreach ($approved as $proposal) {
+                $lines[] = "- #{$proposal->id}: {$proposal->summary}";
+            }
+        }
+
+        if (!empty($failed)) {
+            if (!empty($lines)) {
+                $lines[] = '';
+            }
+
+            $lines[] = count($failed) === 1
+                ? 'This action could not be executed:'
+                : 'These actions could not be executed:';
+
+            foreach ($failed as $failure) {
+                $proposal = $failure['proposal'];
+                $lines[] = "- #{$proposal->id}: {$proposal->summary} ({$failure['error']})";
+            }
+        }
+
+        return implode("\n", $lines);
     }
 
     /**
@@ -298,6 +437,7 @@ Taking actions (very important):
 - Never tell the admin that an action has been done. Say that you have *proposed* it and that they must approve it. Clearly state what will happen if they approve, including any amounts and who is affected.
 - Only propose an action when the admin has asked for it or clearly agreed to it. When unsure, ask first.
 - You only ever see the tools the current admin is permitted to use; if a requested action isn't available, tell them they may lack the permission for it.
+- Approval can be given in chat with clear wording such as "approve", "approve #ID", or "approve all"; the UI approval buttons are optional.
 
 Keep responses focused and professional.
 PROMPT;
