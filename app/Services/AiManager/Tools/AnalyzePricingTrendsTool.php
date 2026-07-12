@@ -3,6 +3,7 @@
 namespace App\Services\AiManager\Tools;
 
 use App\Models\DataPlan;
+use App\Models\Role;
 use App\Models\User;
 
 class AnalyzePricingTrendsTool extends AiTool
@@ -66,6 +67,15 @@ class AnalyzePricingTrendsTool extends AiTool
 
         $limit = min((int) ($arguments['limit'] ?? 25), self::MAX_LIMIT);
         $role = $arguments['role'] ?? 'user';
+
+        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
+            return [
+                'role' => $role,
+                'average_markup_percentage' => null,
+                'note' => "Role '{$role}' does not exist; use a valid customer role name or slug.",
+                'plans' => [],
+            ];
+        }
 
         $plans = $query->orderBy('network')->orderBy('id')->limit($limit)->get();
 

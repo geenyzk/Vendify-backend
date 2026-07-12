@@ -52,11 +52,11 @@ class RecommendPricingStrategyTool extends AiTool
     public function handle(array $arguments, User $actor): array
     {
         $role = $arguments['role'] ?? 'user';
-        if ($role !== 'user' && !Role::where('name', $role)->exists()) {
+        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
             return [
                 'role' => $role,
                 'recommendations' => [],
-                'note' => "Role '{$role}' does not exist; use a valid customer role name.",
+                'note' => "Role '{$role}' does not exist; use a valid customer role name or slug or slug.",
             ];
         }
 

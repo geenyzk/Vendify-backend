@@ -3,6 +3,7 @@
 namespace App\Services\AiManager\Tools;
 
 use App\Models\DataPlan;
+use App\Models\Role;
 use App\Models\User;
 
 class GetPricingStrategyTool extends AiTool
@@ -72,6 +73,15 @@ class GetPricingStrategyTool extends AiTool
         $limit = min((int) ($arguments['limit'] ?? 15), self::MAX_LIMIT);
         $plans = $query->orderBy('network')->orderBy('id')->limit($limit)->get();
         $role = $arguments['role'] ?? 'user';
+
+        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
+            return [
+                'role' => $role,
+                'plan_count' => 0,
+                'strategy_summary' => "Role '{$role}' does not exist; use a valid customer role name or slug.",
+                'plans' => [],
+            ];
+        }
 
         $totals = [
             'fiat' => 0,

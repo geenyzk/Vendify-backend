@@ -42,7 +42,7 @@ class UpdateDataPlanPriceTool extends AiTool
             'type' => 'object',
             'properties' => [
                 'plan_id' => ['type' => 'integer', 'description' => 'Numeric id of the data plan.'],
-                'role' => ['type' => 'string', 'description' => 'Customer role name the price applies to (e.g. "user", "reseller"). Default "user".'],
+                'role' => ['type' => 'string', 'description' => 'Customer role name or slug the price applies to (e.g. "user", "reseller"). Default "user".'],
                 'price_type' => ['type' => 'string', 'enum' => ['fiat', 'percentage'], 'description' => 'fiat = exact price; percentage = markup over cost price.'],
                 'value' => ['type' => 'number', 'description' => 'The price (fiat) or markup percent (percentage).'],
             ],
@@ -79,7 +79,7 @@ class UpdateDataPlanPriceTool extends AiTool
         }
 
         $role = $arguments['role'] ?? 'user';
-        if (!Role::where('name', $role)->exists() && $role !== 'user') {
+        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
             throw new AiManagerException("No such customer role '{$role}'.");
         }
 

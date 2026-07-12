@@ -81,7 +81,7 @@ class AdjustDataPlanPriceTool extends AiTool
         }
 
         $role = $arguments['role'] ?? 'user';
-        if ($role !== 'user' && !Role::where('name', $role)->exists()) {
+        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
             throw new AiManagerException("No such customer role '{$role}'.");
         }
 
