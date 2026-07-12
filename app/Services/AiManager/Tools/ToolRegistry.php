@@ -30,6 +30,8 @@ class ToolRegistry
         $this->register(new ListMarketingTool());
         $this->register(new ListAffiliatesTool());
         $this->register(new ListAffiliateCustomersTool());
+        $this->register(new ListRolesTool());
+        $this->register(new GetRoleTool());
         $this->register(new AnalyzePricingTrendsTool());
         $this->register(new RecommendPricingStrategyTool());
         $this->register(new GetPricingStrategyTool());
@@ -50,6 +52,9 @@ class ToolRegistry
         $this->register(new UpdateSiteSettingsTool());
         $this->register(new GetWelcomeMessageTool());
         $this->register(new UpdateWelcomeMessageTool());
+        $this->register(new CreateRoleTool());
+        $this->register(new UpdateRoleTool());
+        $this->register(new DeleteRoleTool());
         $this->register(new SendAffiliateCustomerMessageTool());
     }
 

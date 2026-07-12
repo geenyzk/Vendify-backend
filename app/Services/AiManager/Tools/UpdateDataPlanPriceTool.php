@@ -79,8 +79,11 @@ class UpdateDataPlanPriceTool extends AiTool
         }
 
         $role = $arguments['role'] ?? 'user';
-        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
-            throw new AiManagerException("No such customer role '{$role}'.");
+        if ($role !== 'user') {
+            $role = $this->resolveRoleName($role);
+            if (!$role) {
+                throw new AiManagerException("No such customer role '{$arguments['role']}'.");
+            }
         }
 
         $pricing = is_array($plan->pricing) ? $plan->pricing : [];
@@ -102,5 +105,11 @@ class UpdateDataPlanPriceTool extends AiTool
             'previous' => $previous,
             'new' => $pricing[$role],
         ];
+    }
+
+    private function resolveRoleName(string $role): ?string
+    {
+        $roleModel = Role::where('slug', $role)->orWhere('name', $role)->first();
+        return $roleModel?->name;
     }
 }

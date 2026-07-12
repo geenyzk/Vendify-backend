@@ -68,13 +68,17 @@ class AnalyzePricingTrendsTool extends AiTool
         $limit = min((int) ($arguments['limit'] ?? 25), self::MAX_LIMIT);
         $role = $arguments['role'] ?? 'user';
 
-        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
-            return [
-                'role' => $role,
-                'average_markup_percentage' => null,
-                'note' => "Role '{$role}' does not exist; use a valid customer role name or slug.",
-                'plans' => [],
-            ];
+        if ($role !== 'user') {
+            $normalized = $this->resolveRoleName($role);
+            if (!$normalized) {
+                return [
+                    'role' => $role,
+                    'average_markup_percentage' => null,
+                    'note' => "Role '{$role}' does not exist; use a valid customer role name or slug.",
+                    'plans' => [],
+                ];
+            }
+            $role = $normalized;
         }
 
         $plans = $query->orderBy('network')->orderBy('id')->limit($limit)->get();
@@ -90,6 +94,12 @@ class AnalyzePricingTrendsTool extends AiTool
             'note' => 'Markup is calculated relative to provider cost price. A percentage greater than 0 indicates a markup on cost.',
             'plans' => $rows,
         ];
+    }
+
+    private function resolveRoleName(string $role): ?string
+    {
+        $roleModel = Role::where('slug', $role)->orWhere('name', $role)->first();
+        return $roleModel?->name;
     }
 
     private function describePlanPricing(DataPlan $plan, string $role): array

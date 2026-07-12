@@ -5,6 +5,7 @@ namespace App\Services\AiManager\Tools;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AiManager\AiManagerException;
+use Illuminate\Support\Facades\Validator;
 
 class UpdateRoleTool extends AiTool
 {
@@ -56,8 +57,8 @@ class UpdateRoleTool extends AiTool
     {
         return [
             'role_id' => 'required|integer',
-            'name' => 'nullable|string|unique:roles,name,' . ($this->roleIdFromArguments() ?? 'NULL'),
-            'slug' => 'nullable|string|unique:roles,slug,' . ($this->roleIdFromArguments() ?? 'NULL'),
+            'name' => 'nullable|string',
+            'slug' => 'nullable|string',
             'description' => 'nullable|string',
             'is_active' => 'nullable|boolean',
             'is_default' => 'nullable|boolean',
@@ -66,6 +67,24 @@ class UpdateRoleTool extends AiTool
             'permission_ids' => 'nullable|array',
             'permission_ids.*' => 'integer|exists:permissions,id',
         ];
+    }
+
+    public function validate(array $arguments): array
+    {
+        $rules = [
+            'role_id' => 'required|integer',
+            'name' => 'nullable|string|unique:roles,name,' . ($arguments['role_id'] ?? 'NULL'),
+            'slug' => 'nullable|string|unique:roles,slug,' . ($arguments['role_id'] ?? 'NULL'),
+            'description' => 'nullable|string',
+            'is_active' => 'nullable|boolean',
+            'is_default' => 'nullable|boolean',
+            'upgradable' => 'nullable|boolean',
+            'upgrade_cost' => 'nullable|numeric|min:0|required_if:upgradable,true',
+            'permission_ids' => 'nullable|array',
+            'permission_ids.*' => 'integer|exists:permissions,id',
+        ];
+
+        return Validator::make($arguments, $rules)->validate();
     }
 
     public function summarize(array $arguments): string
@@ -88,7 +107,7 @@ class UpdateRoleTool extends AiTool
             'is_default',
             'upgradable',
             'upgrade_cost',
-        ])->filter()->all();
+        ])->filter(fn ($value) => $value !== null)->all();
 
         $role->update($data);
 
@@ -114,8 +133,4 @@ class UpdateRoleTool extends AiTool
         ];
     }
 
-    private function roleIdFromArguments(): ?int
-    {
-        return null;
-    }
 }

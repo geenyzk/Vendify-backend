@@ -2,10 +2,8 @@
 
 namespace App\Services\AiManager\Tools;
 
-use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
-use App\Services\AiManager\AiManagerException;
 
 class CreateRoleTool extends AiTool
 {
@@ -82,7 +80,7 @@ class CreateRoleTool extends AiTool
             'is_default',
             'upgradable',
             'upgrade_cost',
-        ])->filter()->all();
+        ])->filter(fn ($value) => $value !== null)->all();
 
         $role = Role::create($data);
 

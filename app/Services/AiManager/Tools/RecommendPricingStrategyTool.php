@@ -52,12 +52,16 @@ class RecommendPricingStrategyTool extends AiTool
     public function handle(array $arguments, User $actor): array
     {
         $role = $arguments['role'] ?? 'user';
-        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
-            return [
-                'role' => $role,
-                'recommendations' => [],
-                'note' => "Role '{$role}' does not exist; use a valid customer role name or slug or slug.",
-            ];
+        if ($role !== 'user') {
+            $normalized = $this->resolveRoleName($role);
+            if (!$normalized) {
+                return [
+                    'role' => $role,
+                    'recommendations' => [],
+                    'note' => "Role '{$role}' does not exist; use a valid customer role name or slug.",
+                ];
+            }
+            $role = $normalized;
         }
 
         $query = DataPlan::query();
@@ -82,6 +86,12 @@ class RecommendPricingStrategyTool extends AiTool
             'sampled_plans' => $analysis,
             'recommendations' => array_slice($recommendations, 0, self::MAX_RECOMMENDATIONS),
         ];
+    }
+
+    private function resolveRoleName(string $role): ?string
+    {
+        $roleModel = Role::where('slug', $role)->orWhere('name', $role)->first();
+        return $roleModel?->name;
     }
 
     private function analyzePlan(DataPlan $plan, string $role): ?array

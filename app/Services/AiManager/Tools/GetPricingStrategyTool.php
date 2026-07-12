@@ -74,13 +74,17 @@ class GetPricingStrategyTool extends AiTool
         $plans = $query->orderBy('network')->orderBy('id')->limit($limit)->get();
         $role = $arguments['role'] ?? 'user';
 
-        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
-            return [
-                'role' => $role,
-                'plan_count' => 0,
-                'strategy_summary' => "Role '{$role}' does not exist; use a valid customer role name or slug.",
-                'plans' => [],
-            ];
+        if ($role !== 'user') {
+            $normalized = $this->resolveRoleName($role);
+            if (!$normalized) {
+                return [
+                    'role' => $role,
+                    'plan_count' => 0,
+                    'strategy_summary' => "Role '{$role}' does not exist; use a valid customer role name or slug.",
+                    'plans' => [],
+                ];
+            }
+            $role = $normalized;
         }
 
         $totals = [
@@ -141,6 +145,12 @@ class GetPricingStrategyTool extends AiTool
             'cost_price' => $cost,
             'markup_percentage' => $markup,
         ];
+    }
+
+    private function resolveRoleName(string $role): ?string
+    {
+        $roleModel = Role::where('slug', $role)->orWhere('name', $role)->first();
+        return $roleModel?->name;
     }
 
     private function summarizeStrategy(array $totals, string $role): string

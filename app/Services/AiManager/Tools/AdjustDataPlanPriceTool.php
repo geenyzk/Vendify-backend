@@ -81,8 +81,11 @@ class AdjustDataPlanPriceTool extends AiTool
         }
 
         $role = $arguments['role'] ?? 'user';
-        if ($role !== 'user' && !Role::where('slug', $role)->orWhere('name', $role)->exists()) {
-            throw new AiManagerException("No such customer role '{$role}'.");
+        if ($role !== 'user') {
+            $role = $this->resolveRoleName($role);
+            if (!$role) {
+                throw new AiManagerException("No such customer role '{$arguments['role']}'.");
+            }
         }
 
         $currentPricing = $plan->pricing[$role] ?? null;
@@ -143,5 +146,11 @@ class AdjustDataPlanPriceTool extends AiTool
             'target_markup' => round($cost * (1 + $value / 100), 2),
             default => $currentPrice,
         };
+    }
+
+    private function resolveRoleName(string $role): ?string
+    {
+        $roleModel = Role::where('slug', $role)->orWhere('name', $role)->first();
+        return $roleModel?->name;
     }
 }
