@@ -18,12 +18,20 @@ class FlutterWave extends PaymentBase
 
     function connect(): mixed
     {
-        return "";
+        $balance = $this->checkBalance() ;
+        return $balance !== "" ? true: false;
     }
 
     function checkBalance(): string
     {
-        return "";
+
+        $response = Http::withHeaders($this->getHeaders())
+                ->get($this->baseUrl() . '/balances/NG');
+        if ($response->successful()) {
+                $account = $response->json('data') ?? [];
+                return $account['available_balance'] ?? "";
+            }
+        return 0;
     }
 
 
@@ -128,10 +136,10 @@ class FlutterWave extends PaymentBase
 
             $body = $response->json();
 
-            Log::info('Flutterwave vendor transfer initiated', [
-                'reference' => $payload['reference'],
-                'response'  => $body,
-            ]);
+            // Log::info('Flutterwave vendor transfer initiated', [
+            //     'reference' => $payload['reference'],
+            //     'response'  => $body,
+            // ]);
 
             return [
                 'status'  => ($body['status'] ?? '') === 'success' ? 'success' : 'failed',
