@@ -116,7 +116,11 @@ class DataPlan extends Model
      */
     protected function resolveCostPrice(): float
     {
-        $pivotCost = $this->providers()->first()?->pivot?->cost_price;
+        $provider = $this->relationLoaded('providers')
+            ? $this->getRelation('providers')->first()
+            : $this->providers()->first();
+
+        $pivotCost = $provider?->pivot?->cost_price;
         if ($pivotCost !== null) {
             return (float) $pivotCost;
         }
@@ -156,7 +160,10 @@ class DataPlan extends Model
     public function getProviderAttribute()
     {
         // Prefer explicit provider attached via providerable pivot
-        $provider = $this->providers()->first();
+        $provider = $this->relationLoaded('providers')
+            ? $this->getRelation('providers')->first()
+            : $this->providers()->first();
+
         if ($provider) return $provider;
 
         // Fallback: derive provider from the network's default network type/provider
@@ -179,7 +186,7 @@ class DataPlan extends Model
     {
         // True if an explicit provider is attached via providerable pivot
         if ($this->relationLoaded('providers')) {
-            return !empty($this->getRelation('providers'));
+            return $this->getRelation('providers')->isNotEmpty();
         }
 
         return $this->providers()->exists();

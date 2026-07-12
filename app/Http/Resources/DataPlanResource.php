@@ -4,7 +4,6 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\DB;
 
 class DataPlanResource extends JsonResource
 {
@@ -15,10 +14,12 @@ class DataPlanResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $p = DB::table('providerables')
-            ->where('providerable_id', $this->id)
-            ->where('providerable_type', 'App\Models\DataPlan')
-            ->first();
+        $provider = $this->relationLoaded('providers')
+            ? $this->providers->first()
+            : $this->provider;
+
+        $pivot = $provider?->pivot;
+
         return [
             'id' => $this->id,
             'plan_name' => $this->plan_name,
@@ -38,13 +39,26 @@ class DataPlanResource extends JsonResource
             'price_ngn' => $this->price_ngn,
 
             // Servers and their configurations
-            'cost_price' => $this->provider->pivot->cost_price ?? $p->cost_price ?? 0,
-            'server_id' => $this->provider->pivot->server_id ?? $p->server_id ?? 0,
+            'cost_price' => $pivot?->cost_price ?? 0,
+            'server_id' => $pivot?->server_id ?? 0,
             // 'server_id' =>
-            'provider_id' => $this->provider->pivot->provider_id ?? null,
+            'provider_id' => $pivot?->provider_id ?? $provider?->id,
             // 'pivot' => $this->provider->pivot,
             // Providers (vendors) offering this plan with pivot info
-            'provider' =>  $this->provider,
+            'provider' => $provider ? [
+                'id' => $provider->id,
+                'name' => $provider->name,
+                'code' => $provider->code,
+                'sub_category' => $provider->sub_category,
+                'category' => $provider->category,
+                'pivot' => [
+                    'provider_id' => $pivot?->provider_id ?? $provider->id,
+                    'cost_price' => $pivot?->cost_price ?? 0,
+                    'server_id' => $pivot?->server_id ?? 0,
+                    'margin_value' => $pivot?->margin_value ?? null,
+                    'margin_type' => $pivot?->margin_type ?? null,
+                ],
+            ] : null,
 
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

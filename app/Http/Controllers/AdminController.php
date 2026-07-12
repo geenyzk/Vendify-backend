@@ -301,6 +301,10 @@ class AdminController extends Controller
             }
 
             // 2. Eager Loading (Relationships)
+            if ($modelSlug === 'data_plans') {
+                $query->with('providers:id,name,code,sub_category,category');
+            }
+
             $this->handleEagerLoading($query, $request);
 
             // 3. Sorting

@@ -6,6 +6,7 @@ use App\Classes\Payment\Payment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\HttpResponse;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,6 +18,17 @@ class AuthenticatedSessionController extends Controller
 {
 
     use HttpResponse;
+
+    private function authUserPayload(User $user, bool $includeDashboardData = false): User
+    {
+        $user->load('role.permissions');
+
+        if (!$includeDashboardData) {
+            $user->setAppends(['has_pin']);
+        }
+
+        return $user;
+    }
 
     /**
      * Login a user
@@ -68,7 +80,7 @@ class AuthenticatedSessionController extends Controller
             }
 
             return $this->success([
-                'user' => $user->load('role.permissions'),
+                'user' => $this->authUserPayload($user),
                 'token' => $token,
             ]);
         } catch (ValidationException $e) {
@@ -105,7 +117,12 @@ class AuthenticatedSessionController extends Controller
      */
     public function index(Request $request)
     {
-        return $this->success(["user" => $request->user()->load('role.permissions')]);
+        return $this->success([
+            "user" => $this->authUserPayload(
+                $request->user(),
+                $request->boolean('include_dashboard')
+            ),
+        ]);
     }
 
 
