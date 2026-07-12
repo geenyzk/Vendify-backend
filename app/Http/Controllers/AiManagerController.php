@@ -144,12 +144,14 @@ class AiManagerController extends Controller
 
     private function ownedConversation(Request $request, int $id): ?AiConversation
     {
-        return AiConversation::where('user_id', $request->user()->id)->find($id);
+        return AiConversation::with(['messages', 'proposals'])
+            ->where('user_id', $request->user()->id)
+            ->find($id);
     }
 
     private function ownedProposal(Request $request, int $id): ?AiActionProposal
     {
-        return AiActionProposal::whereHas(
+        return AiActionProposal::with('conversation')->whereHas(
             'conversation',
             fn ($q) => $q->where('user_id', $request->user()->id)
         )->find($id);
@@ -193,7 +195,9 @@ class AiManagerController extends Controller
 
     private function conversationPayload(AiConversation $conversation): array
     {
-        $messages = $conversation->messages()->orderBy('id')->get()
+        $conversation->loadMissing(['messages', 'proposals']);
+
+        $messages = $conversation->messages
             // The raw tool request/result plumbing is internal — the UI shows
             // user/assistant text and the human-readable action notes only.
             ->reject(fn (AiMessage $m) => $m->role === AiMessage::ROLE_TOOL || empty($m->content))
@@ -210,7 +214,8 @@ class AiManagerController extends Controller
             'title' => $conversation->title,
             'last_activity_at' => $conversation->last_activity_at?->toDateTimeString(),
             'messages' => $messages,
-            'proposals' => $conversation->proposals()->get()
+            'proposals' => $conversation->proposals
+                ->sortByDesc('id')
                 ->map(fn (AiActionProposal $p) => $this->proposalPayload($p))
                 ->values(),
         ];

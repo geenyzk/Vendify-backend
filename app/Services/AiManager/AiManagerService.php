@@ -8,6 +8,7 @@ use App\Models\AiMessage;
 use App\Models\User;
 use App\Services\AiManager\Tools\AiTool;
 use App\Services\AiManager\Tools\ToolRegistry;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -168,10 +169,6 @@ class AiManagerService
      */
     public function approve(AiActionProposal $proposal, User $actor): AiActionProposal
     {
-        if (!$proposal->isPending()) {
-            throw new AiManagerException('This action is no longer pending.');
-        }
-
         $tool = $this->registry->get($proposal->tool);
         if (!$tool || !$tool->isMutating()) {
             throw new AiManagerException('This action can no longer be executed.');
@@ -181,6 +178,22 @@ class AiManagerService
             throw new AiManagerException('You do not have permission to approve this action.');
         }
 
+        $proposal = DB::transaction(function () use ($proposal, $actor) {
+            $locked = AiActionProposal::whereKey($proposal->id)->lockForUpdate()->first();
+
+            if (!$locked || !$locked->isPending()) {
+                throw new AiManagerException('This action is no longer pending.');
+            }
+
+            $locked->update([
+                'status' => AiActionProposal::STATUS_EXECUTING,
+                'decided_by' => $actor->id,
+                'decided_at' => now(),
+            ]);
+
+            return $locked->fresh(['conversation']);
+        });
+
         try {
             $arguments = $tool->validate($proposal->arguments);
             $result = $tool->handle($arguments, $actor);
@@ -188,8 +201,6 @@ class AiManagerService
             $proposal->update([
                 'status' => AiActionProposal::STATUS_FAILED,
                 'error' => $e->getMessage(),
-                'decided_by' => $actor->id,
-                'decided_at' => now(),
                 'executed_at' => now(),
             ]);
             $this->recordSystemNote($proposal->conversation, "[Action #{$proposal->id} failed] {$proposal->tool}: {$e->getMessage()}");
@@ -200,8 +211,6 @@ class AiManagerService
         $proposal->update([
             'status' => AiActionProposal::STATUS_EXECUTED,
             'result' => $result,
-            'decided_by' => $actor->id,
-            'decided_at' => now(),
             'executed_at' => now(),
         ]);
 
@@ -247,7 +256,14 @@ class AiManagerService
             'content' => $this->systemPrompt($actor),
         ]];
 
-        foreach ($conversation->messages()->orderBy('id')->get() as $message) {
+        $historyLimit = max(20, (int) config('services.openai.max_history_messages', 80));
+        $history = $conversation->messages()
+            ->latest('id')
+            ->limit($historyLimit)
+            ->get()
+            ->sortBy('id');
+
+        foreach ($history as $message) {
             $messages[] = $message->toOpenAi();
         }
 

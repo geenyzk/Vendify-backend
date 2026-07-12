@@ -52,6 +52,7 @@ class OpenAiClient
             'model' => $this->model(),
             'messages' => $messages,
             'max_tokens' => $this->maxTokens ?? (int) config('services.openai.max_output_tokens', 1500),
+            'temperature' => (float) config('services.openai.temperature', 0.2),
         ];
 
         if (!empty($tools)) {
@@ -75,6 +76,7 @@ class OpenAiClient
         if ($response->failed()) {
             $body = $response->json();
             $message = $body['error']['message'] ?? $response->body();
+            $publicMessage = str($message)->limit(300)->toString();
             Log::error('AI Manager: OpenAI returned an error', [
                 'status' => $response->status(),
                 'error' => $message,
@@ -82,7 +84,7 @@ class OpenAiClient
 
             throw new AiManagerException(
                 'The AI service returned an error'
-                . ($response->status() === 401 ? ' (check OPENAI_API_KEY).' : ': ' . $message)
+                . ($response->status() === 401 ? ' (check OPENAI_API_KEY).' : ': ' . $publicMessage)
             );
         }
 
