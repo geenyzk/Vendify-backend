@@ -253,26 +253,29 @@ class TransactionService
     ): array
 {
     return DB::transaction(function () use ($user, $amount, $type, $note, $transactionType, $provider, $receiver, $relatedReference) {
-        $balanceBefore = $user->wallet_balance;
+        // Lock the row so concurrent debits against the same user can't both
+        // read a stale balance and overdraw the wallet.
+        $locked = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+        $balanceBefore = $locked->wallet_balance;
 
         if ($type === 'credit') {
-            $user->increment('wallet_balance', $amount);
+            $locked->increment('wallet_balance', $amount);
         } elseif ($type === 'debit') {
-            if ($user->wallet_balance < $amount) {
+            if ($balanceBefore < $amount) {
                 throw new \Exception('Insufficient balance for debit.');
             }
-            $user->decrement('wallet_balance', $amount);
+            $locked->decrement('wallet_balance', $amount);
         } else {
             throw new \Exception('Invalid transaction type.');
         }
 
-        $balanceAfter = $user->fresh()->wallet_balance;
+        $balanceAfter = $locked->fresh()->wallet_balance;
 
         $transaction = Transaction::create([
-            'user_id' => $user->id,
+            'user_id' => $locked->id,
             'transaction_type' => $transactionType,
             'provider' => $provider,
-            'account_or_phone' => $user->phone,
+            'account_or_phone' => $locked->phone,
             'amount' => $amount,
             "plan_type" => $type,
             'status' => 'success',
@@ -283,7 +286,7 @@ class TransactionService
             'balance_after' => $balanceAfter,
             'response_message' => $note ?? (ucfirst($type) . ' by admin'),
             'platform' => 'web',
-            "receiver" => $receiver ?? $user->username,
+            "receiver" => $receiver ?? $locked->username,
         ]);
 
         return $transaction->toArray();

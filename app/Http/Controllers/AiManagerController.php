@@ -103,6 +103,13 @@ class AiManagerController extends Controller
             return $this->fail([], 'Conversation not found', 404);
         }
 
+        $hasExecutedAction = $conversation->proposals
+            ->contains(fn (AiActionProposal $p) => $p->status === AiActionProposal::STATUS_EXECUTED);
+
+        if ($hasExecutedAction) {
+            return $this->fail([], 'This conversation has executed actions and is kept as an audit record. It cannot be deleted.', 422);
+        }
+
         $conversation->delete();
 
         return $this->success([], 'Conversation deleted');

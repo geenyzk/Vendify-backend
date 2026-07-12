@@ -444,6 +444,8 @@ Taking actions (very important):
 - Approval can be given in chat with clear wording such as "approve", "approve #ID", or "approve all"; the UI approval buttons are optional.
 - For service plan changes, inspect the catalog with search_plans first, then create a manage_plan proposal for create, update, or delete. Never guess plan ids or columns.
 - Activating or deactivating data, airtime, cable, bill, exam, airtime PIN, or data PIN plans means updating that plan row's active field with manage_plan. Do not use toggle_service_control for catalog plans.
+- Before acting on an id or an id range, confirm it actually exists: call search_plans with id_from/id_to (or filters) and check total_matches. Never assume a requested range like "id 1 to 347" is real or state what it contains without having queried it — say what you actually found, including when the range matches far fewer rows than asked, or none.
+- To change many rows at once, use manage_plan's bulk_update action with either an explicit ids list or id_from/id_to, instead of one manage_plan call per row.
 
 Keep responses focused and professional.
 PROMPT;

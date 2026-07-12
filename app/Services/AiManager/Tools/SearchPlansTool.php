@@ -33,7 +33,9 @@ class SearchPlansTool extends AiTool
                 'active_only' => ['type' => 'boolean', 'description' => 'Only return active rows when the table has an active column.'],
                 'inactive_only' => ['type' => 'boolean', 'description' => 'Only return inactive rows when the table has an active column.'],
                 'filters' => ['type' => 'object', 'description' => 'Exact-match filters by real column name, for example {"network":"mtn"} or {"plan_type":"SME"}.'],
-                'limit' => ['type' => 'integer', 'description' => 'Max rows (1-50, default 15).'],
+                'id_from' => ['type' => 'integer', 'description' => 'Only rows with id >= this value. Use with id_to to check whether an id range actually exists before a bulk_update.'],
+                'id_to' => ['type' => 'integer', 'description' => 'Only rows with id <= this value.'],
+                'limit' => ['type' => 'integer', 'description' => 'Max rows (1-50, default 15). total_matches in the response reflects the full count regardless of this limit.'],
             ],
             'required' => ['table'],
             'additionalProperties' => false,
@@ -48,6 +50,8 @@ class SearchPlansTool extends AiTool
             'active_only' => 'nullable|boolean',
             'inactive_only' => 'nullable|boolean',
             'filters' => 'nullable|array',
+            'id_from' => 'nullable|integer|min:1',
+            'id_to' => 'nullable|integer|min:1',
             'limit' => 'nullable|integer|min:1|max:' . self::MAX_LIMIT,
         ];
     }
@@ -74,6 +78,13 @@ class SearchPlansTool extends AiTool
 
         if (!empty($arguments['inactive_only']) && in_array('active', $columns, true)) {
             $query->where('active', false);
+        }
+
+        if (isset($arguments['id_from'])) {
+            $query->where('id', '>=', $arguments['id_from']);
+        }
+        if (isset($arguments['id_to'])) {
+            $query->where('id', '<=', $arguments['id_to']);
         }
 
         if (!empty($arguments['query'])) {

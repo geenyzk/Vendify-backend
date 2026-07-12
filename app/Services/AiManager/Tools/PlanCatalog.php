@@ -46,14 +46,10 @@ class PlanCatalog
         return Schema::getColumnListing((new $modelClass())->getTable());
     }
 
-    public static function cleanAttributes(string $table, array $attributes, bool $isUpdate): array
+    public static function cleanAttributes(string $table, array $attributes): array
     {
         $columns = self::columns($table);
-        $blocked = ['created_at', 'updated_at'];
-
-        if (!$isUpdate) {
-            $blocked[] = 'id';
-        }
+        $blocked = ['id', 'created_at', 'updated_at'];
 
         return array_filter(
             $attributes,
