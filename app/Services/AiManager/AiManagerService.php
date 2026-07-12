@@ -34,6 +34,7 @@ class AiManagerService
             'user_id' => $user->id,
             'title' => $title,
             'last_activity_at' => now(),
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
         ]);
     }
 

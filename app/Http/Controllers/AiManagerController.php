@@ -65,7 +65,7 @@ class AiManagerController extends Controller
     }
 
     /** Full conversation: messages plus pending/decided action proposals. */
-    public function show(Request $request, int $id): JsonResponse
+    public function show(Request $request, $id): JsonResponse
     {
         $conversation = $this->ownedConversation($request, $id);
         if (!$conversation) {
@@ -76,7 +76,7 @@ class AiManagerController extends Controller
     }
 
     /** Send a message and get the assistant's reply plus any new proposals. */
-    public function sendMessage(Request $request, int $id): JsonResponse
+    public function sendMessage(Request $request, $id): JsonResponse
     {
         $validated = $request->validate([
             'message' => 'required|string|max:4000',
@@ -96,7 +96,7 @@ class AiManagerController extends Controller
         return $this->success($this->conversationPayload($conversation->fresh()));
     }
 
-    public function destroy(Request $request, int $id): JsonResponse
+    public function destroy(Request $request, $id): JsonResponse
     {
         $conversation = $this->ownedConversation($request, $id);
         if (!$conversation) {
@@ -149,11 +149,16 @@ class AiManagerController extends Controller
         return $this->success($this->proposalPayload($proposal), 'Action rejected');
     }
 
-    private function ownedConversation(Request $request, int $id): ?AiConversation
+    private function ownedConversation(Request $request, $identifier): ?AiConversation
     {
-        return AiConversation::with(['messages', 'proposals'])
-            ->where('user_id', $request->user()->id)
-            ->find($id);
+        $query = AiConversation::with(['messages', 'proposals'])
+            ->where('user_id', $request->user()->id);
+
+        if (is_numeric($identifier)) {
+            return $query->where('id', (int) $identifier)->first();
+        }
+
+        return $query->where('uuid', $identifier)->first();
     }
 
     private function ownedProposal(Request $request, int $id): ?AiActionProposal
@@ -218,6 +223,7 @@ class AiManagerController extends Controller
 
         return [
             'id' => $conversation->id,
+            'uuid' => $conversation->uuid ?? null,
             'title' => $conversation->title,
             'last_activity_at' => $conversation->last_activity_at?->toDateTimeString(),
             'messages' => $messages,
