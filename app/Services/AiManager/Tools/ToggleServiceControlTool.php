@@ -20,7 +20,7 @@ class ToggleServiceControlTool extends AiTool
 
     public function description(): string
     {
-        return 'Propose enabling or disabling a service control — for example turning off a network\'s airtime or data during a vendor outage. Use list_service_controls context from get_site data if needed; identify the control by its id. Dev-locked controls cannot be changed. Creates a pending action for admin approval.';
+        return 'Propose enabling or disabling an existing service availability control, for example turning off a network service during a vendor outage. This is NOT for activating data plans or catalog plans; use search_plans and manage_plan to update a plan active status. Identify the control by a real service_controls id. Dev-locked controls cannot be changed. Creates a pending action for admin approval.';
     }
 
     public function isMutating(): bool
@@ -49,7 +49,7 @@ class ToggleServiceControlTool extends AiTool
     public function rules(): array
     {
         return [
-            'service_control_id' => 'required|integer',
+            'service_control_id' => 'required|integer|exists:service_controls,id',
             'is_active' => 'required|boolean',
         ];
     }

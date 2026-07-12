@@ -218,7 +218,7 @@ class AiManagerService
 
         foreach ($pending as $proposal) {
             try {
-                $approved[] = $this->approve($proposal, $actor);
+                $approved[] = $this->approve($proposal, $actor, false);
             } catch (AiManagerException $e) {
                 $fresh = $proposal->fresh() ?? $proposal;
                 $failed[] = ['proposal' => $fresh, 'error' => $e->getMessage()];
@@ -306,7 +306,7 @@ class AiManagerService
      * the underlying permission (the AI can never let an admin exceed their own
      * rights), then runs the tool and records the outcome as the audit trail.
      */
-    public function approve(AiActionProposal $proposal, User $actor): AiActionProposal
+    public function approve(AiActionProposal $proposal, User $actor, bool $recordSystemNote = true): AiActionProposal
     {
         $tool = $this->registry->get($proposal->tool);
         if (!$tool || !$tool->isMutating()) {
@@ -342,7 +342,9 @@ class AiManagerService
                 'error' => $e->getMessage(),
                 'executed_at' => now(),
             ]);
-            $this->recordSystemNote($proposal->conversation, "[Action #{$proposal->id} failed] {$proposal->tool}: {$e->getMessage()}");
+            if ($recordSystemNote) {
+                $this->recordSystemNote($proposal->conversation, "[Action #{$proposal->id} failed] {$proposal->tool}: {$e->getMessage()}");
+            }
 
             throw new AiManagerException($e->getMessage());
         }
@@ -353,10 +355,12 @@ class AiManagerService
             'executed_at' => now(),
         ]);
 
-        $this->recordSystemNote(
-            $proposal->conversation,
-            "[Action #{$proposal->id} executed] {$proposal->summary} — approved by {$actor->email}.",
-        );
+        if ($recordSystemNote) {
+            $this->recordSystemNote(
+                $proposal->conversation,
+                "[Action #{$proposal->id} executed] {$proposal->summary} - approved by {$actor->email}.",
+            );
+        }
 
         return $proposal;
     }
@@ -439,6 +443,7 @@ Taking actions (very important):
 - You only ever see the tools the current admin is permitted to use; if a requested action isn't available, tell them they may lack the permission for it.
 - Approval can be given in chat with clear wording such as "approve", "approve #ID", or "approve all"; the UI approval buttons are optional.
 - For service plan changes, inspect the catalog with search_plans first, then create a manage_plan proposal for create, update, or delete. Never guess plan ids or columns.
+- Activating or deactivating data, airtime, cable, bill, exam, airtime PIN, or data PIN plans means updating that plan row's active field with manage_plan. Do not use toggle_service_control for catalog plans.
 
 Keep responses focused and professional.
 PROMPT;

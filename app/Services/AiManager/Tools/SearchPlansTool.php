@@ -31,6 +31,7 @@ class SearchPlansTool extends AiTool
                 ],
                 'query' => ['type' => 'string', 'description' => 'Text to match against name-like columns.'],
                 'active_only' => ['type' => 'boolean', 'description' => 'Only return active rows when the table has an active column.'],
+                'inactive_only' => ['type' => 'boolean', 'description' => 'Only return inactive rows when the table has an active column.'],
                 'filters' => ['type' => 'object', 'description' => 'Exact-match filters by real column name, for example {"network":"mtn"} or {"plan_type":"SME"}.'],
                 'limit' => ['type' => 'integer', 'description' => 'Max rows (1-50, default 15).'],
             ],
@@ -45,6 +46,7 @@ class SearchPlansTool extends AiTool
             'table' => 'required|in:' . implode(',', PlanCatalog::tableNames()),
             'query' => 'nullable|string|max:120',
             'active_only' => 'nullable|boolean',
+            'inactive_only' => 'nullable|boolean',
             'filters' => 'nullable|array',
             'limit' => 'nullable|integer|min:1|max:' . self::MAX_LIMIT,
         ];
@@ -68,6 +70,10 @@ class SearchPlansTool extends AiTool
 
         if (!empty($arguments['active_only']) && in_array('active', $columns, true)) {
             $query->where('active', true);
+        }
+
+        if (!empty($arguments['inactive_only']) && in_array('active', $columns, true)) {
+            $query->where('active', false);
         }
 
         if (!empty($arguments['query'])) {
