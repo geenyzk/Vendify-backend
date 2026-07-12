@@ -13,6 +13,7 @@ use App\Models\Provider;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\PerformanceCache;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
@@ -33,7 +34,7 @@ class AdminController extends Controller
 
     public function stats()
     {
-        return $this->success([
+        $stats = Cache::remember(PerformanceCache::ADMIN_STATS_KEY, now()->addMinute(), fn () => [
             'users_graph' => $this->buildUserChart(),
             'transaction_count' => $this->getMonthlyTransactionCount(),
             'total_user' => User::count(),
@@ -50,6 +51,8 @@ class AdminController extends Controller
             'tx_chart' => $this->buildTransactionChart(),
             // 'api_balance' => VendorFactory::sumAllBalances()
         ]);
+
+        return $this->success($stats);
     }
 
     // ... [Private chart building methods: getLast7Days, buildUserChart, etc. kept as is] ...
@@ -164,13 +167,22 @@ class AdminController extends Controller
 
     public function systemInformation()
     {
-        $general = General::first();
+        $general = Cache::remember(
+            PerformanceCache::SYSTEM_INFO_KEY,
+            now()->addMinutes(10),
+            fn () => General::first(),
+        );
+
         return $general ? $this->success(['general' => $general]) : $this->fail([], 'System information not configured', 404);
     }
 
     public function airtimeDiscount()
     {
-        $discounts = Discount::where('service_type', 'airtime')->get();
+        $discounts = Cache::remember(
+            'discounts:airtime:v1',
+            now()->addMinutes(5),
+            fn () => Discount::where('service_type', 'airtime')->get(),
+        );
         return $this->success(['discount' => $discounts]);
     }
 
@@ -303,6 +315,11 @@ class AdminController extends Controller
                 $query->latest(); // Default sort
             }
 
+            $isCacheableCatalog = in_array($modelSlug, self::PUBLIC_TABLES, true);
+            $catalogCacheKey = $isCacheableCatalog
+                ? PerformanceCache::catalogVersionedKey($modelSlug, $request->query())
+                : null;
+
             // 4. Pagination / get
             if ($request->has('page') || $request->has('per_page')) {
                 $perPage = max(1, (int) $request->get('per_page', 10));
@@ -331,7 +348,9 @@ class AdminController extends Controller
                 ]);
             }
 
-            $records = $query->get();
+            $records = $catalogCacheKey
+                ? Cache::remember($catalogCacheKey, now()->addMinutes(10), fn () => $query->get())
+                : $query->get();
 
             if ($records->isNotEmpty()) {
                 $resourceClass = $this->resolveResourceClass($modelClass);
@@ -490,6 +509,10 @@ class AdminController extends Controller
 
             DB::commit();
 
+            if (in_array($table, self::PUBLIC_TABLES, true)) {
+                PerformanceCache::clearCatalog();
+            }
+
             return $self->success(
                 count($items) === 1 ? ($results[0] ?? null) : $results,
                 'Operation completed successfully'
@@ -540,6 +563,10 @@ class AdminController extends Controller
             }
             DB::commit();
 
+            if (in_array($table, self::PUBLIC_TABLES, true)) {
+                PerformanceCache::clearCatalog();
+            }
+
             $ids = array_column($items, 'id');
             $rows = DB::table($realTable)->whereIn('id', $ids)->orderBy($column)->get();
             return $this->success($rows, 'Reorder completed');
@@ -583,6 +610,10 @@ class AdminController extends Controller
             DB::commit();
 
             if ($count > 0) {
+                if (in_array($table, self::PUBLIC_TABLES, true)) {
+                    PerformanceCache::clearCatalog();
+                }
+
                 return $this->success(['deleted' => $count], "$count record(s) deleted");
             }
             return $this->fail([], 'No records found to delete', 404);

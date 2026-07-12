@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\General;
+use App\Support\PerformanceCache;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 
 class BrandingController extends Controller
 {
@@ -17,17 +19,23 @@ class BrandingController extends Controller
      */
     public function show(): JsonResponse
     {
-        $general = General::find(1);
+        $branding = Cache::remember(PerformanceCache::BRANDING_KEY, now()->addMinutes(30), function () {
+            $general = General::query()
+                ->select(['id', 'app_name', 'logo', 'meta_title', 'meta_description', 'app_email', 'app_phone'])
+                ->find(1);
 
-        return $this->success([
-            'app_name' => $general?->app_name ?: 'Laravel',
-            'logo' => $general?->app_logo,
-            'meta_title' => $general?->meta_title ?: ($general?->app_name ?: 'Laravel'),
-            'meta_description' => $general?->meta_description,
-            // Public-facing contact details (shown in the landing footer) —
-            // still nothing sensitive from General (bank/BVN stays private).
-            'app_email' => $general?->app_email,
-            'app_phone' => $general?->app_phone,
-        ]);
+            return [
+                'app_name' => $general?->app_name ?: 'Laravel',
+                'logo' => $general?->app_logo,
+                'meta_title' => $general?->meta_title ?: ($general?->app_name ?: 'Laravel'),
+                'meta_description' => $general?->meta_description,
+                // Public-facing contact details (shown in the landing footer) —
+                // still nothing sensitive from General (bank/BVN stays private).
+                'app_email' => $general?->app_email,
+                'app_phone' => $general?->app_phone,
+            ];
+        });
+
+        return $this->success($branding);
     }
 }

@@ -3,7 +3,22 @@
 namespace App\Providers;
 
 use App\Interfaces\UserRepositoryInterface;
+use App\Models\AirtimePlan;
+use App\Models\BillPlan;
+use App\Models\CablePlan;
+use App\Models\ChildCustomer;
+use App\Models\ChildInstance;
+use App\Models\ChildTransaction;
+use App\Models\DataPlan;
+use App\Models\DiscoProviderId;
+use App\Models\Discount;
+use App\Models\General;
+use App\Models\Network;
+use App\Models\NetworkType;
 use App\Models\Setting;
+use App\Models\Transaction;
+use App\Models\User;
+use App\Support\PerformanceCache;
 use App\Repository\Admin\UserRepository;
 
 use Illuminate\Auth\Notifications\ResetPassword;
@@ -30,6 +45,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->applyDatabaseMailConfig();
+        $this->registerPerformanceCacheInvalidation();
 
         // The default ResetPassword notification builds its link from the
         // named `password.reset` web route, which resolves to the Laravel
@@ -87,6 +103,24 @@ class AppServiceProvider extends ServiceProvider
             }
         } catch (\Throwable $e) {
             // Fresh install / DB not reachable yet — fall back to .env silently.
+        }
+    }
+
+    protected function registerPerformanceCacheInvalidation(): void
+    {
+        foreach ([Transaction::class, User::class, ChildInstance::class, ChildCustomer::class, ChildTransaction::class] as $model) {
+            $model::saved(fn () => PerformanceCache::clearDashboard());
+            $model::deleted(fn () => PerformanceCache::clearDashboard());
+        }
+
+        foreach ([General::class, Setting::class] as $model) {
+            $model::saved(fn () => PerformanceCache::clearBranding());
+            $model::deleted(fn () => PerformanceCache::clearBranding());
+        }
+
+        foreach ([Network::class, NetworkType::class, DataPlan::class, AirtimePlan::class, CablePlan::class, BillPlan::class, DiscoProviderId::class, Discount::class] as $model) {
+            $model::saved(fn () => PerformanceCache::clearCatalog());
+            $model::deleted(fn () => PerformanceCache::clearCatalog());
         }
     }
 }

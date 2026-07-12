@@ -20,8 +20,29 @@ class UserController extends Controller
 
     public function index()
     {
-        //
-        return $this->success(["users" => User::with('role')->get()->toArray()]);
+        $users = User::query()
+            ->select([
+                'id',
+                'fullname',
+                'username',
+                'email',
+                'phone',
+                'wallet_balance',
+                'status',
+                'is_active',
+                'is_verified',
+                'email_verified_at',
+                'user_type',
+                'role_id',
+                'created_at',
+            ])
+            ->with('role:id,name,slug,is_staff')
+            ->withCount('transactions')
+            ->latest()
+            ->get();
+        $users->each->setAppends([]);
+
+        return $this->success(["users" => $users]);
 
     }
 
@@ -92,7 +113,28 @@ class UserController extends Controller
      */
     public function show(string $id)
     {
-        return $this->success(["user" => User::with('role')->find($id)->toArray()]);
+        $user = User::query()
+            ->select([
+                'id',
+                'fullname',
+                'username',
+                'email',
+                'phone',
+                'wallet_balance',
+                'status',
+                'is_active',
+                'is_verified',
+                'email_verified_at',
+                'user_type',
+                'role_id',
+                'created_at',
+            ])
+            ->with('role:id,name,slug,is_staff')
+            ->withCount('transactions')
+            ->findOrFail($id);
+        $user->setAppends([]);
+
+        return $this->success(["user" => $user]);
     }
 
     /**

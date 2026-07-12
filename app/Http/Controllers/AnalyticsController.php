@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Transaction;
 use App\Models\User;
+use App\Support\PerformanceCache;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * @group Admin Analytics
@@ -49,7 +51,10 @@ class AnalyticsController extends Controller
             ? Carbon::parse($validated['start_date'])->startOfDay()
             : $endDate->copy()->subDays(29)->startOfDay();
 
-        return $this->success([
+        $analytics = Cache::remember(
+            PerformanceCache::analyticsKey($startDate->toDateString(), $endDate->toDateString()),
+            now()->addMinutes(5),
+            fn () => [
             'period' => [
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
@@ -62,7 +67,10 @@ class AnalyticsController extends Controller
             'signups_over_time' => $this->buildSignupsOverTime($startDate, $endDate),
             'funding_vs_spend' => $this->buildFundingVsSpend($startDate, $endDate),
             'top_customers' => $this->buildTopCustomers($startDate, $endDate),
-        ]);
+            ],
+        );
+
+        return $this->success($analytics);
     }
 
     private function dateRange(Carbon $start, Carbon $end): array
@@ -237,7 +245,9 @@ class AnalyticsController extends Controller
             ->get();
 
         $userIds = $rows->pluck('user_id')->map(fn ($id) => (int) $id)->all();
-        $users = User::whereIn('id', $userIds)->get()->keyBy('id');
+        $users = User::whereIn('id', $userIds)
+            ->get(['id', 'fullname', 'email'])
+            ->keyBy('id');
 
         return $rows->map(function ($row) use ($users) {
             $user = $users->get((int) $row->user_id);
