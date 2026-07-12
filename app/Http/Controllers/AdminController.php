@@ -37,6 +37,9 @@ class AdminController extends Controller
             'users_graph' => $this->buildUserChart(),
             'transaction_count' => $this->getMonthlyTransactionCount(),
             'total_user' => User::count(),
+            // Seen within the last 5 minutes — last_seen_at is stamped by
+            // the TrackLastSeen middleware on authenticated API requests.
+            'online_users' => User::where('last_seen_at', '>=', now()->subMinutes(5))->count(),
             'total_user_balance' => User::sum('wallet_balance'),
             'api_balances' => VendorFactory::sumAllBalances(),
             'total_funding_today' => $this->getTodayFundingTotal(),

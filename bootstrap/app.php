@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\EnsureUserType;
 use App\Http\Middleware\HandleRequest;
+use App\Http\Middleware\TrackLastSeen;
 use App\Http\Middleware\VerifyChildSignature;
 use App\Http\Middleware\VerifySimDeviceSignature;
 use Illuminate\Foundation\Application;
@@ -23,6 +24,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append([
             HandleRequest::class
         ]);
+
+        // Presence heartbeat for the admin "online now" stat — throttled
+        // to one users.last_seen_at write per user per minute.
+        $middleware->api(append: [TrackLastSeen::class]);
 
         $middleware->alias([
             'user_type' => EnsureUserType::class,
