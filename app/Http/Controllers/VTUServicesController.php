@@ -14,6 +14,7 @@ use App\Services\PromotionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -31,39 +32,55 @@ class VTUServicesController extends Controller
         $this->token = env('VTU_API_TOKEN');
     }
 
-    private function makeRequest($method, $endpoint, $data = [])
+    private function performRequest($method, $endpoint, $data = [])
     {
-        $response = Http::withHeaders([
-            'Authorization' => 'Token ' . $this->token,
-            'Content-Type' => 'application/json',
-        ])->{$method}($this->baseUrl . $endpoint, $data);
+        $response = Http::timeout(10)
+            ->retry(1, 100)
+            ->withHeaders([
+                'Authorization' => 'Token ' . $this->token,
+                'Content-Type' => 'application/json',
+            ])->{$method}($this->baseUrl . $endpoint, $data);
 
-        return response()->json($response->json(), $response->status());
+        return [
+            'body' => $response->json(),
+            'status' => $response->status(),
+        ];
+    }
+
+    private function makeRequest($method, $endpoint, $data = [], int $ttlMinutes = 0)
+    {
+        $cacheKey = 'vtu:' . strtolower($method) . ':' . $endpoint . ':' . md5(json_encode($data));
+
+        $payload = $ttlMinutes > 0
+            ? Cache::remember($cacheKey, now()->addMinutes($ttlMinutes), fn () => $this->performRequest($method, $endpoint, $data))
+            : $this->performRequest($method, $endpoint, $data);
+
+        return response()->json($payload['body'] ?? [], $payload['status'] ?? 200);
     }
 
     public function getUser()
     {
-        return $this->makeRequest('get', 'user/');
+        return $this->makeRequest('get', 'user/', [], 1);
     }
 
     public function getNetworks()
     {
-        return $this->makeRequest('get', 'get/network/');
+        return $this->makeRequest('get', 'get/network/', [], 10);
     }
 
     public function getNetworkPlans()
     {
-        return $this->makeRequest('get', 'network/');
+        return $this->makeRequest('get', 'network/', [], 10);
     }
 
     public function getDataPlans()
     {
-        return $this->makeRequest('get', 'data/');
+        return $this->makeRequest('get', 'data/', [], 10);
     }
 
     public function getDataPlanById($id)
     {
-        return $this->makeRequest('get', "data/{$id}");
+        return $this->makeRequest('get', "data/{$id}", [], 10);
     }
 
     public function validateIUC(Request $request)
