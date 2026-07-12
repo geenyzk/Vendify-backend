@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 /**
  * One AI Manager chat thread owned by the admin who started it. See
@@ -35,5 +36,14 @@ class AiConversation extends Model
     public function proposals(): HasMany
     {
         return $this->hasMany(AiActionProposal::class)->latest('id');
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function ($conversation) {
+            if (empty($conversation->uuid)) {
+                $conversation->uuid = (string) Str::uuid();
+            }
+        });
     }
 }
