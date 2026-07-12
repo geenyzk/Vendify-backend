@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\HasServers;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Network;
@@ -114,7 +113,7 @@ class DataPlan extends Model
      * providers() pivot, falling back to a direct providerables lookup
      * (mirrors DataPlanResource's own fallback).
      */
-    protected function resolveCostPrice(): float
+    public function resolveCostPrice(): float
     {
         $provider = $this->relationLoaded('providers')
             ? $this->getRelation('providers')->first()
