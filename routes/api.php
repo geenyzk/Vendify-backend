@@ -112,13 +112,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
 // table was reachable by anyone, unauthenticated.
 Route::middleware(['auth:sanctum', 'user_type:admin'])->group(function () {
     Route::post('/insert', [AdminController::class, 'universalInsert']);
-    Route::post('/table/{table}', [AdminController::class, 'universalCreateOrUpdate']);
-    Route::put('/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
+    // Literal sub-routes (/reorder, /bulk) MUST be registered before the
+    // "/{id}" wildcard — otherwise "PUT /table/{table}/bulk" matches the
+    // wildcard with {id}="bulk", which wraps the whole request as one record
+    // with id "bulk" and 500s ("Incorrect integer value: 'bulk'").
     Route::post('/table/{table}/reorder', [AdminController::class, 'reorder']);
     Route::post('/table/{table}/bulk', [AdminController::class, 'universalBulkCreateOrUpdate']);
     Route::put('/table/{table}/bulk', [AdminController::class, 'universalBulkCreateOrUpdate']);
-    Route::delete('/table/{table}/{id}', [AdminController::class, 'universalDelete']);
+    Route::post('/table/{table}', [AdminController::class, 'universalCreateOrUpdate']);
+    Route::put('/table/{table}/{id}', [AdminController::class, 'universalCreateOrUpdate']);
     Route::delete('/table/{table}', [AdminController::class, 'universalBulkDelete']);
+    Route::delete('/table/{table}/{id}', [AdminController::class, 'universalDelete']);
 
     // File upload — not reachable via the generic Universal Table API,
     // which only accepts a JSON body, not multipart form data.
