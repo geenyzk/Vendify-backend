@@ -57,3 +57,15 @@ Schedule::command('broadcasts:send-scheduled')
         \Illuminate\Support\Facades\Log::error('broadcasts:send-scheduled scheduled run failed.');
     });
 
+// AI monitor sweep (see HealthSweeper): records platform problems as
+// AiAlert rows and emails critical ones — independent of admin traffic, so
+// an overnight outage is noticed overnight. The AiMonitor middleware covers
+// installs whose host has no cron; its cache lock keeps the two from
+// double-sweeping.
+Schedule::command('ai:sweep')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('ai:sweep scheduled run failed.');
+    });
+

@@ -19,6 +19,7 @@ class ToolRegistry
     {
         // Read-only tools — run inline to ground the assistant in live data.
         $this->register(new GetSiteStatsTool());
+        $this->register(new GetSystemHealthTool());
         $this->register(new SearchTransactionsTool());
         $this->register(new GetTransactionTool());
         $this->register(new SearchUsersTool());

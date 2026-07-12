@@ -257,6 +257,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::delete('/conversations/{id}', [AiManagerController::class, 'destroy']);
             Route::post('/actions/{id}/approve', [AiManagerController::class, 'approveAction']);
             Route::post('/actions/{id}/reject', [AiManagerController::class, 'rejectAction']);
+
+            // Proactive monitoring alerts (written by the AiMonitor
+            // middleware) — drive the floating AI button / topbar badge.
+            Route::get('/alerts', [AiManagerController::class, 'alerts']);
+            Route::post('/alerts/{id}/acknowledge', [AiManagerController::class, 'acknowledgeAlert']);
+            Route::post('/alerts/acknowledge-all', [AiManagerController::class, 'acknowledgeAllAlerts']);
         });
 
         // Airtime to cash review queue — a distinct reviewer capability from

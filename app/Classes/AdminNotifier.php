@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Mail\AdminNotificationMail;
+use App\Models\AiAlert;
 use App\Models\AirtimeToCashRequest;
 use App\Models\General;
 use App\Models\Setting;
@@ -62,6 +63,17 @@ class AdminNotifier
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * The AI monitor detected a critical platform problem (vendor down, all
+     * SIM devices offline, ...). Called once per alert, when it is first
+     * created — re-detections update the existing alert without re-mailing.
+     */
+    public static function notifyAiAlert(AiAlert $alert): void
+    {
+        self::send('AI monitor: critical alert', $alert->title);
+        self::notifyAdminUsers('admin_ai_alert', 'AI monitor alert', $alert->title, 'ai_manager');
     }
 
     public static function notifySignup(User $user): void

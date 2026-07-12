@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\HttpResponse;
 use App\Models\AiActionProposal;
+use App\Models\AiAlert;
 use App\Models\AiConversation;
 use App\Models\AiMessage;
 use App\Services\AiManager\AiManagerException;
@@ -152,6 +153,42 @@ class AiManagerController extends Controller
             'conversation',
             fn ($q) => $q->where('user_id', $request->user()->id)
         )->find($id);
+    }
+
+    /**
+     * Unacknowledged monitoring alerts, written by the AiMonitor middleware's
+     * background health sweeps. Most severe and most recently confirmed first.
+     */
+    public function alerts(): JsonResponse
+    {
+        $alerts = AiAlert::unacknowledged()
+            ->orderByRaw("CASE severity WHEN 'critical' THEN 0 ELSE 1 END")
+            ->orderByDesc('updated_at')
+            ->limit(20)
+            ->get(['id', 'severity', 'title', 'created_at', 'updated_at']);
+
+        return $this->success($alerts);
+    }
+
+    /** Dismiss one alert. It can reappear if the monitor re-detects the condition. */
+    public function acknowledgeAlert(int $id): JsonResponse
+    {
+        $alert = AiAlert::unacknowledged()->find($id);
+        if (!$alert) {
+            return $this->fail([], 'Alert not found.', 404);
+        }
+
+        $alert->update(['acknowledged_at' => now()]);
+
+        return $this->success([], 'Alert acknowledged');
+    }
+
+    /** Dismiss every open alert at once. */
+    public function acknowledgeAllAlerts(): JsonResponse
+    {
+        AiAlert::unacknowledged()->update(['acknowledged_at' => now()]);
+
+        return $this->success([], 'All alerts acknowledged');
     }
 
     private function conversationPayload(AiConversation $conversation): array
