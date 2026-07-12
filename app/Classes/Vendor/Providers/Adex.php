@@ -86,12 +86,17 @@ class Adex extends VendorBase
         }
 
         try {
-            $response = Http::withHeaders([
-                'Authorization' => 'Basic ' . base64_encode(
-                    $this->provider->username . ':' . $this->provider->password
-                ),
-                'Content-Type' => 'application/json',
-            ])->post($this->baseUrl() . "/user");
+            // Token exchange feeds both purchases and the dashboard balance/
+            // health checks — 15s is still generous for a login round-trip,
+            // while keeping a dead vendor from stalling the stats endpoint
+            // for the full 30s client default.
+            $response = Http::connectTimeout(5)->timeout(15)
+                ->withHeaders([
+                    'Authorization' => 'Basic ' . base64_encode(
+                        $this->provider->username . ':' . $this->provider->password
+                    ),
+                    'Content-Type' => 'application/json',
+                ])->post($this->baseUrl() . "/user");
 
             $data = $response->json();
 

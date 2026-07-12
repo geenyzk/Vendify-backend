@@ -5,6 +5,7 @@ namespace App\Classes\Vendor\Providers;
 use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\DataPlan;
+use App\Models\Role;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -86,8 +87,11 @@ class Ogdams extends VendorBase
     public function login(): array
     {
         try {
-            $response = Http::withHeaders($this->getAuthHeaders())
-                ->get($this->baseUrl() . '/api/v4/get/data/plans');
+            // Health-check path — cap it so one slow vendor can't stall the
+            // admin stats/connection-status requests.
+            $response = Http::connectTimeout(5)->timeout(10)
+                ->withHeaders($this->getAuthHeaders())
+                ->get($this->baseUrl() . '/get/data/plans');
 
             return $response->successful() && $response->json('status') === true
                 ? ['status' => 'success']
@@ -100,6 +104,7 @@ class Ogdams extends VendorBase
 
     protected function getAuthHeaders(): array
     {
+        // Log::info("Ogdams auth headers: Bearer {$this->provider}");
         return [
             'Authorization' => 'Bearer ' . $this->provider->api_key,
             'Accept' => 'application/json',
@@ -119,7 +124,7 @@ class Ogdams extends VendorBase
 
     protected function pingEndpoint(): string
     {
-        return $this->baseUrl() . '/api/v4/get/data/plans';
+        return $this->baseUrl() . '/get/data/plans';
     }
 
     protected function endpoint(string $service): string
@@ -249,8 +254,10 @@ class Ogdams extends VendorBase
     public function fetchRemotePlans(): array
     {
         $response = Http::withHeaders($this->getAuthHeaders())
-            ->get($this->baseUrl() . '/api/v4/get/data/plans')
+            ->get($this->baseUrl() . '/get/data/plans')
             ->json();
+
+        Log::info($response);
 
         if (!($response['status'] ?? false) || !is_array($response['data'] ?? null)) {
             throw new \RuntimeException('Ogdams plan list request failed or returned an unexpected shape.');
@@ -296,13 +303,16 @@ class Ogdams extends VendorBase
      * already linked to *this* Ogdams provider, or brand-new rows it creates
      * itself. It never repoints a plan some other vendor already owns.
      *
-     * New plans land inactive + is_draft=true so they don't go on sale with
-     * a default ₦0 markup before an admin has priced them.
+     * New plans land inactive + is_draft=true so they don't go on sale
+     * before an admin has reviewed them — but they arrive pre-priced with a
+     * default percentage markup over cost (see defaultPricing()) so
+     * activating a reviewed plan is one click, not a full pricing pass.
      */
     public function syncPlans(): array
     {
         $remotePlans = $this->fetchRemotePlans();
         $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0];
+        $defaultPricing = $this->defaultPricing();
 
         foreach ($remotePlans as $remote) {
             if ($remote['vendor_plan_id'] === '') {
@@ -329,6 +339,14 @@ class Ogdams extends VendorBase
                 DataPlan::where('id', $existingLink->providerable_id)->update([
                     'validity' => $remote['validity'],
                 ]);
+                // Backfill the default markup onto drafts synced before
+                // defaultPricing() existed — but never touch a plan that has
+                // any pricing set or has left draft state: those are (or were)
+                // admin-reviewed prices.
+                DataPlan::where('id', $existingLink->providerable_id)
+                    ->where('is_draft', true)
+                    ->whereNull('pricing')
+                    ->update(['pricing' => json_encode($defaultPricing)]);
                 DB::table('providerables')
                     ->where('id', $existingLink->id)
                     ->update([
@@ -348,6 +366,7 @@ class Ogdams extends VendorBase
                 'active' => false,
                 'is_draft' => true,
                 'sort_order' => 0,
+                'pricing' => $defaultPricing,
             ]);
 
             DB::table('providerables')->insert([
@@ -366,6 +385,27 @@ class Ogdams extends VendorBase
         }
 
         return $summary;
+    }
+
+    /**
+     * Default per-role pricing for plans created by syncPlans(): a 5%
+     * markup over the provider cost price for every customer-facing role,
+     * plus the "user" key DataPlan::getPriceAttribute() falls back to for
+     * viewers with no role. Percentage (not fiat) so the selling price
+     * tracks cost updates on later syncs without repricing every plan.
+     * Admins tune individual tiers (resellers/API usually run thinner)
+     * when reviewing the draft.
+     */
+    private function defaultPricing(): array
+    {
+        $roles = Role::where('is_staff', false)->pluck('name')->all();
+
+        $pricing = ['user' => ['type' => 'percentage', 'value' => 5]];
+        foreach ($roles as $role) {
+            $pricing[$role] = ['type' => 'percentage', 'value' => 5];
+        }
+
+        return $pricing;
     }
 
     /**

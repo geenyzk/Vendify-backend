@@ -27,7 +27,10 @@ class Vtpass extends VendorBase
     public function checkBalance(): string
     {
         try {
-            $res = Http::withHeaders($this->getAuthHeaders())
+            // Dashboard/health path — cap it well below PHP's execution
+            // limit so one slow vendor can't stall the whole stats request.
+            $res = Http::connectTimeout(5)->timeout(10)
+                ->withHeaders($this->getAuthHeaders())
                 ->get($this->baseUrl() . '/balance')
                 ->json();
 
@@ -59,7 +62,9 @@ class Vtpass extends VendorBase
     public function login(): array
     {
         try {
-            $res = Http::withHeaders($this->getAuthHeaders())
+            // Health-check path — same short cap as checkBalance().
+            $res = Http::connectTimeout(5)->timeout(10)
+                ->withHeaders($this->getAuthHeaders())
                 ->get($this->baseUrl() . '/balance')
                 ->json();
 

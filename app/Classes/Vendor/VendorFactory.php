@@ -119,10 +119,21 @@ class VendorFactory
     public static function sumAllBalances(): float
     {
         $total = 0.0;
-        Vendor::all()->each(function ($vendor) use (&$total) {
+        // Active vendors only: an inactive row is by definition not vending,
+        // and pinging one (often mid-configuration, with bad credentials)
+        // just burns dashboard load time on a request bound to fail.
+        Vendor::where('active', true)->get()->each(function ($vendor) use (&$total) {
             try {
-                $vendorInstance = self::make($vendor);
-                $total += (float) str_replace(',', '', $vendorInstance->checkBalance());
+                // Each checkBalance() is a live HTTP round-trip to the vendor,
+                // and this runs inside the admin dashboard request — before
+                // caching, a few slow/unreachable vendors pushed the stats
+                // endpoint past PHP's 60s execution limit. A 5-minute-old
+                // balance is more than fresh enough for a dashboard tile.
+                $total += Cache::remember(
+                    "vendor-balance:{$vendor->id}",
+                    now()->addMinutes(5),
+                    fn () => (float) str_replace(',', '', self::make($vendor)->checkBalance())
+                );
             } catch (\Throwable $e) {
                 // Never log the full Vendor model here — it carries
                 // username/password/api_key/secret_key, and this used to go
