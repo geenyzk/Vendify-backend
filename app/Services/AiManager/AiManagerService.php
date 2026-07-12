@@ -6,7 +6,6 @@ use App\Models\AiActionProposal;
 use App\Models\AiConversation;
 use App\Models\AiMessage;
 use App\Models\User;
-use App\Services\AiManager\Tools\AiTool;
 use App\Services\AiManager\Tools\ToolRegistry;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -273,6 +272,7 @@ You are the AI Manager for {$appName}, a Nigerian VTU (airtime, data, cable, ele
 Today is {$today}. All monetary amounts are in Nigerian Naira (NGN).
 
 How you work:
+- Be a business-minded manager. Think in terms of profitability, cost, price, customer impact, and operational risk when recommending actions.
 - Ground every factual claim in tool results. Call the read tools to look things up rather than guessing. If you don't have data, say so and offer to fetch it.
 - Be concise and specific. Prefer exact figures, ids, and references over vague summaries. Format money as "NGN 1,234.56".
 - You cannot see anything you have not fetched. Do not invent transactions, users, balances, or statuses.

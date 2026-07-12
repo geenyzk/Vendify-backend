@@ -28,6 +28,10 @@ class ToolRegistry
         $this->register(new SearchDataPlansTool());
         $this->register(new ListMarketingTool());
         $this->register(new ListAffiliatesTool());
+        $this->register(new ListAffiliateCustomersTool());
+        $this->register(new AnalyzePricingTrendsTool());
+        $this->register(new RecommendPricingStrategyTool());
+        $this->register(new GetPricingStrategyTool());
 
         // Mutating tools — proposal-only, gated by their real permission slug.
         $this->register(new RefundTransactionTool());
@@ -36,9 +40,15 @@ class ToolRegistry
         $this->register(new ToggleServiceControlTool());
         $this->register(new SendBroadcastTool());
         $this->register(new UpdateDataPlanPriceTool());
+        $this->register(new AdjustDataPlanPriceTool());
         $this->register(new CreateDiscountTool());
         $this->register(new CreatePromotionTool());
         $this->register(new CreateAffiliateDirectiveTool());
+        $this->register(new GetSiteSettingsTool());
+        $this->register(new UpdateSiteSettingsTool());
+        $this->register(new GetWelcomeMessageTool());
+        $this->register(new UpdateWelcomeMessageTool());
+        $this->register(new SendAffiliateCustomerMessageTool());
     }
 
     public function register(AiTool $tool): void
