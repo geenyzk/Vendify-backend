@@ -26,6 +26,7 @@ class ToolRegistry
         $this->register(new GetUserTool());
         $this->register(new GetVendorBalancesTool());
         $this->register(new SearchDataPlansTool());
+        $this->register(new SearchPlansTool());
         $this->register(new ListMarketingTool());
         $this->register(new ListAffiliatesTool());
         $this->register(new ListAffiliateCustomersTool());
@@ -41,6 +42,7 @@ class ToolRegistry
         $this->register(new SendBroadcastTool());
         $this->register(new UpdateDataPlanPriceTool());
         $this->register(new AdjustDataPlanPriceTool());
+        $this->register(new ManagePlanTool());
         $this->register(new CreateDiscountTool());
         $this->register(new CreatePromotionTool());
         $this->register(new CreateAffiliateDirectiveTool());

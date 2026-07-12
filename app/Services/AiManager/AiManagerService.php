@@ -7,6 +7,7 @@ use App\Models\AiConversation;
 use App\Models\AiMessage;
 use App\Models\User;
 use App\Services\AiManager\Tools\ToolRegistry;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -54,6 +55,10 @@ class AiManagerService
         }
         $conversation->last_activity_at = now();
         $conversation->save();
+
+        if ($approval = $this->tryHandleVerbalApproval($conversation, $actor, $content)) {
+            return $approval;
+        }
 
         $tools = $this->registry->openAiSchemasForUser($actor);
         $maxIterations = (int) config('services.openai.max_tool_iterations', 6);
@@ -161,16 +166,147 @@ class AiManagerService
     }
 
     /**
+     * Convert a clear chat approval into the same execution path used by the
+     * approve button. Ambiguous approvals with multiple pending actions are
+     * paused so the admin can choose a specific action or approve all.
+     *
+     * @return null|array{assistant: AiMessage, proposals: array<int, AiActionProposal>}
+     */
+    private function tryHandleVerbalApproval(AiConversation $conversation, User $actor, string $content): ?array
+    {
+        if (!$this->isVerbalApproval($content)) {
+            return null;
+        }
+
+        $pending = $conversation->proposals()
+            ->where('status', AiActionProposal::STATUS_PENDING)
+            ->orderBy('id')
+            ->get();
+
+        if ($pending->isEmpty()) {
+            return null;
+        }
+
+        $requestedId = $this->requestedProposalId($content);
+        if ($requestedId !== null) {
+            $pending = $pending->where('id', $requestedId)->values();
+
+            if ($pending->isEmpty()) {
+                $assistant = $conversation->messages()->create([
+                    'role' => AiMessage::ROLE_ASSISTANT,
+                    'content' => "I couldn't find a pending action #{$requestedId} in this conversation. Please check the action number or approve one of the pending action cards.",
+                ]);
+
+                return ['assistant' => $assistant, 'proposals' => []];
+            }
+        } elseif ($pending->count() > 1 && !$this->isApproveAll($content)) {
+            $actions = $pending
+                ->map(fn (AiActionProposal $proposal): string => "#{$proposal->id}: {$proposal->summary}")
+                ->implode("\n");
+
+            $assistant = $conversation->messages()->create([
+                'role' => AiMessage::ROLE_ASSISTANT,
+                'content' => "I found multiple pending actions, so I need a clearer approval before running anything.\n\n{$actions}\n\nReply with \"approve all\" to run every pending action, or \"approve #ID\" for one action.",
+            ]);
+
+            return ['assistant' => $assistant, 'proposals' => $pending->all()];
+        }
+
+        $approved = [];
+        $failed = [];
+
+        foreach ($pending as $proposal) {
+            try {
+                $approved[] = $this->approve($proposal, $actor, false);
+            } catch (AiManagerException $e) {
+                $fresh = $proposal->fresh() ?? $proposal;
+                $failed[] = ['proposal' => $fresh, 'error' => $e->getMessage()];
+            }
+        }
+
+        $assistant = $conversation->messages()->create([
+            'role' => AiMessage::ROLE_ASSISTANT,
+            'content' => $this->verbalApprovalMessage($approved, $failed),
+        ]);
+
+        $failedProposals = array_map(fn (array $failure): AiActionProposal => $failure['proposal'], $failed);
+
+        return [
+            'assistant' => $assistant,
+            'proposals' => array_merge($approved, $failedProposals),
+        ];
+    }
+
+    private function isVerbalApproval(string $content): bool
+    {
+        $normalized = Str::of($content)->lower()->squish()->toString();
+
+        if (preg_match('/\b(no|nope|reject|cancel|stop|never|don\'t|do not|dont|not now)\b/', $normalized)) {
+            return false;
+        }
+
+        return (bool) preg_match('/\b(yes|yep|yeah|approve|approved|confirm|confirmed|proceed|execute|run it|go ahead|do it|ok|okay)\b/', $normalized);
+    }
+
+    private function isApproveAll(string $content): bool
+    {
+        $normalized = Str::of($content)->lower()->squish()->toString();
+
+        return (bool) preg_match('/\b(all|everything|every|both)\b/', $normalized);
+    }
+
+    private function requestedProposalId(string $content): ?int
+    {
+        if (preg_match('/(?:#|action\s*)\s*(\d+)/i', $content, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<int, AiActionProposal> $approved
+     * @param array<int, array{proposal: AiActionProposal, error: string}> $failed
+     */
+    private function verbalApprovalMessage(array $approved, array $failed): string
+    {
+        $lines = [];
+
+        if (!empty($approved)) {
+            $lines[] = count($approved) === 1
+                ? 'Approved and executed this action:'
+                : 'Approved and executed these actions:';
+
+            foreach ($approved as $proposal) {
+                $lines[] = "- #{$proposal->id}: {$proposal->summary}";
+            }
+        }
+
+        if (!empty($failed)) {
+            if (!empty($lines)) {
+                $lines[] = '';
+            }
+
+            $lines[] = count($failed) === 1
+                ? 'This action could not be executed:'
+                : 'These actions could not be executed:';
+
+            foreach ($failed as $failure) {
+                $proposal = $failure['proposal'];
+                $lines[] = "- #{$proposal->id}: {$proposal->summary} ({$failure['error']})";
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * Approve and execute a pending proposal. Re-checks that the approver holds
      * the underlying permission (the AI can never let an admin exceed their own
      * rights), then runs the tool and records the outcome as the audit trail.
      */
-    public function approve(AiActionProposal $proposal, User $actor): AiActionProposal
+    public function approve(AiActionProposal $proposal, User $actor, bool $recordSystemNote = true): AiActionProposal
     {
-        if (!$proposal->isPending()) {
-            throw new AiManagerException('This action is no longer pending.');
-        }
-
         $tool = $this->registry->get($proposal->tool);
         if (!$tool || !$tool->isMutating()) {
             throw new AiManagerException('This action can no longer be executed.');
@@ -180,6 +316,22 @@ class AiManagerService
             throw new AiManagerException('You do not have permission to approve this action.');
         }
 
+        $proposal = DB::transaction(function () use ($proposal, $actor) {
+            $locked = AiActionProposal::whereKey($proposal->id)->lockForUpdate()->first();
+
+            if (!$locked || !$locked->isPending()) {
+                throw new AiManagerException('This action is no longer pending.');
+            }
+
+            $locked->update([
+                'status' => AiActionProposal::STATUS_EXECUTING,
+                'decided_by' => $actor->id,
+                'decided_at' => now(),
+            ]);
+
+            return $locked->fresh(['conversation']);
+        });
+
         try {
             $arguments = $tool->validate($proposal->arguments);
             $result = $tool->handle($arguments, $actor);
@@ -187,11 +339,11 @@ class AiManagerService
             $proposal->update([
                 'status' => AiActionProposal::STATUS_FAILED,
                 'error' => $e->getMessage(),
-                'decided_by' => $actor->id,
-                'decided_at' => now(),
                 'executed_at' => now(),
             ]);
-            $this->recordSystemNote($proposal->conversation, "[Action #{$proposal->id} failed] {$proposal->tool}: {$e->getMessage()}");
+            if ($recordSystemNote) {
+                $this->recordSystemNote($proposal->conversation, "[Action #{$proposal->id} failed] {$proposal->tool}: {$e->getMessage()}");
+            }
 
             throw new AiManagerException($e->getMessage());
         }
@@ -199,15 +351,15 @@ class AiManagerService
         $proposal->update([
             'status' => AiActionProposal::STATUS_EXECUTED,
             'result' => $result,
-            'decided_by' => $actor->id,
-            'decided_at' => now(),
             'executed_at' => now(),
         ]);
 
-        $this->recordSystemNote(
-            $proposal->conversation,
-            "[Action #{$proposal->id} executed] {$proposal->summary} — approved by {$actor->email}.",
-        );
+        if ($recordSystemNote) {
+            $this->recordSystemNote(
+                $proposal->conversation,
+                "[Action #{$proposal->id} executed] {$proposal->summary} - approved by {$actor->email}.",
+            );
+        }
 
         return $proposal;
     }
@@ -246,7 +398,14 @@ class AiManagerService
             'content' => $this->systemPrompt($actor),
         ]];
 
-        foreach ($conversation->messages()->orderBy('id')->get() as $message) {
+        $historyLimit = max(20, (int) config('services.openai.max_history_messages', 80));
+        $history = $conversation->messages()
+            ->latest('id')
+            ->limit($historyLimit)
+            ->get()
+            ->sortBy('id');
+
+        foreach ($history as $message) {
             $messages[] = $message->toOpenAi();
         }
 
@@ -282,6 +441,11 @@ Taking actions (very important):
 - Never tell the admin that an action has been done. Say that you have *proposed* it and that they must approve it. Clearly state what will happen if they approve, including any amounts and who is affected.
 - Only propose an action when the admin has asked for it or clearly agreed to it. When unsure, ask first.
 - You only ever see the tools the current admin is permitted to use; if a requested action isn't available, tell them they may lack the permission for it.
+- Approval can be given in chat with clear wording such as "approve", "approve #ID", or "approve all"; the UI approval buttons are optional.
+- For service plan changes, inspect the catalog with search_plans first, then create a manage_plan proposal for create, update, or delete. Never guess plan ids or columns.
+- Activating or deactivating data, airtime, cable, bill, exam, airtime PIN, or data PIN plans means updating that plan row's active field with manage_plan. Do not use toggle_service_control for catalog plans.
+- Before acting on an id or an id range, confirm it actually exists: call search_plans with id_from/id_to (or filters) and check total_matches. Never assume a requested range like "id 1 to 347" is real or state what it contains without having queried it — say what you actually found, including when the range matches far fewer rows than asked, or none.
+- To change many rows at once, use manage_plan's bulk_update action with either an explicit ids list or id_from/id_to, instead of one manage_plan call per row.
 
 Keep responses focused and professional.
 PROMPT;

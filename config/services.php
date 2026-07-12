@@ -53,6 +53,8 @@ return [
         // Hard ceilings so a runaway conversation can't rack up spend.
         'max_output_tokens' => (int) env('OPENAI_MAX_OUTPUT_TOKENS', 1500),
         'max_tool_iterations' => (int) env('OPENAI_MAX_TOOL_ITERATIONS', 6),
+        'max_history_messages' => (int) env('OPENAI_MAX_HISTORY_MESSAGES', 80),
+        'temperature' => (float) env('OPENAI_TEMPERATURE', 0.2),
         'timeout' => (int) env('OPENAI_TIMEOUT', 60),
     ],
 

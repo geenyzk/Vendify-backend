@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class AiActionProposal extends Model
 {
     public const STATUS_PENDING = 'pending';
+    public const STATUS_EXECUTING = 'executing';
     public const STATUS_EXECUTED = 'executed';
     public const STATUS_FAILED = 'failed';
     public const STATUS_REJECTED = 'rejected';
