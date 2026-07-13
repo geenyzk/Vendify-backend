@@ -17,18 +17,10 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
- * The "promote to real account" admin action that
- * child_customers.migrated_to_user_id was reserved for in Phase 1.
- *
- * One call does the whole hand-off: resolve or create the parent User,
- * stamp migrated_to_user_id, and queue a redirect_user directive so the
- * child tells this customer to move over next time it polls.
- *
- * Transferred here: the customer's child wallet balance is moved to the
- * parent account on migration. The balance at migration time is returned
- * so the admin can confirm how much was carried over.
+ * Promotes affiliate customers into real parent-platform user accounts.
  */
 class ChildCustomerMigrationController extends Controller
 {
@@ -48,21 +40,21 @@ class ChildCustomerMigrationController extends Controller
             return $this->fail([], 'Customer not found on this affiliate', 404);
         }
 
-        if ($customer->migrated_to_user_id) {
-            return $this->fail(['user_id' => $customer->migrated_to_user_id], 'Customer is already migrated', 409);
+        $blocker = $this->migrationBlocker($customer);
+        if ($blocker) {
+            return $this->fail($blocker['errors'], $blocker['message'], $blocker['code']);
         }
 
-        return $this->success(
-            $this->migrateCustomer($instance, $customer, $validated['target_url'] ?? null),
-            'Parent account created'
-        );
+        $result = $this->migrateCustomer($instance, $customer, $validated['target_url'] ?? null);
+
+        return $this->success($result['data'], $result['message']);
     }
 
     public function bulkMigrate(Request $request, string $instanceId): JsonResponse
     {
         $validated = $request->validate([
-            'customer_ids' => 'required|array|min:1',
-            'customer_ids.*' => 'integer',
+            'customer_ids' => 'required|array|min:1|max:500',
+            'customer_ids.*' => 'required|distinct',
             'target_url' => 'nullable|url',
         ]);
 
@@ -71,25 +63,92 @@ class ChildCustomerMigrationController extends Controller
             return $this->fail([], 'Affiliate not found', 404);
         }
 
+        $customerIds = array_values(array_unique(array_map('strval', $validated['customer_ids'])));
+        $customers = ChildCustomer::where('child_instance_id', $instance->id)
+            ->whereIn('id', $customerIds)
+            ->get()
+            ->keyBy(fn (ChildCustomer $customer) => (string) $customer->id);
+
         $results = [];
-        foreach ($validated['customer_ids'] as $customerId) {
-            $customer = ChildCustomer::where('child_instance_id', $instance->id)->find($customerId);
-            if (!$customer || $customer->migrated_to_user_id) {
+        $migrated = 0;
+
+        foreach ($customerIds as $customerId) {
+            $customer = $customers->get($customerId);
+
+            if (!$customer) {
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => false,
+                    'message' => 'Customer not found on this affiliate',
+                    'errors' => [],
+                ];
                 continue;
             }
 
-            $results[] = $this->migrateCustomer($instance, $customer, $validated['target_url'] ?? null);
+            $blocker = $this->migrationBlocker($customer);
+            if ($blocker) {
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => false,
+                    'message' => $blocker['message'],
+                    'errors' => $blocker['errors'],
+                ];
+                continue;
+            }
+
+            try {
+                $result = $this->migrateCustomer($instance, $customer, $validated['target_url'] ?? null);
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => true,
+                    'message' => $result['message'],
+                    'data' => $result['data'],
+                ];
+                $migrated++;
+            } catch (Throwable $e) {
+                Log::warning('Bulk affiliate customer migration failed', [
+                    'child_instance_id' => $instance->id,
+                    'child_customer_id' => $customerId,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => false,
+                    'message' => 'Could not migrate this customer. Please try again.',
+                    'errors' => [],
+                ];
+            }
         }
 
-        return $this->success($results, 'Bulk migration completed');
+        return $this->success($results, "Migrated {$migrated} of " . count($customerIds) . ' affiliate customers');
     }
 
-    protected function migrateCustomer(ChildInstance $instance, ChildCustomer $customer, ?string $targetUrl = null): array
+    protected function migrationBlocker(ChildCustomer $customer): ?array
     {
-        // Identity resolution: email first, then phone — both are unique
-        // identity columns on users. Username is deliberately not matched
-        // (cross-platform username collisions are routine coincidences);
-        // a taken username is deduped with a suffix instead.
+        if ($customer->migrated_to_user_id) {
+            return [
+                'message' => 'Customer is already migrated',
+                'code' => 409,
+                'errors' => ['user_id' => $customer->migrated_to_user_id],
+            ];
+        }
+
+        if (!$customer->email || !$customer->phone) {
+            $missing = !$customer->email ? 'email address' : 'phone number';
+
+            return [
+                'message' => "Cannot create a parent account: this customer has no {$missing} synced from the child yet.",
+                'code' => 422,
+                'errors' => [],
+            ];
+        }
+
+        return null;
+    }
+
+    protected function migrateCustomer(ChildInstance $instance, ChildCustomer $customer, ?string $targetUrlOverride = null): array
+    {
         $existing = null;
         if ($customer->email) {
             $existing = User::where('email', $customer->email)->first();
@@ -97,15 +156,9 @@ class ChildCustomerMigrationController extends Controller
         if (!$existing && $customer->phone) {
             $existing = User::where('phone', $customer->phone)->first();
         }
+
         $linkedExisting = (bool) $existing;
-
-        // users.email and users.phone are both NOT NULL + unique, so a
-        // brand-new account needs both synced from the child.
-        if (!$existing && (!$customer->email || !$customer->phone)) {
-            throw new \RuntimeException("Cannot create a parent account: this customer has no " . (!$customer->email ? 'email address' : 'phone number') . " synced from the child yet.");
-        }
-
-        $targetUrl ??= config('app.frontend_url');
+        $targetUrl = $targetUrlOverride ?? config('app.frontend_url');
         $walletBalanceAtMigration = (float) $customer->wallet_balance;
 
         [$user, $directive] = DB::transaction(function () use ($instance, $customer, $existing, $targetUrl, $walletBalanceAtMigration) {
@@ -114,8 +167,6 @@ class ChildCustomerMigrationController extends Controller
                 'username' => $this->availableUsername($customer),
                 'email' => $customer->email,
                 'phone' => $customer->phone,
-                // Random throwaway — the migrated customer claims the account
-                // through the normal "forgot password" email flow.
                 'password' => Hash::make(Str::random(40)),
                 'status' => 'active',
                 'role_id' => Role::where('is_default', true)->value('id') ?? Role::where('slug', 'basic')->orWhere('name', 'basic')->value('id'),
@@ -151,29 +202,22 @@ class ChildCustomerMigrationController extends Controller
 
         $inviteSent = false;
         if (!$linkedExisting) {
-            // Same posture as registration: a payment-provider outage must
-            // not fail the migration — the virtual account can be generated
-            // again later.
             try {
                 Payment::generateAccount($user);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 Log::warning('Post-migration virtual account generation failed', [
                     'user_id' => $user->id,
                     'error' => $e->getMessage(),
                 ]);
             }
 
-            // Claim email: a real broker token so "set your password" is the
-            // account-claim step. Only for brand-new accounts — a linked
-            // customer already knows their credentials here. Non-fatal: the
-            // customer can always use the normal forgot-password flow.
             try {
                 $user->notify(new MigratedAccountInvite(
                     Password::createToken($user),
                     $instance->name,
                 ));
                 $inviteSent = true;
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 Log::warning('Post-migration claim email failed', [
                     'user_id' => $user->id,
                     'error' => $e->getMessage(),
@@ -182,11 +226,14 @@ class ChildCustomerMigrationController extends Controller
         }
 
         return [
-            'user' => $user->only(['id', 'username', 'email', 'phone']),
-            'linked_existing' => $linkedExisting,
-            'invite_sent' => $inviteSent,
-            'directive_id' => $directive->id,
-            'wallet_balance_at_migration' => $walletBalanceAtMigration,
+            'message' => $linkedExisting ? 'Linked to an existing parent account' : 'Parent account created',
+            'data' => [
+                'user' => $user->only(['id', 'username', 'email', 'phone']),
+                'linked_existing' => $linkedExisting,
+                'invite_sent' => $inviteSent,
+                'directive_id' => $directive->id,
+                'wallet_balance_at_migration' => $walletBalanceAtMigration,
+            ],
         ];
     }
 
