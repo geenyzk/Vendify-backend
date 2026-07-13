@@ -52,7 +52,9 @@ class CheckVendorBalances extends Command
             Cache::forget($cacheKey);
 
             $vendorInstance = VendorFactory::make($vendor);
-            $rawBalance = $vendorInstance->checkBalance();
+            $rawBalance = $vendor->manual_balance !== null && $vendor->manual_balance !== ''
+                ? (string) $vendor->manual_balance
+                : $vendorInstance->checkBalance();
             $balance = (float) str_replace(',', '', $rawBalance);
 
             $threshold = (float) $vendor->auto_fund_threshold;

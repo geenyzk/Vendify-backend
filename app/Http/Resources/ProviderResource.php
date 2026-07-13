@@ -38,6 +38,7 @@ class ProviderResource extends JsonResource
             "connection" => $this->connection,
             'identifier' => $this->identifier,
             'webhook' => $this->webhook,
+            'manual_balance' => $this->manual_balance,
         ];
     }
 }

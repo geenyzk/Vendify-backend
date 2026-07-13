@@ -21,13 +21,14 @@ class Vendor extends Model
         'charge_fee', 'charge_type', 'webhook_access', 'active',
         'auto_fund_enabled', 'auto_fund_threshold', 'auto_fund_amount',
         'account_number', 'account_name', 'bank_code', 'bank_name',
-        'funding_provider_id',
+        'funding_provider_id', 'manual_balance',
     ];
 
     protected $casts = [
         'auto_fund_enabled'  => 'boolean',
         'auto_fund_threshold' => 'float',
         'auto_fund_amount'   => 'float',
+        'manual_balance'     => 'float',
         'active'             => 'boolean',
     ];
 
@@ -89,6 +90,10 @@ class Vendor extends Model
 
     public function getBalanceAttribute()
     {
+        if ($this->manual_balance !== null && $this->manual_balance !== '') {
+            return (float) $this->manual_balance;
+        }
+
         try {
             $key = md5($this->base_url . $this->username . $this->password ."_balance");
             $provider = VendorFactory::make($this);

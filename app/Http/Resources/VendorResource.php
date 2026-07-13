@@ -33,6 +33,7 @@ class VendorResource extends JsonResource
             'auto_fund_enabled' => $this->auto_fund_enabled,
             'auto_fund_threshold' => $this->auto_fund_threshold,
             'auto_fund_amount' => $this->auto_fund_amount,
+            'manual_balance' => $this->manual_balance,
             'account_number' => $this->account_number,
             'account_name' => $this->account_name,
             'bank_code' => $this->bank_code,
