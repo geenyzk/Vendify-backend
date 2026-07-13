@@ -27,6 +27,7 @@ class FlutterWave extends PaymentBase
 
         $response = Http::withHeaders($this->getHeaders())
                 ->get($this->baseUrl() . '/balances/NG');
+        Log::info($response);
         if ($response->successful()) {
                 $account = $response->json('data') ?? [];
                 return $account['available_balance'] ?? "";
