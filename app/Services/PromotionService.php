@@ -73,7 +73,7 @@ class PromotionService
             }
 
             // Check if product matches
-            if ($promotion->product !== $product) {
+            if (!$promotion->appliesToProduct($product)) {
                 return [
                     'success' => false,
                     'promotion_id' => null,

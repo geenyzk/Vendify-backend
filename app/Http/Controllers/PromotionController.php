@@ -9,7 +9,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
@@ -44,6 +43,14 @@ class PromotionController extends Controller
             $validated['code'] = strtoupper($validated['code']);
         }
 
+        if (empty($validated['products']) && !empty($validated['product'])) {
+            $validated['products'] = [$validated['product']];
+        }
+
+        if (empty($validated['products'])) {
+            $validated['products'] = [];
+        }
+
         $promotion = Promotion::create($validated);
 
         return $this->success(['promotion' => $promotion], 'Promotion created', 201);
@@ -58,6 +65,14 @@ class PromotionController extends Controller
 
         if (array_key_exists('code', $validated) && $validated['code'] !== null) {
             $validated['code'] = strtoupper($validated['code']);
+        }
+
+        if (array_key_exists('products', $validated) && empty($validated['products']) && !empty($validated['product'])) {
+            $validated['products'] = [$validated['product']];
+        }
+
+        if (array_key_exists('products', $validated) && empty($validated['products'])) {
+            $validated['products'] = [];
         }
 
         $promotion->update($validated);
@@ -89,7 +104,9 @@ class PromotionController extends Controller
             ],
             'apply' => 'required|in:auto,code',
             'target' => 'required|in:customer,reseller,both',
-            'product' => 'required|in:airtime,data,bundle',
+            'product' => 'nullable|in:airtime,data,bundle',
+            'products' => 'nullable|array',
+            'products.*' => 'required|string|in:airtime,data,bundle',
             'provider' => 'nullable|string|max:255',
             'type' => 'required|in:percentage,fixed,bonus_data,cashback',
             'value' => 'required|numeric|min:0',
@@ -143,7 +160,7 @@ class PromotionController extends Controller
      *    "code": 422
      * }
      */
-    public function validate(Request $request): JsonResponse
+    public function validatePromotion(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'code' => 'required|string|max:50',
@@ -187,10 +204,14 @@ class PromotionController extends Controller
         }
 
         // Check if product matches
-        if ($promotion->product !== $validated['product']) {
+        if (!$promotion->appliesToProduct($validated['product'])) {
+            $appliesTo = $promotion->products && count($promotion->products) > 0
+                ? implode(', ', $promotion->products)
+                : $promotion->product;
+
             return response()->json([
                 'status' => 'error',
-                'message' => "This promo code is only valid for {$promotion->product}",
+                'message' => "This promo code is only valid for {$appliesTo}",
             ], 422);
         }
 

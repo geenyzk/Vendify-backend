@@ -17,6 +17,7 @@ class Promotion extends Model
         'apply',
         'target',
         'product',
+        'products',
         'provider',
         'type',
         'value',
@@ -31,6 +32,7 @@ class Promotion extends Model
 
     protected $casts = [
         'conditions' => 'array',
+        'products' => 'array',
         'active' => 'boolean',
         'starts_at' => 'date',
         'ends_at' => 'date',
@@ -61,5 +63,19 @@ class Promotion extends Model
     {
         $this->used = ($this->used ?? 0) + $by;
         $this->save();
+    }
+
+    public function appliesToProduct(?string $product): bool
+    {
+        if (!$product) {
+            return false;
+        }
+
+        $products = array_values(array_filter((array) ($this->products ?? [])));
+        if (!empty($products)) {
+            return in_array($product, $products, true);
+        }
+
+        return $this->product === $product;
     }
 }
