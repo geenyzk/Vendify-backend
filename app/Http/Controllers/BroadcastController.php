@@ -33,6 +33,8 @@ class BroadcastController extends Controller
         return [
             'audience_mode' => 'required|in:criteria,individuals,child_customers',
             'child_instance_id' => 'required_if:audience_mode,child_customers|integer|exists:child_instances,id',
+            'child_customer_ids' => 'nullable|array',
+            'child_customer_ids.*' => 'integer|exists:child_customers,id',
             'user_ids' => 'required_if:audience_mode,individuals|array',
             'user_ids.*' => 'integer',
             'role_ids' => 'nullable|array',
@@ -147,9 +149,15 @@ class BroadcastController extends Controller
      */
     private function childCustomerAudience(array $filters): Builder
     {
-        return ChildCustomer::where('child_instance_id', $filters['child_instance_id'])
+        $query = ChildCustomer::where('child_instance_id', $filters['child_instance_id'])
             ->whereNotNull('email')
             ->where('email', '!=', '');
+
+        if (!empty($filters['child_customer_ids'])) {
+            $query->whereIn('id', $filters['child_customer_ids']);
+        }
+
+        return $query;
     }
 
     private function describeAudience(array $filters): string
