@@ -42,7 +42,8 @@ class CreatePromotionTool extends AiTool
                 'apply' => ['type' => 'string', 'enum' => ['auto', 'code'], 'description' => 'auto = applied automatically; code = customer enters a code.'],
                 'code' => ['type' => 'string', 'description' => 'Required when apply is "code". Redemption code.'],
                 'target' => ['type' => 'string', 'enum' => ['customer', 'reseller', 'both']],
-                'product' => ['type' => 'string', 'enum' => ['airtime', 'data', 'bundle']],
+                'product' => ['type' => 'string', 'enum' => ['airtime', 'data', 'bundle'], 'description' => 'Legacy single-product input. Use products when targeting more than one product.'],
+                'products' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['airtime', 'data', 'bundle']], 'description' => 'List of products this promo applies to.'],
                 'type' => ['type' => 'string', 'enum' => ['percentage', 'fixed', 'bonus_data', 'cashback']],
                 'value' => ['type' => 'number'],
                 'active' => ['type' => 'boolean', 'description' => 'Default true.'],
@@ -51,7 +52,7 @@ class CreatePromotionTool extends AiTool
                 'usage_limit_total' => ['type' => 'integer', 'description' => 'Optional total redemption cap.'],
                 'usage_limit_per_customer' => ['type' => 'integer', 'description' => 'Optional per-customer redemption cap.'],
             ],
-            'required' => ['name', 'apply', 'target', 'product', 'type', 'value'],
+            'required' => ['name', 'apply', 'target', 'type', 'value'],
             'additionalProperties' => false,
         ];
     }
@@ -63,7 +64,9 @@ class CreatePromotionTool extends AiTool
             'apply' => 'required|in:auto,code',
             'code' => 'nullable|string|max:50|required_if:apply,code|unique:promotions,code',
             'target' => 'required|in:customer,reseller,both',
-            'product' => 'required|in:airtime,data,bundle',
+            'product' => 'nullable|in:airtime,data,bundle',
+            'products' => 'nullable|array',
+            'products.*' => 'required|string|in:airtime,data,bundle',
             'type' => 'required|in:percentage,fixed,bonus_data,cashback',
             'value' => 'required|numeric|min:0',
             'active' => 'nullable|boolean',
@@ -80,7 +83,12 @@ class CreatePromotionTool extends AiTool
             ? "code " . strtoupper($arguments['code'] ?? '')
             : 'auto';
 
-        return "Create promotion '{$arguments['name']}' ({$how}) — {$arguments['type']} {$arguments['value']} on {$arguments['product']} for {$arguments['target']}";
+        $products = $arguments['products'] ?? [];
+        $productLabel = !empty($products)
+            ? implode(', ', $products)
+            : ($arguments['product'] ?? 'multiple products');
+
+        return "Create promotion '{$arguments['name']}' ({$how}) — {$arguments['type']} {$arguments['value']} on {$productLabel} for {$arguments['target']}";
     }
 
     public function handle(array $arguments, User $actor): array
@@ -89,11 +97,18 @@ class CreatePromotionTool extends AiTool
             throw new AiManagerException('A code is required for a code-based promotion.');
         }
 
+        $products = array_values(array_filter((array) ($arguments['products'] ?? [])));
+        $primaryProduct = $arguments['product'] ?? null;
+        if (empty($products) && $primaryProduct) {
+            $products = [$primaryProduct];
+        }
+
         $data = [
             'name' => $arguments['name'],
             'apply' => $arguments['apply'],
             'target' => $arguments['target'],
-            'product' => $arguments['product'],
+            'product' => $products[0] ?? $primaryProduct ?? 'airtime',
+            'products' => $products,
             'type' => $arguments['type'],
             'value' => $arguments['value'],
             'active' => $arguments['active'] ?? true,
