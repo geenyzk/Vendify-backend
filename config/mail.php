@@ -44,7 +44,7 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => fn () => \App\Services\MailSettingsService::getEncryption(),
+            'scheme' => fn () => \App\Services\MailSettingsService::getScheme(),
             'url' => env('MAIL_URL'),
             'host' => fn () => \App\Services\MailSettingsService::getHost(),
             'port' => fn () => \App\Services\MailSettingsService::getPort(),

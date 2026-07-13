@@ -92,6 +92,34 @@ class MailSettingsService
     }
 
     /**
+     * Laravel 12's SMTP transport expects a DSN scheme, not the older
+     * encryption labels. Port 587 STARTTLS is "smtp"; port 465 implicit TLS
+     * is "smtps".
+     */
+    public static function getScheme(): ?string
+    {
+        $scheme = self::get('scheme', 'MAIL_SCHEME');
+
+        if ($scheme !== null && $scheme !== '') {
+            return self::normalizeSmtpScheme((string) $scheme);
+        }
+
+        return self::normalizeSmtpScheme(self::getEncryption());
+    }
+
+    public static function normalizeSmtpScheme(?string $value): ?string
+    {
+        $value = strtolower(trim((string) $value));
+
+        return match ($value) {
+            '', 'none', 'null' => null,
+            'ssl', 'smtps' => 'smtps',
+            'tls', 'starttls', 'smtp' => 'smtp',
+            default => $value,
+        };
+    }
+
+    /**
      * Get from address from database or .env.
      */
     public static function getFromAddress(): ?string
