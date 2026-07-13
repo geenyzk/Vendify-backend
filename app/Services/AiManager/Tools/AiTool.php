@@ -97,15 +97,53 @@ abstract class AiTool
 
     private function strictParameters(array $schema): array
     {
-        if (($schema['type'] ?? null) === 'object' && !array_key_exists('additionalProperties', $schema)) {
-            $schema['additionalProperties'] = false;
-        }
+        if (($schema['type'] ?? null) === 'object') {
+            $originalRequired = $schema['required'] ?? [];
+            $propertyNames = array_keys($schema['properties'] ?? []);
 
-        foreach (($schema['properties'] ?? []) as $name => $property) {
-            if (is_array($property)) {
-                $schema['properties'][$name] = $this->strictParameters($property);
+            $schema['required'] = $propertyNames;
+            $schema['additionalProperties'] = false;
+
+            foreach (($schema['properties'] ?? []) as $name => $property) {
+                if (!is_array($property)) {
+                    continue;
+                }
+
+                $property = $this->strictParameters($property);
+
+                if (!in_array($name, $originalRequired, true)) {
+                    $property = $this->nullableSchema($property);
+                }
+
+                $schema['properties'][$name] = $property;
             }
         }
+
+        return $schema;
+    }
+
+    private function nullableSchema(array $schema): array
+    {
+        if (isset($schema['type'])) {
+            $types = is_array($schema['type']) ? $schema['type'] : [$schema['type']];
+            if (!in_array('null', $types, true)) {
+                $types[] = 'null';
+            }
+            $schema['type'] = $types;
+
+            return $schema;
+        }
+
+        if (isset($schema['anyOf']) && is_array($schema['anyOf'])) {
+            $schema['anyOf'][] = ['type' => 'null'];
+
+            return $schema;
+        }
+
+        $schema['anyOf'] = [
+            $schema,
+            ['type' => 'null'],
+        ];
 
         return $schema;
     }

@@ -78,6 +78,37 @@ class AiManagerResponsesApiTest extends TestCase
         });
     }
 
+    public function test_reasoning_models_do_not_send_temperature(): void
+    {
+        config()->set('services.openai.model', 'gpt-5.6-luna');
+
+        Http::fake([
+            'api.openai.test/v1/responses' => Http::response([
+                'id' => 'resp_text',
+                'output' => [[
+                    'type' => 'message',
+                    'content' => [['type' => 'output_text', 'text' => 'All good.']],
+                ]],
+            ]),
+        ]);
+
+        (new OpenAiClient())->chat([
+            ['role' => 'user', 'content' => 'Hello'],
+        ]);
+
+        Http::assertSent(fn ($request) => !array_key_exists('temperature', $request->data()));
+    }
+
+    public function test_tool_schema_is_converted_to_strict_nullable_optionals(): void
+    {
+        $schema = (new TestReadTool())->toOpenAiSchema();
+
+        $this->assertTrue($schema['strict']);
+        $this->assertSame(['value', 'limit'], $schema['parameters']['required']);
+        $this->assertFalse($schema['parameters']['additionalProperties']);
+        $this->assertSame(['integer', 'null'], $schema['parameters']['properties']['limit']['type']);
+    }
+
     public function test_openai_client_normalizes_function_calls(): void
     {
         Http::fake([
@@ -442,7 +473,10 @@ class TestReadTool extends AiTool
     {
         return [
             'type' => 'object',
-            'properties' => ['value' => ['type' => 'string']],
+            'properties' => [
+                'value' => ['type' => 'string'],
+                'limit' => ['type' => 'integer'],
+            ],
             'required' => ['value'],
             'additionalProperties' => false,
         ];

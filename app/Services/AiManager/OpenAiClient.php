@@ -64,11 +64,14 @@ class OpenAiClient
             'input' => $input,
             'instructions' => $instructions,
             'max_output_tokens' => $this->maxTokens ?? (int) config('services.openai.max_output_tokens', 1500),
-            'temperature' => (float) config('services.openai.temperature', 0.2),
             'reasoning' => [
                 'effort' => config('services.openai.reasoning_effort', 'low'),
             ],
         ];
+
+        if ($this->supportsTemperature()) {
+            $payload['temperature'] = (float) config('services.openai.temperature', 0.2);
+        }
 
         if (!empty($tools)) {
             $payload['tools'] = $tools;
@@ -115,6 +118,11 @@ class OpenAiClient
         }
 
         return $this->normalizeResponse($body);
+    }
+
+    private function supportsTemperature(): bool
+    {
+        return !preg_match('/^(o\d|gpt-5)/i', $this->model());
     }
 
     /**
