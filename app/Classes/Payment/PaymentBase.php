@@ -199,18 +199,23 @@ abstract class PaymentBase implements PaymentInterface
     {
         $amount = floatval($amount);
 
-        $v = Provider::whereName($this->providerName)->first(["charge_fee", "charge_type"]);
+        $v = Provider::whereName($this->providerName)->first(["charge_fee", "charge_fee_cap", "charge_type"]);
         if (!$v) {
             return $amount; // fallback if provider not found
         }
 
+        $fee = 0.0;
         if ($v->charge_type === "percent") {
-            $amount -= ((floatval($v->charge_fee) / 100) * $amount);
+            $fee = ($amount * floatval($v->charge_fee)) / 100;
         } else if ($v->charge_type === "fiat") {
-            $amount -= floatval($v->charge_fee);
+            $fee = floatval($v->charge_fee);
         }
 
-        return $amount;
+        if ($v->charge_fee_cap !== null && $v->charge_fee_cap !== '') {
+            $fee = min($fee, floatval($v->charge_fee_cap));
+        }
+
+        return $amount - $fee;
     }
 
     /**
