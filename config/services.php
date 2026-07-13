@@ -40,8 +40,8 @@ return [
     | OpenAI (AI Manager)
     |--------------------------------------------------------------------------
     |
-    | Powers the in-app AI Manager admin assistant. Uses OpenAI's Chat
-    | Completions API with function/tool calling so the model can read live
+    | Powers the in-app AI Manager admin assistant. Uses OpenAI's Responses
+    | API with function/tool calling so the model can read live
     | site data (read-only tools, auto-executed) and *propose* mutating admin
     | actions that require explicit human approval before they run.
     |
@@ -55,6 +55,7 @@ return [
         'max_tool_iterations' => (int) env('OPENAI_MAX_TOOL_ITERATIONS', 6),
         'max_history_messages' => (int) env('OPENAI_MAX_HISTORY_MESSAGES', 80),
         'temperature' => (float) env('OPENAI_TEMPERATURE', 0.2),
+        'reasoning_effort' => env('OPENAI_REASONING_EFFORT', 'low'),
         'timeout' => (int) env('OPENAI_TIMEOUT', 60),
     ],
 

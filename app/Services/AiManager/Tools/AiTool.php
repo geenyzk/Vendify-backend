@@ -83,16 +83,30 @@ abstract class AiTool
         return Validator::make($arguments, $this->rules())->validate();
     }
 
-    /** The `tools` entry OpenAI expects for this capability. */
+    /** The `tools` entry OpenAI Responses API expects for this capability. */
     public function toOpenAiSchema(): array
     {
         return [
             'type' => 'function',
-            'function' => [
-                'name' => $this->name(),
-                'description' => $this->description(),
-                'parameters' => $this->parameters(),
-            ],
+            'name' => $this->name(),
+            'description' => $this->description(),
+            'parameters' => $this->strictParameters($this->parameters()),
+            'strict' => true,
         ];
+    }
+
+    private function strictParameters(array $schema): array
+    {
+        if (($schema['type'] ?? null) === 'object' && !array_key_exists('additionalProperties', $schema)) {
+            $schema['additionalProperties'] = false;
+        }
+
+        foreach (($schema['properties'] ?? []) as $name => $property) {
+            if (is_array($property)) {
+                $schema['properties'][$name] = $this->strictParameters($property);
+            }
+        }
+
+        return $schema;
     }
 }

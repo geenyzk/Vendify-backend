@@ -6,10 +6,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Thin wrapper around OpenAI's Chat Completions API, scoped to what the AI
- * Manager needs: one non-streaming request that may return either an assistant
- * message or a batch of tool calls. Matches the Http-facade style used by the
- * vendor providers (see App\Classes\Vendor\Providers\*).
+ * Thin wrapper around OpenAI's Responses API, scoped to what the AI Manager
+ * needs: non-streaming turns that may return text and/or function calls.
  */
 class OpenAiClient
 {
@@ -41,23 +39,43 @@ class OpenAiClient
     }
 
     /**
-     * Send one chat turn. `$messages` is the full replayed transcript in OpenAI
-     * shape; `$tools` is the JSON-schema tool list (empty disables tools).
-     * Returns the raw `message` object from the first choice, e.g.
-     *   ['role' => 'assistant', 'content' => '...', 'tool_calls' => [...]]
+     * Send one turn to Responses API and return the app's stable AI shape.
+     *
+     * @param array<int, array> $messages
+     * @param array<int, array> $tools
+     * @param array<int, array> $functionOutputs
+     *
+     * @return array{response_id: string|null, content: string|null, tool_calls: array<int, array{call_id: string|null, name: string, arguments: array}>}
      */
-    public function chat(array $messages, array $tools = []): array
+    public function chat(
+        array $messages,
+        array $tools = [],
+        array $functionOutputs = [],
+        ?string $previousResponseId = null,
+    ): array
     {
+        [$instructions, $input] = $this->responsesInputFromMessages($messages);
+        if (!empty($functionOutputs)) {
+            $input = array_values($functionOutputs);
+        }
+
         $payload = [
             'model' => $this->model(),
-            'messages' => $messages,
-            'max_tokens' => $this->maxTokens ?? (int) config('services.openai.max_output_tokens', 1500),
+            'input' => $input,
+            'instructions' => $instructions,
+            'max_output_tokens' => $this->maxTokens ?? (int) config('services.openai.max_output_tokens', 1500),
             'temperature' => (float) config('services.openai.temperature', 0.2),
+            'reasoning' => [
+                'effort' => config('services.openai.reasoning_effort', 'low'),
+            ],
         ];
 
         if (!empty($tools)) {
             $payload['tools'] = $tools;
-            $payload['tool_choice'] = 'auto';
+        }
+
+        if ($previousResponseId !== null) {
+            $payload['previous_response_id'] = $previousResponseId;
         }
 
         $baseUrl = rtrim($this->baseUrl ?? config('services.openai.base_url', 'https://api.openai.com/v1'), '/');
@@ -67,7 +85,7 @@ class OpenAiClient
             $response = Http::withToken($this->key())
                 ->timeout($timeout)
                 ->acceptJson()
-                ->post("{$baseUrl}/chat/completions", $payload);
+                ->post("{$baseUrl}/responses", $payload);
         } catch (\Throwable $e) {
             Log::error('AI Manager: OpenAI request failed to send', ['error' => $e->getMessage()]);
             throw new AiManagerException('Could not reach the AI service. Please try again.');
@@ -75,25 +93,115 @@ class OpenAiClient
 
         if ($response->failed()) {
             $body = $response->json();
-            $message = $body['error']['message'] ?? $response->body();
-            $publicMessage = str($message)->limit(300)->toString();
+            $message = $body['error']['message'] ?? 'OpenAI request failed.';
             Log::error('AI Manager: OpenAI returned an error', [
                 'status' => $response->status(),
-                'error' => $message,
+                'type' => $body['error']['type'] ?? null,
+                'code' => $body['error']['code'] ?? null,
+                'message' => $message,
+                'request_id' => $response->header('x-request-id'),
             ]);
 
             throw new AiManagerException(
                 'The AI service returned an error'
-                . ($response->status() === 401 ? ' (check OPENAI_API_KEY).' : ': ' . $publicMessage)
+                . ($response->status() === 401 ? ' (check OPENAI_API_KEY).' : '. Please try again.')
             );
         }
 
-        $message = $response->json('choices.0.message');
+        $body = $response->json();
 
-        if (!is_array($message)) {
+        if (!is_array($body)) {
             throw new AiManagerException('The AI service returned an unexpected response.');
         }
 
-        return $message;
+        return $this->normalizeResponse($body);
+    }
+
+    /**
+     * @param array<int, array> $messages
+     *
+     * @return array{0: string|null, 1: array<int, array>}
+     */
+    private function responsesInputFromMessages(array $messages): array
+    {
+        $instructions = null;
+        $input = [];
+
+        foreach ($messages as $message) {
+            if (($message['role'] ?? null) === 'system' && $instructions === null) {
+                $instructions = $message['content'] ?? null;
+                continue;
+            }
+
+            if (isset($message['type'])) {
+                $input[] = $message;
+                continue;
+            }
+
+            if (isset($message[0]) && is_array($message[0])) {
+                foreach ($message as $item) {
+                    $input[] = $item;
+                }
+                continue;
+            }
+
+            $role = $message['role'] ?? null;
+            if (!in_array($role, ['user', 'assistant'], true)) {
+                continue;
+            }
+
+            $input[] = [
+                'role' => $role,
+                'content' => $message['content'] ?? '',
+            ];
+        }
+
+        return [$instructions, $input];
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array{response_id: string|null, content: string|null, tool_calls: array<int, array{call_id: string|null, name: string, arguments: array}>}
+     */
+    private function normalizeResponse(array $body): array
+    {
+        $contentParts = [];
+        $toolCalls = [];
+
+        foreach (($body['output'] ?? []) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            if (($item['type'] ?? null) === 'message') {
+                foreach (($item['content'] ?? []) as $part) {
+                    if (!is_array($part)) {
+                        continue;
+                    }
+
+                    if (isset($part['text']) && is_string($part['text'])) {
+                        $contentParts[] = $part['text'];
+                    }
+                }
+            }
+
+            if (($item['type'] ?? null) === 'function_call') {
+                $arguments = json_decode($item['arguments'] ?? '{}', true);
+                $toolCalls[] = [
+                    'call_id' => $item['call_id'] ?? null,
+                    'name' => (string) ($item['name'] ?? ''),
+                    'arguments' => is_array($arguments) ? $arguments : [],
+                ];
+            }
+        }
+
+        $content = trim(implode("\n", $contentParts));
+
+        return [
+            'response_id' => $body['id'] ?? null,
+            'content' => $content !== '' ? $content : null,
+            'tool_calls' => $toolCalls,
+        ];
     }
 }

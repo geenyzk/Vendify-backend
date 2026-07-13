@@ -67,8 +67,19 @@ class AiManagerService
         /** @var array<int, AiActionProposal> $newProposals */
         $newProposals = [];
 
+        $previousResponseId = null;
+        $functionOutputs = [];
+
         for ($iteration = 0; $iteration < $maxIterations; $iteration++) {
-            $reply = $this->client->chat($this->buildMessages($conversation, $actor), $tools);
+            $reply = $this->client->chat(
+                $this->buildMessages($conversation, $actor),
+                $tools,
+                $functionOutputs,
+                $previousResponseId,
+            );
+
+            $previousResponseId = $reply['response_id'] ?? $previousResponseId;
+            $functionOutputs = [];
 
             $toolCalls = $reply['tool_calls'] ?? [];
 
@@ -85,12 +96,22 @@ class AiManagerService
 
             foreach ($toolCalls as $call) {
                 $result = $this->handleToolCall($conversation, $actor, $call, $assistantMessage, $newProposals);
+                $callId = $call['call_id'] ?? null;
+                $encodedResult = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
                 $conversation->messages()->create([
                     'role' => AiMessage::ROLE_TOOL,
-                    'tool_call_id' => $call['id'] ?? null,
-                    'content' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'tool_call_id' => $callId,
+                    'content' => $encodedResult,
                 ]);
+
+                if ($callId !== null) {
+                    $functionOutputs[] = [
+                        'type' => 'function_call_output',
+                        'call_id' => $callId,
+                        'output' => $encodedResult,
+                    ];
+                }
             }
             // Loop so the model can react to the tool results.
         }
@@ -119,14 +140,14 @@ class AiManagerService
         AiMessage $assistantMessage,
         array &$newProposals,
     ): array {
-        $name = $call['function']['name'] ?? '';
+        $name = $call['name'] ?? '';
         $tool = $this->registry->get($name);
 
         if (!$tool || !$this->registry->userMayUse($actor, $tool)) {
             return ['error' => "The tool '{$name}' is not available to you."];
         }
 
-        $arguments = json_decode($call['function']['arguments'] ?? '{}', true);
+        $arguments = $call['arguments'] ?? [];
         if (!is_array($arguments)) {
             $arguments = [];
         }
@@ -407,7 +428,9 @@ class AiManagerService
             ->sortBy('id');
 
         foreach ($history as $message) {
-            $messages[] = $message->toOpenAi();
+            foreach ($message->toOpenAi() as $item) {
+                $messages[] = $item;
+            }
         }
 
         return $messages;
