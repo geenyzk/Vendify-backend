@@ -19,7 +19,7 @@ return [
     |
     */
 
-    'default' => fn () => \App\Services\MailSettingsService::getMailer(),
+    'default' => env('MAIL_MAILER', 'log'),
 
     /*
     |--------------------------------------------------------------------------
@@ -44,14 +44,14 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => fn () => \App\Services\MailSettingsService::getScheme(),
+            'scheme' => \App\Services\MailSettingsService::normalizeSmtpScheme(env('MAIL_SCHEME', env('MAIL_ENCRYPTION', 'tls'))),
             'url' => env('MAIL_URL'),
-            'host' => fn () => \App\Services\MailSettingsService::getHost(),
-            'port' => fn () => \App\Services\MailSettingsService::getPort(),
-            'username' => fn () => \App\Services\MailSettingsService::getUsername(),
-            'password' => fn () => \App\Services\MailSettingsService::getPassword(),
+            'host' => env('MAIL_HOST', 'email-smtp.eu-north-1.amazonaws.com'),
+            'port' => env('MAIL_PORT', 587),
+            'username' => env('MAIL_USERNAME'),
+            'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
-            'local_domain' => fn () => \App\Services\MailSettingsService::getLocalDomain(),
+            'local_domain' => \App\Services\MailSettingsService::getLocalDomain(),
         ],
 
         'ses' => [
@@ -118,8 +118,8 @@ return [
     */
 
     'from' => [
-        'address' => fn () => \App\Services\MailSettingsService::getFromAddress() ?? 'no-reply@vendify.com.ng',
-        'name' => fn () => \App\Services\MailSettingsService::getFromName() ?? 'Vendify',
+        'address' => env('MAIL_FROM_ADDRESS', 'no-reply@vendify.com.ng'),
+        'name' => env('MAIL_FROM_NAME', 'Vendify'),
     ],
 
 ];
