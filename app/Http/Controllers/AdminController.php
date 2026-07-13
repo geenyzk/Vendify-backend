@@ -297,6 +297,24 @@ class AdminController extends Controller
 
                 if (Schema::hasColumn($table, $column)) {
                     $query->where($column, $value);
+                    continue;
+                }
+
+                if (str_ends_with($column, '_min') || str_ends_with($column, '_max')) {
+                    $baseColumn = substr($column, 0, -4);
+                    if (Schema::hasColumn($table, $baseColumn)) {
+                        $operator = str_ends_with($column, '_min') ? '>=' : '<=';
+                        $query->where($baseColumn, $operator, $value);
+                    }
+                    continue;
+                }
+
+                if (str_ends_with($column, '_after') || str_ends_with($column, '_before')) {
+                    $baseColumn = substr($column, 0, -6);
+                    if (Schema::hasColumn($table, $baseColumn)) {
+                        $operator = str_ends_with($column, '_after') ? '>=' : '<=';
+                        $query->where($baseColumn, $operator, $value);
+                    }
                 }
             }
 
