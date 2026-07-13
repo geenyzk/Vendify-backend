@@ -18,7 +18,7 @@ class Vendor extends Model
     protected $fillable = [
         'name', 'code', 'base_url', 'username', 'password', 'api_key', 'public_key',
         'auth_type', 'identifier', 'category', 'sub_category',
-        'charge_fee', 'charge_type', 'webhook_access', 'active',
+        'charge_fee', 'charge_fee_cap', 'charge_type', 'webhook_access', 'active',
         'auto_fund_enabled', 'auto_fund_threshold', 'auto_fund_amount',
         'account_number', 'account_name', 'bank_code', 'bank_name',
         'funding_provider_id', 'manual_balance',

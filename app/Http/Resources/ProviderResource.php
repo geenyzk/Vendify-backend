@@ -38,6 +38,11 @@ class ProviderResource extends JsonResource
             "connection" => $this->connection,
             'identifier' => $this->identifier,
             'webhook' => $this->webhook,
+            'charge_fee' => $this->charge_fee,
+            'charge_fee_cap' => $this->charge_fee_cap,
+            'charge_type' => $this->charge_type,
+            'withdrawal_fee' => $this->withdrawal_fee,
+            'withdrawal_fee_type' => $this->withdrawal_fee_type,
             'manual_balance' => $this->manual_balance,
         ];
     }
