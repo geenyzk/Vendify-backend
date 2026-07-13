@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Classes\Payment\Payment;
+use App\Classes\TemplateParser;
 use App\Classes\TransactionService;
+use App\Mail\AdminNotificationMail;
 use App\Models\ChildCustomer;
 use App\Models\ChildDirective;
 use App\Models\ChildInstance;
@@ -15,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Throwable;
@@ -122,6 +125,109 @@ class ChildCustomerMigrationController extends Controller
         }
 
         return $this->success($results, "Migrated {$migrated} of " . count($customerIds) . ' affiliate customers');
+    }
+
+    public function emailAndMigrate(Request $request, string $instanceId): JsonResponse
+    {
+        $validated = $request->validate([
+            'customer_ids' => 'required|array|min:1|max:500',
+            'customer_ids.*' => 'required|distinct',
+            'subject' => 'required|string|max:255',
+            'body' => 'required|string',
+            'target_url' => 'nullable|url',
+        ]);
+
+        $instance = ChildInstance::find($instanceId);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+
+        $customerIds = array_values(array_unique(array_map('strval', $validated['customer_ids'])));
+        $customers = ChildCustomer::where('child_instance_id', $instance->id)
+            ->whereIn('id', $customerIds)
+            ->get()
+            ->keyBy(fn (ChildCustomer $customer) => (string) $customer->id);
+
+        $results = [];
+        $processed = 0;
+
+        foreach ($customerIds as $customerId) {
+            $customer = $customers->get($customerId);
+
+            if (!$customer) {
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => false,
+                    'email_sent' => false,
+                    'message' => 'Customer not found on this affiliate',
+                    'errors' => [],
+                ];
+                continue;
+            }
+
+            $blocker = $this->migrationBlocker($customer);
+            if ($blocker) {
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => false,
+                    'email_sent' => false,
+                    'message' => $blocker['message'],
+                    'errors' => $blocker['errors'],
+                ];
+                continue;
+            }
+
+            try {
+                $parser = TemplateParser::make()->with(['user' => $customer]);
+                Mail::to($customer->email)->send(new AdminNotificationMail(
+                    $parser->parse($validated['subject']),
+                    $parser->parse($validated['body']),
+                ));
+            } catch (Throwable $e) {
+                Log::warning('Affiliate email-and-migrate email failed', [
+                    'child_instance_id' => $instance->id,
+                    'child_customer_id' => $customerId,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => false,
+                    'email_sent' => false,
+                    'message' => 'Email could not be sent, so migration was skipped.',
+                    'errors' => [],
+                ];
+                continue;
+            }
+
+            try {
+                $result = $this->migrateCustomer($instance, $customer, $validated['target_url'] ?? null);
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => true,
+                    'email_sent' => true,
+                    'message' => 'Email sent and customer migrated',
+                    'data' => $result['data'],
+                ];
+                $processed++;
+            } catch (Throwable $e) {
+                Log::warning('Affiliate email-and-migrate migration failed', [
+                    'child_instance_id' => $instance->id,
+                    'child_customer_id' => $customerId,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $results[] = [
+                    'customer_id' => $customerId,
+                    'success' => false,
+                    'email_sent' => true,
+                    'message' => 'Email was sent, but migration failed. Please review this customer.',
+                    'errors' => [],
+                ];
+            }
+        }
+
+        return $this->success($results, "Emailed and migrated {$processed} of " . count($customerIds) . ' affiliate customers');
     }
 
     protected function migrationBlocker(ChildCustomer $customer): ?array
