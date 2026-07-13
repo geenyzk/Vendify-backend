@@ -2,13 +2,13 @@
 
 namespace App\Notifications;
 
+use App\Support\MailDeliverability;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
 
-class BroadcastNotification extends Notification implements ShouldQueue
+class BroadcastNotification extends Notification
 {
     use Queueable;
 
@@ -40,9 +40,20 @@ class BroadcastNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
+        $subject = $this->data['emailSubject'] ?: 'Vendify update';
+        $body = $this->data['emailBody'] ?: 'No content';
+        $viewData = [
+            'preheader' => $subject,
+            'heading' => $subject,
+            'intro' => 'A Vendify update for your account.',
+            'body' => $body,
+            'footerNote' => 'You are receiving this because you have a Vendify account.',
+        ];
+
         return (new MailMessage)
-            ->subject($this->data['emailSubject'] ?: 'No Subject')
-            ->line($this->data['emailBody'] ?: 'No Content');
+            ->subject($subject)
+            ->view(['html' => 'emails.base', 'text' => 'emails.plain'], $viewData)
+            ->withSymfonyMessage(fn ($message) => MailDeliverability::apply($message, 'broadcast'));
     }
 
     public function toArray(object $notifiable): array

@@ -83,16 +83,87 @@ abstract class AiTool
         return Validator::make($arguments, $this->rules())->validate();
     }
 
-    /** The `tools` entry OpenAI expects for this capability. */
+    /** The `tools` entry OpenAI Responses API expects for this capability. */
     public function toOpenAiSchema(): array
     {
         return [
             'type' => 'function',
-            'function' => [
-                'name' => $this->name(),
-                'description' => $this->description(),
-                'parameters' => $this->parameters(),
-            ],
+            'name' => $this->name(),
+            'description' => $this->description(),
+            'parameters' => $this->strictParameters($this->parameters()),
+            'strict' => true,
         ];
+    }
+
+    private function strictParameters(array $schema): array
+    {
+        if (($schema['type'] ?? null) === 'object') {
+            $originalRequired = $schema['required'] ?? [];
+            $properties = $this->schemaProperties($schema['properties'] ?? []);
+            $propertyNames = array_keys($properties);
+
+            $schema['required'] = $propertyNames;
+            $schema['additionalProperties'] = false;
+
+            foreach ($properties as $name => $property) {
+                if (!is_array($property)) {
+                    continue;
+                }
+
+                $property = $this->strictParameters($property);
+
+                if (!in_array($name, $originalRequired, true)) {
+                    $property = $this->nullableSchema($property);
+                }
+
+                $schema['properties'][$name] = $property;
+            }
+
+            if ($propertyNames === []) {
+                $schema['properties'] = (object) [];
+            }
+        }
+
+        return $schema;
+    }
+
+    /**
+     * Tool schemas use `(object) []` for empty JSON objects in a few places.
+     *
+     * @return array<string, mixed>
+     */
+    private function schemaProperties(mixed $properties): array
+    {
+        if ($properties instanceof \stdClass) {
+            return get_object_vars($properties);
+        }
+
+        return is_array($properties) ? $properties : [];
+    }
+
+    private function nullableSchema(array $schema): array
+    {
+        if (isset($schema['type'])) {
+            $types = is_array($schema['type']) ? $schema['type'] : [$schema['type']];
+            if (!in_array('null', $types, true)) {
+                $types[] = 'null';
+            }
+            $schema['type'] = $types;
+
+            return $schema;
+        }
+
+        if (isset($schema['anyOf']) && is_array($schema['anyOf'])) {
+            $schema['anyOf'][] = ['type' => 'null'];
+
+            return $schema;
+        }
+
+        $schema['anyOf'] = [
+            $schema,
+            ['type' => 'null'],
+        ];
+
+        return $schema;
     }
 }

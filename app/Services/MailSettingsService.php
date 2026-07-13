@@ -92,6 +92,67 @@ class MailSettingsService
     }
 
     /**
+     * Laravel 12's SMTP transport expects a DSN scheme, not the older
+     * encryption labels. Port 587 STARTTLS is "smtp"; port 465 implicit TLS
+     * is "smtps".
+     */
+    public static function getScheme(): ?string
+    {
+        $scheme = self::get('scheme', 'MAIL_SCHEME');
+
+        if ($scheme !== null && $scheme !== '') {
+            return self::normalizeSmtpScheme((string) $scheme);
+        }
+
+        return self::normalizeSmtpScheme(self::getEncryption());
+    }
+
+    public static function normalizeSmtpScheme(?string $value): ?string
+    {
+        $value = strtolower(trim((string) $value));
+
+        return match ($value) {
+            '', 'none', 'null' => null,
+            'ssl', 'smtps' => 'smtps',
+            'tls', 'starttls', 'smtp' => 'smtp',
+            default => $value,
+        };
+    }
+
+    public static function getSenderDomain(): ?string
+    {
+        $address = self::getFromAddress();
+
+        if (!$address || !str_contains($address, '@')) {
+            return null;
+        }
+
+        return strtolower(trim(substr(strrchr($address, '@'), 1))) ?: null;
+    }
+
+    public static function getLocalDomain(): ?string
+    {
+        $configured = env('MAIL_EHLO_DOMAIN');
+
+        if ($configured) {
+            return strtolower(trim($configured));
+        }
+
+        $senderDomain = self::getSenderDomain();
+        if ($senderDomain) {
+            return $senderDomain;
+        }
+
+        $appHost = parse_url(env('APP_URL', ''), PHP_URL_HOST);
+
+        if (!$appHost || in_array($appHost, ['localhost', '127.0.0.1'], true)) {
+            return null;
+        }
+
+        return strtolower($appHost);
+    }
+
+    /**
      * Get from address from database or .env.
      */
     public static function getFromAddress(): ?string

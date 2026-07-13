@@ -33,6 +33,8 @@ class BroadcastController extends Controller
         return [
             'audience_mode' => 'required|in:criteria,individuals,child_customers',
             'child_instance_id' => 'required_if:audience_mode,child_customers|integer|exists:child_instances,id',
+            'child_customer_ids' => 'nullable|array',
+            'child_customer_ids.*' => 'integer|exists:child_customers,id',
             'user_ids' => 'required_if:audience_mode,individuals|array',
             'user_ids.*' => 'integer',
             'role_ids' => 'nullable|array',
@@ -129,6 +131,17 @@ class BroadcastController extends Controller
         return $query;
     }
 
+    private function deliveryAudience(array $validated): Builder
+    {
+        $query = $this->resolveAudience($validated);
+
+        if (in_array('Email', $validated['channels'] ?? [], true)) {
+            $query->whereNotNull('email')->where('email', '!=', '');
+        }
+
+        return $query;
+    }
+
     /**
      * Child-affiliate customers with a synced email address — the only
      * channel we can reach them on (they have no login on the parent for
@@ -136,9 +149,15 @@ class BroadcastController extends Controller
      */
     private function childCustomerAudience(array $filters): Builder
     {
-        return ChildCustomer::where('child_instance_id', $filters['child_instance_id'])
+        $query = ChildCustomer::where('child_instance_id', $filters['child_instance_id'])
             ->whereNotNull('email')
             ->where('email', '!=', '');
+
+        if (!empty($filters['child_customer_ids'])) {
+            $query->whereIn('id', $filters['child_customer_ids']);
+        }
+
+        return $query;
     }
 
     private function describeAudience(array $filters): string
@@ -239,8 +258,17 @@ class BroadcastController extends Controller
             return $this->sendToChildCustomers($validated);
         }
 
-        $audience = $this->resolveAudience($validated);
+        $audience = $this->deliveryAudience($validated);
         $audienceLabel = $this->describeAudience($validated);
+        $recipientCount = (clone $audience)->count();
+
+        if ($recipientCount === 0) {
+            return $this->fail(
+                [],
+                'No recipients matched this broadcast. Adjust the audience filters or choose a role with users before sending.',
+                422,
+            );
+        }
 
         if ($validated['sendNow']) {
             $count = 0;
@@ -254,6 +282,14 @@ class BroadcastController extends Controller
                     }
                 }
             });
+
+            if ($count === 0) {
+                return $this->fail(
+                    [],
+                    'The broadcast matched recipients, but no messages were delivered. Please check the mail configuration and try again.',
+                    502,
+                );
+            }
 
             Broadcast::create([
                 'name' => $validated['name'] ?? null,
@@ -272,8 +308,6 @@ class BroadcastController extends Controller
 
         // Scheduled: persist only — SendScheduledBroadcasts picks this up
         // once scheduled_at is due (see routes/console.php).
-        $recipientCount = (clone $audience)->count();
-
         Broadcast::create([
             'name' => $validated['name'] ?? null,
             'title' => $validated['notifTitle'] ?? $validated['emailSubject'] ?? null,
@@ -305,10 +339,13 @@ class BroadcastController extends Controller
         }
 
         $audienceLabel = $this->describeAudience($validated);
+        $recipientCount = $this->childCustomerAudience($validated)->count();
+
+        if ($recipientCount === 0) {
+            return $this->fail([], 'No affiliate customers with email addresses matched this broadcast.', 422);
+        }
 
         if (!$validated['sendNow']) {
-            $recipientCount = $this->childCustomerAudience($validated)->count();
-
             Broadcast::create([
                 'name' => $validated['name'] ?? null,
                 'title' => $validated['emailSubject'],
@@ -328,6 +365,14 @@ class BroadcastController extends Controller
         }
 
         $count = $this->emailChildCustomers($validated);
+
+        if ($count === 0) {
+            return $this->fail(
+                [],
+                'The broadcast matched affiliate customers, but no emails were delivered. Please check the mail configuration and try again.',
+                502,
+            );
+        }
 
         Broadcast::create([
             'name' => $validated['name'] ?? null,
@@ -378,11 +423,15 @@ class BroadcastController extends Controller
 
         if (($validated['audience_mode'] ?? null) === 'child_customers') {
             $count = $this->emailChildCustomers($validated);
+            if ($count === 0) {
+                Log::warning('Scheduled broadcast: no affiliate customer emails were delivered', ['broadcast_id' => $broadcast->id]);
+                return;
+            }
             $broadcast->update(['sent' => true, 'recipient_count' => $count]);
             return;
         }
 
-        $audience = $this->resolveAudience($validated);
+        $audience = $this->deliveryAudience($validated);
 
         $count = 0;
         $audience->chunkById(200, function ($users) use ($validated, &$count) {
@@ -395,6 +444,11 @@ class BroadcastController extends Controller
                 }
             }
         });
+
+        if ($count === 0) {
+            Log::warning('Scheduled broadcast: no user notifications were delivered', ['broadcast_id' => $broadcast->id]);
+            return;
+        }
 
         $broadcast->update(['sent' => true, 'recipient_count' => $count]);
     }

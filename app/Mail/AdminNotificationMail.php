@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Support\MailDeliverability;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
@@ -15,14 +16,17 @@ class AdminNotificationMail extends Mailable
 
     public function build()
     {
+        $viewData = [
+            'preheader' => $this->subjectLine,
+            'heading' => $this->subjectLine,
+            'intro' => 'A message from Vendify.',
+            'body' => $this->bodyText,
+            'footerNote' => 'This message was sent by Vendify.',
+        ];
+
         return $this->subject($this->subjectLine)
-            ->view('emails.base')
-            ->with([
-                'preheader' => $this->subjectLine,
-                'heading' => $this->subjectLine,
-                'intro' => 'A Vendify admin notification needs your attention.',
-                'body' => $this->bodyText,
-                'footerNote' => 'Automated admin notification from Vendify.',
-            ]);
+            ->view('emails.base', $viewData)
+            ->text('emails.plain', $viewData)
+            ->withSymfonyMessage(fn ($message) => MailDeliverability::apply($message, 'admin-notification'));
     }
 }
