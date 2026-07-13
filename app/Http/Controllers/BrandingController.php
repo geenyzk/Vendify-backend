@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\General;
 use App\Support\PerformanceCache;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 
 class BrandingController extends Controller
 {
@@ -37,5 +39,19 @@ class BrandingController extends Controller
         });
 
         return $this->success($branding);
+    }
+
+    public function logo(): Response
+    {
+        $path = 'logos/brand-logo';
+
+        if (!Storage::disk('public')->exists($path)) {
+            return response()->file(public_path('images/logo.jpg'), ['Content-Type' => 'image/jpeg']);
+        }
+
+        $filePath = Storage::disk('public')->path($path);
+        $mimeType = Storage::disk('public')->mimeType($path);
+
+        return response()->file($filePath, ['Content-Type' => $mimeType ?: 'application/octet-stream']);
     }
 }

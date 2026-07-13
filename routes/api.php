@@ -52,6 +52,7 @@ use App\Http\Controllers\SimJobController;
 // the real configured brand name/logo/page-title instead of a hardcoded
 // default. Deliberately excludes everything else on General (bank/BVN etc).
 Route::get('/branding', [BrandingController::class, 'show']);
+Route::get('/branding/logo', [BrandingController::class, 'logo']);
 
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);

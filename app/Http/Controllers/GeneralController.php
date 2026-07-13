@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\General;
+use App\Support\PerformanceCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -25,16 +26,14 @@ class GeneralController extends Controller
 
         $general = General::findOrFail(1);
 
-        // Remove the previous upload (never the bundled default asset,
-        // which doesn't live under storage/app/public at all).
-        if ($general->logo && str_contains($general->logo, '/storage/logos/')) {
-            $oldPath = 'logos/' . basename($general->logo);
-            Storage::disk('public')->delete($oldPath);
-        }
+        // Store the uploaded file under a single deterministic path so the
+        // public logo URL stays stable across repeated uploads.
+        $request->file('logo')->storeAs('logos', 'brand-logo', 'public');
 
-        $path = $request->file('logo')->store('logos', 'public');
-        $general->logo = url(Storage::url($path));
+        $general->logo = url('/branding/logo');
         $general->save();
+
+        PerformanceCache::clearBranding();
 
         return $this->success(['logo' => $general->logo], 'Logo updated');
     }
