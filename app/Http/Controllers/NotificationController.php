@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\HttpResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class NotificationController extends Controller
@@ -16,11 +17,26 @@ class NotificationController extends Controller
      * notifications (Notifiable trait + the `notifications` table already
      * shipped with this app) rather than a custom table.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $notifications = Auth::user()->notifications()->latest()->limit(50)->get();
+        $perPage = min(max((int) $request->integer('per_page', 10), 1), 50);
+        $notifications = Auth::user()
+            ->notifications()
+            ->latest()
+            ->paginate($perPage);
 
-        return $this->success($notifications);
+        return response()->json([
+            'message' => 'successful',
+            'success' => true,
+            'data' => $notifications->items(),
+            'meta' => [
+                'current_page' => $notifications->currentPage(),
+                'last_page' => $notifications->lastPage(),
+                'per_page' => $notifications->perPage(),
+                'total' => $notifications->total(),
+            ],
+            'type' => 'success',
+        ]);
     }
 
     public function unreadCount(): JsonResponse

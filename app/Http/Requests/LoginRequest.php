@@ -13,6 +13,9 @@ use App\Models\User;
 
 class LoginRequest extends FormRequest
 {
+    private const MAX_ATTEMPTS = 5;
+    private const DECAY_SECONDS = 900;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -50,7 +53,7 @@ class LoginRequest extends FormRequest
             ->first();
 
         if (!$user) {
-            RateLimiter::hit($this->throttleKey());
+            RateLimiter::hit($this->throttleKey(), self::DECAY_SECONDS);
             throw ValidationException::withMessages([
                 'login' => trans('auth.failed'),
             ]);
@@ -60,7 +63,7 @@ class LoginRequest extends FormRequest
             'email' => $user->email,
             'password' => $this->input('password'),
         ], $this->boolean('remember'))) {
-            RateLimiter::hit($this->throttleKey());
+            RateLimiter::hit($this->throttleKey(), self::DECAY_SECONDS);
 
             throw ValidationException::withMessages([
                 'login' => trans('auth.failed'),
@@ -77,7 +80,7 @@ class LoginRequest extends FormRequest
      */
     public function ensureIsNotRateLimited(): void
     {
-        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+        if (! RateLimiter::tooManyAttempts($this->throttleKey(), self::MAX_ATTEMPTS)) {
             return;
         }
 
