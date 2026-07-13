@@ -12,9 +12,14 @@ return [
     | the message. All additional mailers can be configured within the
     | "mailers" array. Examples of each type of mailer are provided.
     |
+    | Mail configuration is read from the database (table `settings`) first,
+    | with fallback to .env environment variables. This allows administrators
+    | to customize mail settings through the admin panel UI without changing
+    | server .env files.
+    |
     */
 
-    'default' => env('MAIL_MAILER', 'log'),
+    'default' => fn () => \App\Services\MailSettingsService::getMailer(),
 
     /*
     |--------------------------------------------------------------------------
@@ -39,12 +44,12 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME', env('MAIL_ENCRYPTION', 'tls')),
+            'scheme' => fn () => \App\Services\MailSettingsService::getEncryption(),
             'url' => env('MAIL_URL'),
-            'host' => env('MAIL_HOST', 'email-smtp.eu-north-1.amazonaws.com'),
-            'port' => env('MAIL_PORT', 587),
-            'username' => env('MAIL_USERNAME'),
-            'password' => env('MAIL_PASSWORD'),
+            'host' => fn () => \App\Services\MailSettingsService::getHost(),
+            'port' => fn () => \App\Services\MailSettingsService::getPort(),
+            'username' => fn () => \App\Services\MailSettingsService::getUsername(),
+            'password' => fn () => \App\Services\MailSettingsService::getPassword(),
             'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
@@ -108,11 +113,13 @@ return [
     | the same address. Here you may specify a name and address that is
     | used globally for all emails that are sent by your application.
     |
+    | These values are read from the database first, with .env as fallback.
+    |
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'no-reply@vendify.com.ng'),
-        'name' => env('MAIL_FROM_NAME', 'Vendify'),
+        'address' => fn () => \App\Services\MailSettingsService::getFromAddress() ?? 'no-reply@vendify.com.ng',
+        'name' => fn () => \App\Services\MailSettingsService::getFromName() ?? 'Vendify',
     ],
 
 ];
