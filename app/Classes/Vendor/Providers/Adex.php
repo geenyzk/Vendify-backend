@@ -548,7 +548,7 @@ class Adex extends VendorBase
     public function syncPlans(): array
     {
         $remotePlans = $this->fetchRemotePlans();
-        $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0];
+        $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'message' => 'No eligible data plans found for this provider.'];
         $defaultPricing = $this->defaultPricing();
 
         foreach ($remotePlans as $remote) {
@@ -614,6 +614,14 @@ class Adex extends VendorBase
             ]);
 
             $summary['created']++;
+        }
+
+        if ($summary['created'] === 0 && $summary['updated'] === 0) {
+            $summary['message'] = $summary['skipped'] > 0
+                ? 'No eligible data plans were found to sync from this provider yet.'
+                : 'No data plan changes were needed.';
+        } else {
+            $summary['message'] = 'Plans synced successfully.';
         }
 
         return $summary;
