@@ -99,12 +99,13 @@ abstract class AiTool
     {
         if (($schema['type'] ?? null) === 'object') {
             $originalRequired = $schema['required'] ?? [];
-            $propertyNames = array_keys($schema['properties'] ?? []);
+            $properties = $this->schemaProperties($schema['properties'] ?? []);
+            $propertyNames = array_keys($properties);
 
             $schema['required'] = $propertyNames;
             $schema['additionalProperties'] = false;
 
-            foreach (($schema['properties'] ?? []) as $name => $property) {
+            foreach ($properties as $name => $property) {
                 if (!is_array($property)) {
                     continue;
                 }
@@ -117,9 +118,27 @@ abstract class AiTool
 
                 $schema['properties'][$name] = $property;
             }
+
+            if ($propertyNames === []) {
+                $schema['properties'] = (object) [];
+            }
         }
 
         return $schema;
+    }
+
+    /**
+     * Tool schemas use `(object) []` for empty JSON objects in a few places.
+     *
+     * @return array<string, mixed>
+     */
+    private function schemaProperties(mixed $properties): array
+    {
+        if ($properties instanceof \stdClass) {
+            return get_object_vars($properties);
+        }
+
+        return is_array($properties) ? $properties : [];
     }
 
     private function nullableSchema(array $schema): array
