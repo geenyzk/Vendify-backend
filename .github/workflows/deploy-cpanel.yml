@@ -20,8 +20,8 @@ jobs:
           extensions: mbstring, bcmath, curl, pdo, mysql
           coverage: none
 
-      - name: Copy .env
-        run: cp .env.example .env
+      # - name: Copy .env
+      #   run: cp .env.example .env
 
       - name: Install PHP dependencies
         run: |
