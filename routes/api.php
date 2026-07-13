@@ -287,6 +287,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/child-instances/generate-code', [AdminController::class, 'generateChildRegistrationCode']);
         Route::post('/child-instances/{id}/directives', [AdminController::class, 'createChildDirective']);
         Route::delete('/child-instances/{id}/directives/{directiveId}', [AdminController::class, 'deleteChildDirective']);
+        Route::post('/child-instances/{id}/customers/bulk-migrate', [ChildCustomerMigrationController::class, 'bulkMigrate']);
         Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
         Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
         Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);

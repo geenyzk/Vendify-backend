@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Class\Payment\Payment;
+use App\Classes\Payment\Payment;
 use App\Classes\TransactionService;
 use App\Models\ChildCustomer;
 use App\Models\ChildDirective;
@@ -52,6 +52,40 @@ class ChildCustomerMigrationController extends Controller
             return $this->fail(['user_id' => $customer->migrated_to_user_id], 'Customer is already migrated', 409);
         }
 
+        return $this->success(
+            $this->migrateCustomer($instance, $customer, $validated['target_url'] ?? null),
+            'Parent account created'
+        );
+    }
+
+    public function bulkMigrate(Request $request, string $instanceId): JsonResponse
+    {
+        $validated = $request->validate([
+            'customer_ids' => 'required|array|min:1',
+            'customer_ids.*' => 'integer',
+            'target_url' => 'nullable|url',
+        ]);
+
+        $instance = ChildInstance::find($instanceId);
+        if (!$instance) {
+            return $this->fail([], 'Affiliate not found', 404);
+        }
+
+        $results = [];
+        foreach ($validated['customer_ids'] as $customerId) {
+            $customer = ChildCustomer::where('child_instance_id', $instance->id)->find($customerId);
+            if (!$customer || $customer->migrated_to_user_id) {
+                continue;
+            }
+
+            $results[] = $this->migrateCustomer($instance, $customer, $validated['target_url'] ?? null);
+        }
+
+        return $this->success($results, 'Bulk migration completed');
+    }
+
+    protected function migrateCustomer(ChildInstance $instance, ChildCustomer $customer, ?string $targetUrl = null): array
+    {
         // Identity resolution: email first, then phone — both are unique
         // identity columns on users. Username is deliberately not matched
         // (cross-platform username collisions are routine coincidences);
@@ -68,12 +102,10 @@ class ChildCustomerMigrationController extends Controller
         // users.email and users.phone are both NOT NULL + unique, so a
         // brand-new account needs both synced from the child.
         if (!$existing && (!$customer->email || !$customer->phone)) {
-            $missing = !$customer->email ? 'email address' : 'phone number';
-            return $this->fail([], "Cannot create a parent account: this customer has no {$missing} synced from the child yet.", 422);
+            throw new \RuntimeException("Cannot create a parent account: this customer has no " . (!$customer->email ? 'email address' : 'phone number') . " synced from the child yet.");
         }
 
-        $targetUrl = $validated['target_url'] ?? config('app.frontend_url');
-
+        $targetUrl ??= config('app.frontend_url');
         $walletBalanceAtMigration = (float) $customer->wallet_balance;
 
         [$user, $directive] = DB::transaction(function () use ($instance, $customer, $existing, $targetUrl, $walletBalanceAtMigration) {
@@ -149,13 +181,13 @@ class ChildCustomerMigrationController extends Controller
             }
         }
 
-        return $this->success([
+        return [
             'user' => $user->only(['id', 'username', 'email', 'phone']),
             'linked_existing' => $linkedExisting,
             'invite_sent' => $inviteSent,
             'directive_id' => $directive->id,
             'wallet_balance_at_migration' => $walletBalanceAtMigration,
-        ], $linkedExisting ? 'Linked to an existing parent account' : 'Parent account created');
+        ];
     }
 
     protected function availableUsername(ChildCustomer $customer): string

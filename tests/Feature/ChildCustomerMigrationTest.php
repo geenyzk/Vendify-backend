@@ -1,0 +1,158 @@
+<?php
+
+use App\Models\ChildCustomer;
+use App\Models\ChildDirective;
+use App\Models\ChildInstance;
+use App\Models\Role;
+use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Schema;
+
+function createMigrationTestTables(): void
+{
+    Schema::create('roles', function (Blueprint $table) {
+        $table->id();
+        $table->string('name');
+        $table->string('slug')->nullable();
+        $table->boolean('is_default')->default(false);
+        $table->timestamps();
+    });
+
+    Schema::create('users', function (Blueprint $table) {
+        $table->id();
+        $table->string('username')->nullable();
+        $table->string('fullname')->nullable();
+        $table->string('email')->nullable();
+        $table->string('phone')->nullable();
+        $table->string('password')->nullable();
+        $table->string('pin')->nullable();
+        $table->string('user_type')->nullable();
+        $table->unsignedBigInteger('role_id')->nullable();
+        $table->decimal('wallet_balance', 12, 2)->default(0);
+        $table->boolean('is_active')->default(true);
+        $table->boolean('is_verified')->default(true);
+        $table->string('status')->nullable();
+        $table->string('referral_code')->nullable();
+        $table->string('referred_by')->nullable();
+        $table->decimal('referral_balance', 12, 2)->default(0);
+        $table->decimal('total_referral_earnings', 12, 2)->default(0);
+        $table->rememberToken();
+        $table->softDeletes();
+        $table->timestamps();
+    });
+
+    Schema::create('child_instances', function (Blueprint $table) {
+        $table->id();
+        $table->string('name');
+        $table->string('slug')->unique();
+        $table->string('base_url')->nullable();
+        $table->text('shared_secret')->nullable();
+        $table->string('status')->default('active');
+        $table->timestamp('last_seen_at')->nullable();
+        $table->string('health_status')->nullable();
+        $table->text('config')->nullable();
+        $table->string('registration_code')->nullable();
+        $table->timestamp('registration_code_expires_at')->nullable();
+        $table->timestamp('registered_at')->nullable();
+        $table->timestamps();
+    });
+
+    Schema::create('child_customers', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('child_instance_id');
+        $table->string('external_id');
+        $table->string('username')->nullable();
+        $table->string('email')->nullable();
+        $table->string('phone')->nullable();
+        $table->decimal('wallet_balance', 15, 2)->default(0);
+        $table->string('status')->nullable();
+        $table->unsignedBigInteger('migrated_to_user_id')->nullable();
+        $table->timestamps();
+        $table->unique(['child_instance_id', 'external_id']);
+    });
+
+    Schema::create('child_directives', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('child_instance_id');
+        $table->string('type');
+        $table->json('payload')->nullable();
+        $table->string('status')->default('pending');
+        $table->timestamp('delivered_at')->nullable();
+        $table->timestamp('executed_at')->nullable();
+        $table->string('result_note', 1000)->nullable();
+        $table->timestamps();
+    });
+}
+
+beforeEach(function () {
+    createMigrationTestTables();
+    Notification::fake();
+    Password::shouldReceive('createToken')->andReturn('test-token');
+
+    Role::create([
+        'name' => 'Basic',
+        'slug' => 'basic',
+        'is_default' => true,
+    ]);
+});
+
+afterEach(function () {
+    foreach (['child_directives', 'child_customers', 'child_instances', 'users', 'roles'] as $table) {
+        Schema::dropIfExists($table);
+    }
+});
+
+test('bulk migrating selected affiliate customers creates parent accounts and directives', function () {
+    $admin = User::create([
+        'username' => 'admin-migrator',
+        'email' => 'admin@example.test',
+        'password' => 'secret-pass',
+        'user_type' => 'admin',
+        'role_id' => Role::first()->id,
+        'status' => 'active',
+    ]);
+
+    $instance = ChildInstance::create([
+        'name' => 'Affiliate One',
+        'slug' => 'affiliate-one',
+        'status' => 'active',
+    ]);
+
+    $first = ChildCustomer::create([
+        'child_instance_id' => $instance->id,
+        'external_id' => 'child-1',
+        'username' => 'alpha',
+        'email' => 'alpha@example.test',
+        'phone' => '+2348000000001',
+        'wallet_balance' => 0,
+    ]);
+
+    $second = ChildCustomer::create([
+        'child_instance_id' => $instance->id,
+        'external_id' => 'child-2',
+        'username' => 'beta',
+        'email' => 'beta@example.test',
+        'phone' => '+2348000000002',
+        'wallet_balance' => 0,
+    ]);
+
+    $response = $this->actingAs($admin, 'sanctum')
+        ->postJson("/api/admin/child-instances/{$instance->id}/customers/bulk-migrate", [
+            'customer_ids' => [$first->id, $second->id],
+            'target_url' => 'https://parent.example.test',
+        ]);
+
+    $response->assertOk();
+    $response->assertJsonCount(2, 'data');
+
+    $first->refresh();
+    $second->refresh();
+
+    expect($first->migrated_to_user_id)->not->toBeNull()
+        ->and($second->migrated_to_user_id)->not->toBeNull()
+        ->and(ChildDirective::where('child_instance_id', $instance->id)->count())->toBe(2)
+        ->and(User::where('email', 'alpha@example.test')->exists())->toBeTrue()
+        ->and(User::where('email', 'beta@example.test')->exists())->toBeTrue();
+});
