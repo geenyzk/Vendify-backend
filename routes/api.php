@@ -163,7 +163,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 
         // Promotion routes
-        Route::post('/promotions/validate', [PromotionController::class, 'validate']);
+        Route::post('/promotions/validate', [PromotionController::class, 'validatePromotion']);
         Route::post('/promotions/apply', [PromotionController::class, 'apply']);
 
     Route::prefix("customer")->group(function(){
