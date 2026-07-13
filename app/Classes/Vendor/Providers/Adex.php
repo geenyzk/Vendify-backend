@@ -8,9 +8,11 @@ use App\Http\Controllers\AdminController;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\DiscoProviderId;
+use App\Models\Role;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -26,11 +28,9 @@ class Adex extends VendorBase
         // call — customer phone/meter/IUC numbers on every purchase, forever.
         // Debug-level so it's still there when actually needed but doesn't
         // spam production logs.
-        Log::debug("Adex request [{$service}]", ['payload' => $payload]);
         $response = Http::withHeaders($this->getAuthHeaders())
             ->post($this->buildEndpoint($service), $payload)
             ->json();
-        Log::debug("Adex response [{$service}]", ['response' => $response]);
 
         // ->json() returns null on a non-JSON/empty body (e.g. the vendor
         // API times out or errors below the HTTP client's own retry). Base::
@@ -148,7 +148,7 @@ class Adex extends VendorBase
             default => throw new \InvalidArgumentException("No endpoint mapped for service [$service]")
             };
     }
-    
+
     protected function buildEndpoint(string $service): string
     {
         return $this->baseUrl() . $this->endpoint($service);
@@ -505,6 +505,130 @@ class Adex extends VendorBase
     {
         $adminController = new AdminController();
         return $adminController->universalGet($payload['request'], $payload['table']);
+    }
+
+    public function fetchRemotePlans(): array
+    {
+        $response = Http::connectTimeout(5)->timeout(15)
+            ->get($this->baseUrl() . '/api/data-plan');
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('ADEX plan list request failed or returned an unexpected shape.');
+        }
+
+        $payload = $response->json();
+        if (!is_array($payload)) {
+            throw new \RuntimeException('ADEX plan list request returned an unexpected payload.');
+        }
+
+        $flat = [];
+        foreach ($payload as $plan) {
+            if (!is_array($plan)) {
+                continue;
+            }
+
+            $network = strtolower((string) ($plan['network'] ?? ''));
+            if ($network === '') {
+                continue;
+            }
+
+            $flat[] = [
+                'network' => $network,
+                'vendor_plan_id' => (string) ($plan['plan_id'] ?? $plan['id'] ?? ''),
+                'name' => (string) ($plan['plan_name'] ?? ''),
+                'validity' => (string) ($plan['validate'] ?? $plan['validity'] ?? ''),
+                'plan_type' => strtoupper((string) ($plan['network_type'] ?? '')),
+                'cost_price' => (float) ($plan['amount'] ?? $plan['price'] ?? 0),
+            ];
+        }
+
+        return $flat;
+    }
+
+    public function syncPlans(): array
+    {
+        $remotePlans = $this->fetchRemotePlans();
+        $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0];
+        $defaultPricing = $this->defaultPricing();
+
+        foreach ($remotePlans as $remote) {
+            if ($remote['vendor_plan_id'] === '') {
+                $summary['skipped']++;
+                continue;
+            }
+
+            if (!preg_match('/([\d.]+)\s*(MB|GB)/i', $remote['name'], $matches)) {
+                $summary['skipped']++;
+                continue;
+            }
+
+            [, $amount, $unit] = $matches;
+
+            $existingLink = DB::table('providerables')
+                ->where('providerable_type', DataPlan::class)
+                ->where('provider_id', $this->provider->id)
+                ->where('server_id', $remote['vendor_plan_id'])
+                ->first();
+
+            if ($existingLink) {
+                DataPlan::where('id', $existingLink->providerable_id)->update([
+                    'plan_type' => $remote['plan_type'],
+                    'validity' => $remote['validity'],
+                ]);
+                DataPlan::where('id', $existingLink->providerable_id)
+                    ->where('is_draft', true)
+                    ->whereNull('pricing')
+                    ->update(['pricing' => json_encode($defaultPricing)]);
+                DB::table('providerables')
+                    ->where('id', $existingLink->id)
+                    ->update([
+                        'cost_price' => $remote['cost_price'],
+                        'updated_at' => now(),
+                    ]);
+                $summary['updated']++;
+                continue;
+            }
+
+            $dataPlan = DataPlan::create([
+                'network' => $remote['network'],
+                'plan_type' => $remote['plan_type'],
+                'plan_name' => $amount,
+                'plan_size' => strtoupper($unit),
+                'validity' => $remote['validity'],
+                'active' => false,
+                'is_draft' => true,
+                'sort_order' => 0,
+                'pricing' => $defaultPricing,
+            ]);
+
+            DB::table('providerables')->insert([
+                'provider_id' => $this->provider->id,
+                'providerable_id' => $dataPlan->id,
+                'providerable_type' => DataPlan::class,
+                'cost_price' => $remote['cost_price'],
+                'margin_value' => 0,
+                'margin_type' => 'fiat',
+                'server_id' => $remote['vendor_plan_id'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $summary['created']++;
+        }
+
+        return $summary;
+    }
+
+    private function defaultPricing(): array
+    {
+        $roles = Role::where('is_staff', false)->pluck('name')->all();
+
+        $pricing = ['user' => ['type' => 'percentage', 'value' => 5]];
+        foreach ($roles as $role) {
+            $pricing[$role] = ['type' => 'percentage', 'value' => 5];
+        }
+
+        return $pricing;
     }
 
     function callback(Request $request): array
