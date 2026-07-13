@@ -16,6 +16,7 @@ class Promotion extends Model
         'code',
         'apply',
         'target',
+        'targets',
         'product',
         'products',
         'provider',
@@ -33,6 +34,7 @@ class Promotion extends Model
     protected $casts = [
         'conditions' => 'array',
         'products' => 'array',
+        'targets' => 'array',
         'active' => 'boolean',
         'starts_at' => 'date',
         'ends_at' => 'date',
@@ -77,5 +79,53 @@ class Promotion extends Model
         }
 
         return $this->product === $product;
+    }
+
+    public function appliesToUserType(?string $userType): bool
+    {
+        if (!$userType) {
+            return false;
+        }
+
+        $targets = array_values(array_filter((array) ($this->targets ?? [])));
+        if (!empty($targets)) {
+            foreach ($targets as $target) {
+                if ($target === 'both' || $target === 'all') {
+                    return true;
+                }
+
+                if ($target === 'customer') {
+                    if (in_array($userType, ['customer', 'user'], true)) {
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                if ($target === 'reseller') {
+                    if (in_array($userType, ['reseller', 'agent', 'admin'], true)) {
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                if ($userType === $target) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (in_array($this->target, ['customer', 'reseller', 'both', 'all'], true)) {
+            return match ($this->target) {
+                'customer' => in_array($userType, ['customer', 'user'], true),
+                'reseller' => in_array($userType, ['reseller', 'agent', 'admin'], true),
+                default => true,
+            };
+        }
+
+        return false;
     }
 }

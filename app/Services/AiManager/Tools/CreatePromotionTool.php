@@ -41,7 +41,8 @@ class CreatePromotionTool extends AiTool
                 'name' => ['type' => 'string'],
                 'apply' => ['type' => 'string', 'enum' => ['auto', 'code'], 'description' => 'auto = applied automatically; code = customer enters a code.'],
                 'code' => ['type' => 'string', 'description' => 'Required when apply is "code". Redemption code.'],
-                'target' => ['type' => 'string', 'enum' => ['customer', 'reseller', 'both']],
+                'target' => ['type' => 'string', 'enum' => ['customer', 'reseller', 'both'], 'description' => 'Legacy single-target input. Use targets when targeting more than one role.'],
+                'targets' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'List of audience targets this promo applies to, such as customer, reseller, or a specific role slug.'],
                 'product' => ['type' => 'string', 'enum' => ['airtime', 'data', 'bundle'], 'description' => 'Legacy single-product input. Use products when targeting more than one product.'],
                 'products' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['airtime', 'data', 'bundle']], 'description' => 'List of products this promo applies to.'],
                 'type' => ['type' => 'string', 'enum' => ['percentage', 'fixed', 'bonus_data', 'cashback']],
@@ -52,7 +53,7 @@ class CreatePromotionTool extends AiTool
                 'usage_limit_total' => ['type' => 'integer', 'description' => 'Optional total redemption cap.'],
                 'usage_limit_per_customer' => ['type' => 'integer', 'description' => 'Optional per-customer redemption cap.'],
             ],
-            'required' => ['name', 'apply', 'target', 'type', 'value'],
+            'required' => ['name', 'apply', 'type', 'value'],
             'additionalProperties' => false,
         ];
     }
@@ -63,7 +64,9 @@ class CreatePromotionTool extends AiTool
             'name' => 'required|string|max:255',
             'apply' => 'required|in:auto,code',
             'code' => 'nullable|string|max:50|required_if:apply,code|unique:promotions,code',
-            'target' => 'required|in:customer,reseller,both',
+            'target' => 'nullable|in:customer,reseller,both',
+            'targets' => 'nullable|array',
+            'targets.*' => 'required|string',
             'product' => 'nullable|in:airtime,data,bundle',
             'products' => 'nullable|array',
             'products.*' => 'required|string|in:airtime,data,bundle',
@@ -84,11 +87,15 @@ class CreatePromotionTool extends AiTool
             : 'auto';
 
         $products = $arguments['products'] ?? [];
+        $targets = $arguments['targets'] ?? [];
         $productLabel = !empty($products)
             ? implode(', ', $products)
             : ($arguments['product'] ?? 'multiple products');
+        $targetLabel = !empty($targets)
+            ? implode(', ', $targets)
+            : ($arguments['target'] ?? 'multiple targets');
 
-        return "Create promotion '{$arguments['name']}' ({$how}) — {$arguments['type']} {$arguments['value']} on {$productLabel} for {$arguments['target']}";
+        return "Create promotion '{$arguments['name']}' ({$how}) — {$arguments['type']} {$arguments['value']} on {$productLabel} for {$targetLabel}";
     }
 
     public function handle(array $arguments, User $actor): array
@@ -103,10 +110,17 @@ class CreatePromotionTool extends AiTool
             $products = [$primaryProduct];
         }
 
+        $targets = array_values(array_filter((array) ($arguments['targets'] ?? [])));
+        $primaryTarget = $arguments['target'] ?? null;
+        if (empty($targets) && $primaryTarget) {
+            $targets = [$primaryTarget];
+        }
+
         $data = [
             'name' => $arguments['name'],
             'apply' => $arguments['apply'],
-            'target' => $arguments['target'],
+            'target' => $targets[0] ?? $primaryTarget ?? 'both',
+            'targets' => $targets,
             'product' => $products[0] ?? $primaryProduct ?? 'airtime',
             'products' => $products,
             'type' => $arguments['type'],

@@ -29,4 +29,27 @@ class PromotionTest extends TestCase
         $this->assertTrue($promotion->appliesToProduct('bundle'));
         $this->assertFalse($promotion->appliesToProduct('data'));
     }
+
+    public function test_promotion_supports_multiple_target_roles(): void
+    {
+        $promotion = new Promotion([
+            'target' => 'customer',
+            'targets' => ['customer', 'reseller'],
+        ]);
+
+        $this->assertTrue($promotion->appliesToUserType('customer'));
+        $this->assertTrue($promotion->appliesToUserType('reseller'));
+        $this->assertFalse($promotion->appliesToUserType('vendor'));
+    }
+
+    public function test_promotion_falls_back_to_single_target_when_targets_are_missing(): void
+    {
+        $promotion = new Promotion([
+            'target' => 'reseller',
+            'targets' => null,
+        ]);
+
+        $this->assertTrue($promotion->appliesToUserType('reseller'));
+        $this->assertFalse($promotion->appliesToUserType('customer'));
+    }
 }

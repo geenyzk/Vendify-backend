@@ -51,6 +51,14 @@ class PromotionController extends Controller
             $validated['products'] = [];
         }
 
+        if (empty($validated['targets']) && !empty($validated['target'])) {
+            $validated['targets'] = [$validated['target']];
+        }
+
+        if (empty($validated['targets'])) {
+            $validated['targets'] = [];
+        }
+
         $promotion = Promotion::create($validated);
 
         return $this->success(['promotion' => $promotion], 'Promotion created', 201);
@@ -73,6 +81,14 @@ class PromotionController extends Controller
 
         if (array_key_exists('products', $validated) && empty($validated['products'])) {
             $validated['products'] = [];
+        }
+
+        if (array_key_exists('targets', $validated) && empty($validated['targets']) && !empty($validated['target'])) {
+            $validated['targets'] = [$validated['target']];
+        }
+
+        if (array_key_exists('targets', $validated) && empty($validated['targets'])) {
+            $validated['targets'] = [];
         }
 
         $promotion->update($validated);
@@ -103,7 +119,9 @@ class PromotionController extends Controller
                 Rule::unique('promotions', 'code')->ignore($ignoreId),
             ],
             'apply' => 'required|in:auto,code',
-            'target' => 'required|in:customer,reseller,both',
+            'target' => 'nullable|in:customer,reseller,both',
+            'targets' => 'nullable|array',
+            'targets.*' => 'required|string',
             'product' => 'nullable|in:airtime,data,bundle',
             'products' => 'nullable|array',
             'products.*' => 'required|string|in:airtime,data,bundle',
@@ -318,17 +336,11 @@ class PromotionController extends Controller
      */
     private function isUserEligible(Promotion $promotion, $user): bool
     {
-        $target = $promotion->target;
-
-        if ($target === 'customer') {
-            return $user->user_type === 'customer' || $user->user_type === 'user';
+        if ($promotion->appliesToUserType($user->user_type)) {
+            return true;
         }
 
-        if ($target === 'reseller') {
-            return in_array($user->user_type, ['reseller', 'agent', 'admin']);
-        }
-
-        return true; // both
+        return false;
     }
 
     /**

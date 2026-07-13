@@ -157,25 +157,24 @@ class PromotionService
      */
     private static function isUserEligible(Promotion $promotion, User $user): bool
     {
-        $target = $promotion->target;
-
-        // No target / "all" / legacy "both" → everyone is eligible.
-        if (!$target || $target === 'both' || $target === 'all') {
+        if ($promotion->appliesToUserType($user->user_type)) {
             return true;
-        }
-
-        // Legacy coarse audiences (kept for pre-existing promos).
-        if ($target === 'customer') {
-            return $user->user_type === 'customer' || $user->user_type === 'user';
-        }
-        if ($target === 'reseller') {
-            return in_array($user->user_type, ['reseller', 'agent', 'admin']);
         }
 
         // Otherwise the target names a specific Role — match by slug or name.
         $role = $user->role;
         if (!$role) {
             return false;
+        }
+
+        $targets = array_values(array_filter((array) ($promotion->targets ?? [])));
+        if (!empty($targets)) {
+            return in_array($role->slug, $targets, true) || in_array($role->name, $targets, true);
+        }
+
+        $target = $promotion->target;
+        if (!$target || $target === 'both' || $target === 'all') {
+            return true;
         }
 
         return in_array($target, array_filter([$role->slug ?? null, $role->name ?? null]), true);
