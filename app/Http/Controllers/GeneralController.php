@@ -6,7 +6,6 @@ use App\Models\General;
 use App\Support\PerformanceCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class GeneralController extends Controller
 {
@@ -30,7 +29,7 @@ class GeneralController extends Controller
         // public logo URL stays stable across repeated uploads.
         $request->file('logo')->storeAs('logos', 'brand-logo', 'public');
 
-        $general->logo = url('/branding/logo');
+        $general->logo = '/branding/logo';
         $general->save();
 
         PerformanceCache::clearBranding();

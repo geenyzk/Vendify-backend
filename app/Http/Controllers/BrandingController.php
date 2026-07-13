@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\General;
 use App\Support\PerformanceCache;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class BrandingController extends Controller
 {
@@ -41,7 +41,7 @@ class BrandingController extends Controller
         return $this->success($branding);
     }
 
-    public function logo(): Response
+    public function logo(): BinaryFileResponse
     {
         $path = 'logos/brand-logo';
 
@@ -50,8 +50,8 @@ class BrandingController extends Controller
         }
 
         $filePath = Storage::disk('public')->path($path);
-        $mimeType = Storage::disk('public')->mimeType($path);
+        $mimeType = mime_content_type($filePath) ?: 'application/octet-stream';
 
-        return response()->file($filePath, ['Content-Type' => $mimeType ?: 'application/octet-stream']);
+        return response()->file($filePath, ['Content-Type' => $mimeType]);
     }
 }
