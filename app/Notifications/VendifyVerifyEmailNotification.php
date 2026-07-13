@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Support\MailDeliverability;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
@@ -28,16 +29,19 @@ class VendifyVerifyEmailNotification extends Notification
             ],
         );
 
+        $viewData = [
+            'preheader' => 'Verify your Vendify account email.',
+            'heading' => 'Verify your email',
+            'intro' => 'Confirm this email address so you can keep receiving account notices and security messages from Vendify.',
+            'body' => 'This link expires in 60 minutes. If you did not create a Vendify account, you can ignore this message.',
+            'actionText' => 'Verify email',
+            'actionUrl' => $verificationUrl,
+            'footerNote' => 'Vendify will never ask for your password or transaction PIN by email.',
+        ];
+
         return (new MailMessage)
             ->subject('Verify your Vendify email')
-            ->view('emails.base', [
-                'preheader' => 'Verify your Vendify account email.',
-                'heading' => 'Verify your email',
-                'intro' => 'Confirm this email address so you can keep receiving account notices and security messages from Vendify.',
-                'body' => 'This link expires in 60 minutes. If you did not create a Vendify account, you can ignore this message.',
-                'actionText' => 'Verify email',
-                'actionUrl' => $verificationUrl,
-                'footerNote' => 'Vendify will never ask for your password or transaction PIN by email.',
-            ]);
+            ->view(['html' => 'emails.base', 'text' => 'emails.plain'], $viewData)
+            ->withSymfonyMessage(fn ($message) => MailDeliverability::apply($message, 'verify-email'));
     }
 }

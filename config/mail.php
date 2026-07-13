@@ -51,7 +51,7 @@ return [
             'username' => fn () => \App\Services\MailSettingsService::getUsername(),
             'password' => fn () => \App\Services\MailSettingsService::getPassword(),
             'timeout' => null,
-            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'local_domain' => fn () => \App\Services\MailSettingsService::getLocalDomain(),
         ],
 
         'ses' => [

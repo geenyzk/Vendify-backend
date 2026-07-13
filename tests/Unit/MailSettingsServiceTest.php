@@ -11,3 +11,13 @@ test('smtp encryption labels are normalized to Laravel smtp schemes', function (
         ->and(MailSettingsService::normalizeSmtpScheme('none'))->toBeNull()
         ->and(MailSettingsService::normalizeSmtpScheme(null))->toBeNull();
 });
+
+test('sender domain can be used for smtp identity', function () {
+    putenv('MAIL_FROM_ADDRESS=no-reply@vendify.com.ng');
+    putenv('MAIL_EHLO_DOMAIN');
+
+    MailSettingsService::clearCache();
+
+    expect(MailSettingsService::getSenderDomain())->toBe('vendify.com.ng')
+        ->and(MailSettingsService::getLocalDomain())->toBe('vendify.com.ng');
+});
