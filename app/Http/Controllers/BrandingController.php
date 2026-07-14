@@ -28,7 +28,9 @@ class BrandingController extends Controller
 
             return [
                 'app_name' => $general?->app_name ?: 'Laravel',
-                'logo' => $general?->app_logo,
+                // The endpoint is the single source of truth: it serves the
+                // installed Vendify logo and any future admin replacement.
+                'logo' => url('/api/branding/logo'),
                 'meta_title' => $general?->meta_title ?: ($general?->app_name ?: 'Laravel'),
                 'meta_description' => $general?->meta_description,
                 // Public-facing contact details (shown in the landing footer) —
@@ -46,7 +48,7 @@ class BrandingController extends Controller
         $path = 'logos/brand-logo';
 
         if (!Storage::disk('public')->exists($path)) {
-            return response()->file(public_path('images/logo.jpg'), ['Content-Type' => 'image/jpeg']);
+            return response()->file(public_path('images/vendify-logo.png'), ['Content-Type' => 'image/png']);
         }
 
         $filePath = Storage::disk('public')->path($path);

@@ -25,8 +25,6 @@ class General extends Model
     }
 
     public function getAppLogoAttribute(){
-        // Fall back to the bundled default only if no real logo URL has been
-        // saved yet (the seeded default value for this column is '#').
-        return $this->logo && $this->logo !== '#' ? $this->logo : url("/images/logo.jpg");
+        return url("/api/branding/logo");
     }
 }
