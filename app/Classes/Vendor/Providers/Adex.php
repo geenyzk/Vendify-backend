@@ -511,6 +511,7 @@ class Adex extends VendorBase
     {
         $response = Http::connectTimeout(5)->timeout(15)
             ->get($this->baseUrl() . '/api/data-plan');
+        Log::info($response);
 
         if (!$response->successful()) {
             throw new \RuntimeException('ADEX plan list request failed or returned an unexpected shape.');
