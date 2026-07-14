@@ -509,17 +509,7 @@ class Adex extends VendorBase
 
     public function fetchRemotePlans(): array
     {
-        // This endpoint used to be hit with no Authorization header at all —
-        // unlike every other Adex call in this class — which is the most
-        // likely reason it never returned a price. Adex plan-list responses
-        // observed so far (both via this app and a direct unauthenticated
-        // fetch) contain no price field whatsoever: no 'amount', 'price',
-        // 'cost', etc. Authenticating may or may not change that; we don't
-        // yet know for certain, so cost_price below is left null (not 0)
-        // whenever none of the candidate keys are present, and callers must
-        // treat null as "unknown", never as "free".
         $response = Http::connectTimeout(5)->timeout(15)
-            ->withHeaders($this->getAuthHeaders())
             ->get($this->baseUrl() . '/data-plan');
         Log::info($response->json());
 
@@ -533,8 +523,6 @@ class Adex extends VendorBase
         }
 
         $flat = [];
-        $anyPriceSeen = false;
-
         foreach ($payload as $plan) {
             if (!is_array($plan)) {
                 continue;
@@ -545,34 +533,14 @@ class Adex extends VendorBase
                 continue;
             }
 
-            // Candidate keys, in order of how likely Adex is to use them.
-            // Update this list the moment you confirm the real key name.
-            $priceRaw = $plan['amount']
-                ?? $plan['price']
-                ?? $plan['cost']
-                ?? $plan['cost_price']
-                ?? $plan['plan_price']
-                ?? $plan['reseller_price']
-                ?? $plan['vendor_price']
-                ?? null;
-
-            if ($priceRaw !== null) {
-                $anyPriceSeen = true;
-            }
-
             $flat[] = [
                 'network' => $network,
                 'vendor_plan_id' => (string) ($plan['plan_id'] ?? $plan['id'] ?? ''),
                 'name' => (string) ($plan['plan_name'] ?? ''),
                 'validity' => (string) ($plan['validate'] ?? $plan['validity'] ?? ''),
                 'plan_type' => strtolower((string) ($plan['network_type'] ?? '')),
-                // null = "Adex didn't tell us", distinct from a real 0.
-                'cost_price' => $priceRaw !== null ? (float) $priceRaw : null,
+                'cost_price' => (float) ($plan['amount'] ?? $plan['price'] ?? 0),
             ];
-        }
-
-        if (!$anyPriceSeen && !empty($flat)) {
-            Log::warning('Adex plan list contained no recognizable price field for any plan — cost_price will be left unset for this sync.');
         }
 
         return $flat;
