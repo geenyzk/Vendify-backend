@@ -46,6 +46,45 @@ class AiManagerService
      */
     public function sendMessage(AiConversation $conversation, User $actor, string $content): array
     {
+        if ($approval = $this->beginTurn($conversation, $actor, $content)) {
+            return $approval;
+        }
+
+        return $this->runTurn($conversation, $actor);
+    }
+
+    /**
+     * Streaming variant of sendMessage: same turn, but text is emitted token by
+     * token and tool/proposal activity is pushed to $emit as it happens. $emit
+     * is called as $emit(string $event, array $data) — events: 'token', 'tools',
+     * 'proposal', 'message', 'done'.
+     *
+     * @return array{assistant: AiMessage, proposals: array<int, AiActionProposal>}
+     */
+    public function streamMessage(AiConversation $conversation, User $actor, string $content, callable $emit): array
+    {
+        if ($approval = $this->beginTurn($conversation, $actor, $content)) {
+            // A verbal approval short-circuits the model call — just emit its text.
+            $emit('message', ['content' => $approval['assistant']->content]);
+            foreach ($approval['proposals'] as $proposal) {
+                $emit('proposal', ['id' => $proposal->id]);
+            }
+
+            return $approval;
+        }
+
+        return $this->runTurn($conversation, $actor, $emit);
+    }
+
+    /**
+     * Shared turn preamble: record the user message, title a new conversation,
+     * and handle a verbal approval. Returns the approval result to short-circuit
+     * the turn, or null to proceed to the model.
+     *
+     * @return null|array{assistant: AiMessage, proposals: array<int, AiActionProposal>}
+     */
+    private function beginTurn(AiConversation $conversation, User $actor, string $content): ?array
+    {
         $conversation->messages()->create([
             'role' => AiMessage::ROLE_USER,
             'content' => $content,
@@ -62,10 +101,18 @@ class AiManagerService
         $conversation->last_activity_at = now();
         $conversation->save();
 
-        if ($approval = $this->tryHandleVerbalApproval($conversation, $actor, $content)) {
-            return $approval;
-        }
+        return $this->tryHandleVerbalApproval($conversation, $actor, $content);
+    }
 
+    /**
+     * The model + tool loop. When $emit is given, text streams via chatStream()
+     * and tool/proposal activity is emitted live; otherwise it runs the plain
+     * non-streaming chat(). Both paths persist identical messages and proposals.
+     *
+     * @return array{assistant: AiMessage, proposals: array<int, AiActionProposal>}
+     */
+    private function runTurn(AiConversation $conversation, User $actor, ?callable $emit = null): array
+    {
         $tools = $this->registry->openAiSchemasForUser($actor);
         $maxIterations = (int) config('services.openai.max_tool_iterations', 6);
 
@@ -76,12 +123,19 @@ class AiManagerService
         $functionOutputs = [];
 
         for ($iteration = 0; $iteration < $maxIterations; $iteration++) {
-            $reply = $this->client->chat(
-                $this->buildMessages($conversation, $actor),
-                $tools,
-                $functionOutputs,
-                $previousResponseId,
-            );
+            $messages = $this->buildMessages($conversation, $actor);
+
+            if ($emit) {
+                $reply = $this->client->chatStream(
+                    $messages,
+                    $tools,
+                    $functionOutputs,
+                    $previousResponseId,
+                    fn (string $delta) => $emit('token', ['text' => $delta]),
+                );
+            } else {
+                $reply = $this->client->chat($messages, $tools, $functionOutputs, $previousResponseId);
+            }
 
             $previousResponseId = $reply['response_id'] ?? $previousResponseId;
             $functionOutputs = [];
@@ -96,8 +150,17 @@ class AiManagerService
 
             // No tool calls means the model produced its final answer.
             if (empty($toolCalls)) {
+                $emit && $emit('done', []);
+
                 return ['assistant' => $assistantMessage, 'proposals' => $newProposals];
             }
+
+            if ($emit) {
+                $names = array_values(array_filter(array_map(fn ($c) => $c['name'] ?? null, $toolCalls)));
+                $emit('tools', ['tools' => $names]);
+            }
+
+            $proposalsBefore = count($newProposals);
 
             foreach ($toolCalls as $call) {
                 $result = $this->handleToolCall($conversation, $actor, $call, $assistantMessage, $newProposals);
@@ -118,6 +181,12 @@ class AiManagerService
                     ];
                 }
             }
+
+            if ($emit) {
+                foreach (array_slice($newProposals, $proposalsBefore) as $proposal) {
+                    $emit('proposal', ['id' => $proposal->id]);
+                }
+            }
             // Loop so the model can react to the tool results.
         }
 
@@ -127,6 +196,11 @@ class AiManagerService
             'role' => AiMessage::ROLE_ASSISTANT,
             'content' => 'I wasn\'t able to finish working through that within the allowed number of steps. Could you narrow the request down?',
         ]);
+
+        if ($emit) {
+            $emit('message', ['content' => $fallback->content]);
+            $emit('done', []);
+        }
 
         return ['assistant' => $fallback, 'proposals' => $newProposals];
     }

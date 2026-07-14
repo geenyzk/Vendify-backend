@@ -274,6 +274,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/conversations', [AiManagerController::class, 'store']);
             Route::get('/conversations/{id}', [AiManagerController::class, 'show']);
             Route::post('/conversations/{id}/messages', [AiManagerController::class, 'sendMessage']);
+            Route::post('/conversations/{id}/stream', [AiManagerController::class, 'streamMessage']);
             Route::delete('/conversations/{id}', [AiManagerController::class, 'destroy']);
             Route::post('/actions/{id}/approve', [AiManagerController::class, 'approveAction']);
             Route::post('/actions/{id}/reject', [AiManagerController::class, 'rejectAction']);

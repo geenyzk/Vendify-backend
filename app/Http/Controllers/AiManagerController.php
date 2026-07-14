@@ -146,6 +146,64 @@ class AiManagerController extends Controller
         return $this->success($this->conversationPayload($conversation->fresh()));
     }
 
+    /**
+     * Streaming counterpart of sendMessage: returns an SSE stream so the chat
+     * types the reply out live and shows tool activity as it happens. Emits
+     * `token`, `tools`, `proposal`, `error`, and a final `complete` event
+     * carrying the full conversation payload for the client to reconcile.
+     */
+    public function streamMessage(Request $request, $id): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $validated = $request->validate([
+            'message' => 'required|string|max:4000',
+        ]);
+
+        $user = $request->user();
+        $conversation = $this->ownedConversation($request, $id);
+
+        // The stream itself is always a 200 SSE body; failures are delivered as
+        // an `error` event so the browser's EventSource/reader sees them.
+        return response()->stream(function () use ($conversation, $user, $validated) {
+            $emit = function (string $event, array $data): void {
+                echo "event: {$event}\n";
+                echo 'data: ' . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n\n";
+                if (ob_get_level() > 0) {
+                    @ob_flush();
+                }
+                flush();
+            };
+
+            if (!$conversation) {
+                $emit('error', ['message' => 'Conversation not found.']);
+                return;
+            }
+
+            $usage = $this->dailyUsage();
+            if (!$usage['unlimited'] && $usage['remaining'] <= 0) {
+                $emit('error', ['message' => "The daily AI usage limit of {$usage['limit']} messages has been reached. It resets at midnight."]);
+                return;
+            }
+
+            try {
+                $this->service->streamMessage($conversation, $user, $validated['message'], $emit);
+            } catch (AiManagerException $e) {
+                $emit('error', ['message' => $e->getMessage()]);
+            } catch (\Throwable $e) {
+                report($e);
+                $emit('error', ['message' => 'Something went wrong talking to the assistant.']);
+            }
+
+            // Final reconciliation payload: the persisted messages + proposals.
+            $emit('complete', $this->conversationPayload($conversation->fresh()));
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache',
+            'Connection' => 'keep-alive',
+            // Stop nginx/proxies buffering the stream.
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
     public function destroy(Request $request, $id): JsonResponse
     {
         $conversation = $this->ownedConversation($request, $id);

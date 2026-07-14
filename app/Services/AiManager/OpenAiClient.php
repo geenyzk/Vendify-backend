@@ -56,32 +56,7 @@ class OpenAiClient
         ?string $previousResponseId = null,
     ): array
     {
-        [$instructions, $input] = $this->responsesInputFromMessages($messages);
-        if (!empty($functionOutputs)) {
-            $input = array_values($functionOutputs);
-        }
-
-        $payload = [
-            'model' => $this->model(),
-            'input' => $input,
-            'instructions' => $instructions,
-            'max_output_tokens' => $this->maxTokens ?? (int) config('services.openai.max_output_tokens', 1500),
-            'reasoning' => [
-                'effort' => config('services.openai.reasoning_effort', 'low'),
-            ],
-        ];
-
-        if ($this->supportsTemperature()) {
-            $payload['temperature'] = (float) config('services.openai.temperature', 0.2);
-        }
-
-        if (!empty($tools)) {
-            $payload['tools'] = $tools;
-        }
-
-        if ($previousResponseId !== null) {
-            $payload['previous_response_id'] = $previousResponseId;
-        }
+        $payload = $this->buildPayload($messages, $tools, $functionOutputs, $previousResponseId);
 
         $baseUrl = rtrim($this->baseUrl ?? config('services.openai.base_url', 'https://api.openai.com/v1'), '/');
         $timeout = $this->timeout ?? (int) config('services.openai.timeout', 60);
@@ -134,6 +109,141 @@ class OpenAiClient
         }
 
         return $this->normalizeResponse($body);
+    }
+
+    /**
+     * Streaming variant of chat(): opens the Responses API in stream mode and
+     * invokes $onDelta($text) for each output-text delta as it arrives, then
+     * returns the same normalized shape as chat() from the completed event.
+     * Used by the SSE endpoint; the non-streaming chat() path is unchanged.
+     *
+     * @param array<int, array> $messages
+     * @param array<int, array> $tools
+     * @param array<int, array> $functionOutputs
+     *
+     * @return array{response_id: string|null, content: string|null, tool_calls: array<int, array>}
+     */
+    public function chatStream(
+        array $messages,
+        array $tools,
+        array $functionOutputs,
+        ?string $previousResponseId,
+        callable $onDelta,
+    ): array {
+        $payload = $this->buildPayload($messages, $tools, $functionOutputs, $previousResponseId);
+        $payload['stream'] = true;
+
+        $baseUrl = rtrim($this->baseUrl ?? config('services.openai.base_url', 'https://api.openai.com/v1'), '/');
+        $timeout = $this->timeout ?? (int) config('services.openai.timeout', 60);
+
+        try {
+            $response = Http::withToken($this->key())
+                ->timeout($timeout)
+                ->withOptions(['stream' => true])
+                ->post("{$baseUrl}/responses", $payload);
+        } catch (\Throwable $e) {
+            Log::error('AI Manager: OpenAI stream failed to open', ['error' => $e->getMessage()]);
+            throw new AiManagerException('Could not reach the AI service. Please try again.');
+        }
+
+        if ($response->failed()) {
+            throw new AiManagerException('The AI service returned an error. Please try again.');
+        }
+
+        $stream = $response->toPsrResponse()->getBody();
+        $buffer = '';
+        $final = null;
+        $streamedContent = '';
+
+        while (!$stream->eof()) {
+            $buffer .= $stream->read(2048);
+
+            while (($nl = strpos($buffer, "\n")) !== false) {
+                $line = trim(substr($buffer, 0, $nl));
+                $buffer = substr($buffer, $nl + 1);
+
+                if ($line === '' || !str_starts_with($line, 'data:')) {
+                    continue;
+                }
+
+                $data = trim(substr($line, 5));
+                if ($data === '' || $data === '[DONE]') {
+                    continue;
+                }
+
+                $event = json_decode($data, true);
+                if (!is_array($event)) {
+                    continue;
+                }
+
+                $type = $event['type'] ?? '';
+                if ($type === 'response.output_text.delta' && isset($event['delta']) && is_string($event['delta'])) {
+                    $streamedContent .= $event['delta'];
+                    $onDelta($event['delta']);
+                } elseif ($type === 'response.completed' && isset($event['response']) && is_array($event['response'])) {
+                    // The completed event carries the authoritative response
+                    // (id + all output items incl. function calls).
+                    $final = $this->normalizeResponse($event['response']);
+                } elseif ($type === 'error') {
+                    throw new AiManagerException('The AI service reported an error mid-stream.');
+                }
+            }
+        }
+
+        // Fall back to the text we accumulated if no completed event arrived.
+        if ($final === null) {
+            $trimmed = trim($streamedContent);
+            $final = [
+                'response_id' => $previousResponseId,
+                'content' => $trimmed !== '' ? $trimmed : null,
+                'tool_calls' => [],
+            ];
+        }
+
+        return $final;
+    }
+
+    /**
+     * Build the Responses API request body shared by chat() and chatStream().
+     *
+     * @param array<int, array> $messages
+     * @param array<int, array> $tools
+     * @param array<int, array> $functionOutputs
+     */
+    private function buildPayload(
+        array $messages,
+        array $tools,
+        array $functionOutputs,
+        ?string $previousResponseId,
+    ): array {
+        [$instructions, $input] = $this->responsesInputFromMessages($messages);
+        if (!empty($functionOutputs)) {
+            $input = array_values($functionOutputs);
+        }
+
+        $payload = [
+            'model' => $this->model(),
+            'input' => $input,
+            'instructions' => $instructions,
+            'max_output_tokens' => $this->maxTokens ?? (int) config('services.openai.max_output_tokens', 1500),
+            'reasoning' => [
+                'effort' => config('services.openai.reasoning_effort', 'low'),
+            ],
+        ];
+
+        if ($this->supportsTemperature()) {
+            $payload['temperature'] = (float) config('services.openai.temperature', 0.2);
+        }
+
+        if (!empty($tools)) {
+            $payload['tools'] = $tools;
+        }
+
+        if ($previousResponseId !== null) {
+            $payload['previous_response_id'] = $previousResponseId;
+        }
+
+        return $payload;
     }
 
     /**
