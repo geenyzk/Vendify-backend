@@ -136,6 +136,44 @@ class OpenAiClient
         return $this->normalizeResponse($body);
     }
 
+    /**
+     * A short (3-6 word) title for a conversation, from its first user message.
+     * Deliberately tiny (few output tokens, no tools) so the extra call barely
+     * costs anything. Returns null on any failure so titling never blocks a turn.
+     */
+    public function title(string $userMessage): ?string
+    {
+        $baseUrl = rtrim($this->baseUrl ?? config('services.openai.base_url', 'https://api.openai.com/v1'), '/');
+
+        $payload = [
+            'model' => $this->model(),
+            'instructions' => 'Generate a concise 3 to 6 word title summarising this admin request. Return only the title text — no quotes, no trailing punctuation.',
+            'input' => [['role' => 'user', 'content' => mb_substr($userMessage, 0, 500)]],
+            'max_output_tokens' => 20,
+            'reasoning' => ['effort' => 'minimal'],
+        ];
+
+        try {
+            $response = Http::withToken($this->key())
+                ->timeout(20)
+                ->acceptJson()
+                ->post("{$baseUrl}/responses", $payload);
+
+            if ($response->failed()) {
+                return null;
+            }
+
+            $title = trim((string) ($this->normalizeResponse($response->json())['content'] ?? ''));
+            $title = trim($title, " \t\n\r\0\x0B\"'");
+
+            return $title !== '' ? mb_substr($title, 0, 60) : null;
+        } catch (\Throwable $e) {
+            Log::info('AI Manager: title generation skipped', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
     private function supportsTemperature(): bool
     {
         return !preg_match('/^(o\d|gpt-5)/i', $this->model());

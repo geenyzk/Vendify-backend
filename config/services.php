@@ -62,6 +62,8 @@ return [
         'daily_message_limit' => (int) env('AI_DAILY_MESSAGE_LIMIT', 0),
         // How many times to retry a transient OpenAI failure before giving up.
         'max_retries' => (int) env('OPENAI_MAX_RETRIES', 2),
+        // Generate a short model-written title for each new conversation.
+        'auto_title' => (bool) env('AI_AUTO_TITLE', true),
     ],
 
 ];

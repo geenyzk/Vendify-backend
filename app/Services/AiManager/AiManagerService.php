@@ -52,7 +52,12 @@ class AiManagerService
         ]);
 
         if (empty($conversation->title)) {
-            $conversation->title = Str::limit(trim($content), 60);
+            // A short model-written title on the first message, falling back to
+            // a plain truncation if titling is disabled or the tiny call fails.
+            $generated = config('services.openai.auto_title', true)
+                ? $this->client->title($content)
+                : null;
+            $conversation->title = $generated ?: Str::limit(trim($content), 60);
         }
         $conversation->last_activity_at = now();
         $conversation->save();

@@ -260,13 +260,16 @@ class AiManagerController extends Controller
         $conversation->loadMissing(['messages', 'proposals']);
 
         $messages = $conversation->messages
-            // The raw tool request/result plumbing is internal — the UI shows
-            // user/assistant text and the human-readable action notes only.
-            ->reject(fn (AiMessage $m) => $m->role === AiMessage::ROLE_TOOL || empty($m->content))
+            // Drop the raw tool RESULT plumbing (ROLE_TOOL) and any truly empty
+            // row, but keep assistant messages that only carry tool_calls so the
+            // UI can show a subtle "looked up X" activity line for transparency.
+            ->reject(fn (AiMessage $m) => $m->role === AiMessage::ROLE_TOOL
+                || (empty($m->content) && empty($this->toolNames($m))))
             ->map(fn (AiMessage $m) => [
                 'id' => $m->id,
                 'role' => $m->role,
                 'content' => $m->content,
+                'tools' => $this->toolNames($m),
                 'created_at' => $m->created_at?->toDateTimeString(),
             ])
             ->values();
@@ -282,6 +285,26 @@ class AiManagerController extends Controller
                 ->map(fn (AiActionProposal $p) => $this->proposalPayload($p))
                 ->values(),
         ];
+    }
+
+    /**
+     * Tool names an assistant message called this turn, for the UI's activity
+     * line. Empty for user/system messages and assistant messages with no calls.
+     *
+     * @return array<int, string>
+     */
+    private function toolNames(AiMessage $m): array
+    {
+        if ($m->role !== AiMessage::ROLE_ASSISTANT || empty($m->tool_calls)) {
+            return [];
+        }
+
+        $calls = is_array($m->tool_calls) ? $m->tool_calls : (json_decode($m->tool_calls, true) ?: []);
+
+        return array_values(array_filter(array_map(
+            fn ($c) => is_array($c) ? ($c['name'] ?? null) : null,
+            $calls,
+        )));
     }
 
     private function proposalPayload(AiActionProposal $proposal): array
