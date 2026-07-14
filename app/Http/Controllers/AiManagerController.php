@@ -51,6 +51,10 @@ class AiManagerController extends Controller
             'message' => 'nullable|string|max:4000',
         ]);
 
+        if (!empty($validated['message']) && ($limited = $this->dailyLimitResponse())) {
+            return $limited;
+        }
+
         $conversation = $this->service->startConversation($request->user());
 
         if (!empty($validated['message'])) {
@@ -62,6 +66,48 @@ class AiManagerController extends Controller
         }
 
         return $this->success($this->conversationPayload($conversation->fresh()), 'Conversation started', 201);
+    }
+
+    /**
+     * Platform-wide AI usage for today against the configured daily cap, so the
+     * UI can show "N of M used" and warn as the limit approaches. The cap bounds
+     * OpenAI spend; 0 means unlimited.
+     */
+    public function usage(): JsonResponse
+    {
+        return $this->success($this->dailyUsage());
+    }
+
+    /** @return array{used:int, limit:int, remaining:int, unlimited:bool, resets_at:string} */
+    private function dailyUsage(): array
+    {
+        $limit = (int) config('services.openai.daily_message_limit', 0);
+        $used = AiMessage::where('role', AiMessage::ROLE_USER)
+            ->whereDate('created_at', now()->toDateString())
+            ->count();
+
+        return [
+            'used' => $used,
+            'limit' => $limit,
+            'remaining' => $limit > 0 ? max(0, $limit - $used) : -1,
+            'unlimited' => $limit <= 0,
+            'resets_at' => now()->endOfDay()->toDateTimeString(),
+        ];
+    }
+
+    /** A 429 response when today's cap is reached, or null when there's headroom. */
+    private function dailyLimitResponse(): ?JsonResponse
+    {
+        $usage = $this->dailyUsage();
+        if ($usage['unlimited'] || $usage['remaining'] > 0) {
+            return null;
+        }
+
+        return $this->fail(
+            $usage,
+            "The daily AI usage limit of {$usage['limit']} messages has been reached. It resets at midnight.",
+            429,
+        );
     }
 
     /** Full conversation: messages plus pending/decided action proposals. */
@@ -85,6 +131,10 @@ class AiManagerController extends Controller
         $conversation = $this->ownedConversation($request, $id);
         if (!$conversation) {
             return $this->fail([], 'Conversation not found', 404);
+        }
+
+        if ($limited = $this->dailyLimitResponse()) {
+            return $limited;
         }
 
         try {

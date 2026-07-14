@@ -269,6 +269,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // any action it proposes is re-checked against that action's own
         // permission at approval time (see AiManagerService::approve).
         Route::middleware('permission:ai_manager')->prefix('ai')->group(function () {
+            Route::get('/usage', [AiManagerController::class, 'usage']);
             Route::get('/conversations', [AiManagerController::class, 'index']);
             Route::post('/conversations', [AiManagerController::class, 'store']);
             Route::get('/conversations/{id}', [AiManagerController::class, 'show']);

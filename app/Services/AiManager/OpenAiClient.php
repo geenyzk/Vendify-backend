@@ -2,6 +2,8 @@
 
 namespace App\Services\AiManager;
 
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -83,10 +85,24 @@ class OpenAiClient
 
         $baseUrl = rtrim($this->baseUrl ?? config('services.openai.base_url', 'https://api.openai.com/v1'), '/');
         $timeout = $this->timeout ?? (int) config('services.openai.timeout', 60);
+        $maxRetries = max(0, (int) config('services.openai.max_retries', 2));
 
         try {
             $response = Http::withToken($this->key())
                 ->timeout($timeout)
+                // Retry transient failures (network drops, rate limits, 5xx)
+                // with exponential-ish backoff so a blip doesn't fail the turn.
+                // Real errors (4xx other than 429) fall straight through.
+                ->retry($maxRetries + 1, 600, function ($exception) {
+                    if ($exception instanceof ConnectionException) {
+                        return true;
+                    }
+                    if ($exception instanceof RequestException) {
+                        return in_array($exception->response->status(), [429, 500, 502, 503, 504], true);
+                    }
+
+                    return false;
+                }, throw: false)
                 ->acceptJson()
                 ->post("{$baseUrl}/responses", $payload);
         } catch (\Throwable $e) {

@@ -25,16 +25,19 @@ class ToolRegistry
         $this->register(new SearchUsersTool());
         $this->register(new GetUserTool());
         $this->register(new GetVendorBalancesTool());
-        $this->register(new SearchDataPlansTool());
         $this->register(new SearchPlansTool());
         $this->register(new ListMarketingTool());
         $this->register(new ListAffiliatesTool());
         $this->register(new ListAffiliateCustomersTool());
         $this->register(new ListRolesTool());
         $this->register(new GetRoleTool());
-        $this->register(new AnalyzePricingTrendsTool());
-        $this->register(new RecommendPricingStrategyTool());
-        $this->register(new GetPricingStrategyTool());
+        $this->register(new AnalyzeDataPlanPricingTool());
+        $this->register(new GetAnalyticsTool());
+        $this->register(new ListWalletWithdrawalsTool());
+        $this->register(new ListAirtimeToCashTool());
+        $this->register(new GetServiceRoutingTool());
+        $this->register(new GetRoleCostMarginsTool());
+        $this->register(new ListNetworksTool());
 
         // Mutating tools — proposal-only, gated by their real permission slug.
         $this->register(new RefundTransactionTool());
@@ -42,8 +45,7 @@ class ToolRegistry
         $this->register(new FundUserWalletTool());
         $this->register(new ToggleServiceControlTool());
         $this->register(new SendBroadcastTool());
-        $this->register(new UpdateDataPlanPriceTool());
-        $this->register(new AdjustDataPlanPriceTool());
+        $this->register(new SetDataPlanPriceTool());
         $this->register(new ManagePlanTool());
         $this->register(new CreateDiscountTool());
         $this->register(new CreatePromotionTool());
@@ -56,6 +58,12 @@ class ToolRegistry
         $this->register(new UpdateRoleTool());
         $this->register(new DeleteRoleTool());
         $this->register(new SendAffiliateCustomerMessageTool());
+        $this->register(new ReviewWalletWithdrawalTool());
+        $this->register(new ReviewAirtimeToCashTool());
+        $this->register(new UpdateServiceRoutingTool());
+        $this->register(new SetRoleCostMarginsTool());
+        $this->register(new UpdateUserStatusTool());
+        $this->register(new ManageNetworkTool());
     }
 
     public function register(AiTool $tool): void

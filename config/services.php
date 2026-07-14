@@ -57,6 +57,11 @@ return [
         'temperature' => (float) env('OPENAI_TEMPERATURE', 0.2),
         'reasoning_effort' => env('OPENAI_REASONING_EFFORT', 'low'),
         'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+        // Platform-wide cap on AI Manager turns (user messages) per calendar
+        // day, to bound OpenAI spend. 0 = unlimited. Shown in the chat header.
+        'daily_message_limit' => (int) env('AI_DAILY_MESSAGE_LIMIT', 0),
+        // How many times to retry a transient OpenAI failure before giving up.
+        'max_retries' => (int) env('OPENAI_MAX_RETRIES', 2),
     ],
 
 ];
