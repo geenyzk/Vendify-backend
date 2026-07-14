@@ -30,7 +30,7 @@ class BrandingController extends Controller
                 'app_name' => $general?->app_name ?: 'Laravel',
                 // The endpoint is the single source of truth: it serves the
                 // installed Vendify logo and any future admin replacement.
-                'logo' => url('/api/branding/logo'),
+                'logo' => '/api/branding/logo',
                 'meta_title' => $general?->meta_title ?: ($general?->app_name ?: 'Laravel'),
                 'meta_description' => $general?->meta_description,
                 // Public-facing contact details (shown in the landing footer) —

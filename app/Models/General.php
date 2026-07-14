@@ -25,6 +25,6 @@ class General extends Model
     }
 
     public function getAppLogoAttribute(){
-        return url("/api/branding/logo");
+        return "/api/branding/logo";
     }
 }
