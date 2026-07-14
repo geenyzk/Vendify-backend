@@ -47,12 +47,20 @@ use App\Http\Controllers\SimDeviceAdminController;
 use App\Http\Controllers\SimDeviceController;
 use App\Http\Controllers\SimDeviceRegistrationController;
 use App\Http\Controllers\SimJobController;
+use App\Http\Controllers\AppReleaseController;
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
 // default. Deliberately excludes everything else on General (bank/BVN etc).
 Route::get('/branding', [BrandingController::class, 'show']);
 Route::get('/branding/logo', [BrandingController::class, 'logo']);
+
+// Public app distribution — the "Download app" page and the mobile shell's
+// update check read these. Binaries are streamed (never via /storage) so we
+// set the APK mime and count installs. Admin upload lives in the admin group.
+Route::get('/app/latest', [AppReleaseController::class, 'latest']);
+Route::get('/app/download', [AppReleaseController::class, 'download']);
+Route::get('/app/download/{id}', [AppReleaseController::class, 'download'])->whereNumber('id');
 
 Route::post("/login", [AuthenticatedSessionController::class, 'store']);
 Route::post("/register", [RegisteredUserController::class, 'store']);
@@ -128,6 +136,12 @@ Route::middleware(['auth:sanctum', 'user_type:admin'])->group(function () {
     // File upload — not reachable via the generic Universal Table API,
     // which only accepts a JSON body, not multipart form data.
     Route::post('/general/logo', [GeneralController::class, 'uploadLogo']);
+
+    // Mobile app (APK) distribution management. Upload is multipart, so it
+    // also cannot go through the Universal Table API.
+    Route::get('/app/releases', [AppReleaseController::class, 'index']);
+    Route::post('/app/releases', [AppReleaseController::class, 'store']);
+    Route::delete('/app/releases/{id}', [AppReleaseController::class, 'destroy'])->whereNumber('id');
 });
 
 
