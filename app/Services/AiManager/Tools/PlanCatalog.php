@@ -76,20 +76,32 @@ class PlanCatalog
             ? ($providerable['provider_id'] ?? null)
             : null;
 
+        $key = [
+            'providerable_id' => $model->id,
+            'providerable_type' => get_class($model),
+        ];
+
+        $fields = [
+            'cost_price' => $providerable['cost_price'] ?? 0,
+            'margin_value' => $providerable['margin_value'] ?? 0,
+            'margin_type' => $providerable['margin_type'] ?? 'fiat',
+            'server_id' => $providerable['server_id'] ?? $payload['server_id'] ?? null,
+            'updated_at' => now(),
+        ];
+
+        // providerables.provider_id is NOT NULL, so we can never write a null
+        // provider. When no provider is being assigned, only refresh the
+        // cost/margin/server on an EXISTING pivot row (leaving its provider_id
+        // intact); if there's no row yet, there is nothing valid to insert.
+        if ($providerId === null) {
+            DB::table('providerables')->where($key)->update($fields);
+
+            return;
+        }
+
         DB::table('providerables')->updateOrInsert(
-            [
-                'providerable_id' => $model->id,
-                'providerable_type' => get_class($model),
-            ],
-            [
-                'provider_id' => $providerId,
-                'cost_price' => $providerable['cost_price'] ?? 0,
-                'margin_value' => $providerable['margin_value'] ?? 0,
-                'margin_type' => $providerable['margin_type'] ?? 'fiat',
-                'server_id' => $providerable['server_id'] ?? $payload['server_id'] ?? null,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
+            $key,
+            $fields + ['provider_id' => $providerId, 'created_at' => now()],
         );
     }
 

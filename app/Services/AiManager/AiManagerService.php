@@ -500,11 +500,30 @@ class AiManagerService
         ]];
 
         $historyLimit = max(20, (int) config('services.openai.max_history_messages', 80));
+
         $history = $conversation->messages()
             ->latest('id')
             ->limit($historyLimit)
             ->get()
-            ->sortBy('id');
+            ->sortBy('id')
+            ->values();
+
+        // Long conversations: rather than silently dropping the oldest turns,
+        // keep the recent window but re-anchor the model with the original
+        // request so intent isn't lost — a free, no-extra-API-call summary.
+        if ($conversation->messages()->count() > $historyLimit) {
+            $firstUser = $conversation->messages()
+                ->where('role', AiMessage::ROLE_USER)
+                ->orderBy('id')
+                ->first();
+
+            $note = 'Note: earlier parts of this conversation were truncated to save space.';
+            if ($firstUser && !$history->contains('id', $firstUser->id)) {
+                $note .= ' The original request was: "' . Str::limit((string) $firstUser->content, 300) . '"';
+            }
+
+            $messages[] = ['role' => AiMessage::ROLE_USER, 'content' => $note];
+        }
 
         foreach ($history as $message) {
             foreach ($message->toOpenAi() as $item) {

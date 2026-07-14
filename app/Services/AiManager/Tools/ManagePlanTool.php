@@ -140,7 +140,7 @@ class ManagePlanTool extends AiTool
             $attributes = PlanCatalog::cleanAttributes($table, $arguments['attributes'] ?? []);
 
             if (empty($attributes) && !isset($arguments['providerable']) && !array_key_exists('use_provider_as_providerable', $arguments)) {
-                throw new AiManagerException('No valid plan fields were provided.');
+                throw new AiManagerException($this->invalidAttributesMessage($table, $arguments['attributes'] ?? []));
             }
 
             $plan = $action === 'update'
@@ -205,7 +205,7 @@ class ManagePlanTool extends AiTool
         $attributes = PlanCatalog::cleanAttributes($table, $arguments['attributes'] ?? []);
 
         if (empty($attributes)) {
-            throw new AiManagerException('Bulk update requires at least one valid attribute to set.');
+            throw new AiManagerException($this->invalidAttributesMessage($table, $arguments['attributes'] ?? []));
         }
 
         $updatedIds = DB::transaction(function () use ($modelClass, $ids, $attributes) {
@@ -227,6 +227,26 @@ class ManagePlanTool extends AiTool
             'attributes' => $attributes,
             'ids' => $updatedIds,
         ];
+    }
+
+    /**
+     * A guiding error for when none of the supplied attributes are real
+     * columns — names the rejected keys, the valid columns, and (for data
+     * plans) points at set_data_plan_price so the model can self-correct.
+     */
+    private function invalidAttributesMessage(string $table, array $provided): string
+    {
+        $keys = array_keys($provided);
+        $columns = PlanCatalog::columns($table);
+
+        $hint = $table === 'data_plans'
+            ? ' Note: data plan selling prices are NOT a plain column — set them per role with set_data_plan_price, or set the "pricing" JSON column.'
+            : '';
+
+        return 'None of the provided attributes'
+            . ($keys ? ' (' . implode(', ', $keys) . ')' : '')
+            . ' are real columns on ' . $table . '. Valid columns are: '
+            . implode(', ', $columns) . '.' . $hint;
     }
 
     /** @return array<int, int> */

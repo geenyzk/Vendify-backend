@@ -124,6 +124,13 @@ abstract class AiTool
             }
         }
 
+        // Array item schemas need the same strict treatment (every nested
+        // object must list all its keys in `required`), otherwise the OpenAI
+        // strict validator rejects the whole function schema.
+        if (($schema['type'] ?? null) === 'array' && isset($schema['items']) && is_array($schema['items'])) {
+            $schema['items'] = $this->strictParameters($schema['items']);
+        }
+
         return $schema;
     }
 
