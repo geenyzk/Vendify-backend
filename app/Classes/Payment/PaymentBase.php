@@ -27,6 +27,18 @@ abstract class PaymentBase implements PaymentInterface
     public function generateAccount(User $user): void
     {
         try {
+            // This runs on every login and registration. Calling the provider's
+            // (remote, often slow) account-creation API for a user who already
+            // has a virtual account with this provider was the main reason
+            // sign-in/sign-up felt sluggish — so short-circuit on a cheap DB
+            // check before ever touching the network.
+            $alreadyProvisioned = Bank::where('user_id', $user->id)
+                ->where('provider', $this->providerName)
+                ->exists();
+            if ($alreadyProvisioned) {
+                return;
+            }
+
             $response = $this->generate($user);
 
             if (!$response) {

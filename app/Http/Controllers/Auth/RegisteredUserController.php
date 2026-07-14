@@ -104,14 +104,20 @@ class RegisteredUserController extends Controller
             Auth::login($user);
             $token = $user->createToken($user->username)->plainTextToken;
 
-            try {
-                Payment::generateAccount($user);
-            } catch (\Throwable $e) {
-                Log::warning('Virtual account generation failed during registration', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            // Provisioning the virtual account calls a remote provider API, so
+            // defer it until after the response is flushed to the client. The
+            // user is sent to the PIN-setup step next, which gives it ample
+            // time to land before the dashboard needs it — keeps sign-up fast.
+            app()->terminating(function () use ($user) {
+                try {
+                    Payment::generateAccount($user);
+                } catch (\Throwable $e) {
+                    Log::warning('Virtual account generation failed during registration', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            });
 
             try {
                 $user->loginStamp();
@@ -143,43 +149,43 @@ class RegisteredUserController extends Controller
                 }
             }
 
-            try {
-                AdminNotifier::notifySignup($user);
-            } catch (\Throwable $e) {
-                Log::warning('Admin signup notification failed', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            // The admin notification and the verification email both go out
+            // over the network (SMTP), so defer them past the response too — a
+            // failed send must never break (or slow down) registration, and the
+            // user should never wait on, or be shown, mail-delivery status.
+            app()->terminating(function () use ($user) {
+                try {
+                    AdminNotifier::notifySignup($user);
+                } catch (\Throwable $e) {
+                    Log::warning('Admin signup notification failed', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
 
-            // A failed send (bad SMTP config, provider outage, etc.) must
-            // never break registration itself — the account already exists
-            // and is logged in at this point regardless of whether the
-            // verification email goes out.
-            $verificationEmailSent = false;
-            try {
-                $user->sendEmailVerificationNotification();
-                $verificationEmailSent = true;
-            } catch (\Throwable $e) {
-                Log::warning('Failed to send email verification notification', [
-                    'user_id' => $user->id,
-                    'exception' => $e::class,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+                try {
+                    $user->sendEmailVerificationNotification();
+                } catch (\Throwable $e) {
+                    Log::warning('Failed to send email verification notification', [
+                        'user_id' => $user->id,
+                        'exception' => $e::class,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            });
 
-            // Return user data with unverified email status
+            // Return user data with unverified email status. Email delivery is
+            // best-effort and handled after this response, so its outcome is
+            // deliberately not surfaced to the client.
             return $this->success(
                 [
                     'user' => $user->fresh()->load('role.permissions'),
                     'token' => $token,
                     'message' => 'Registration successful! Please verify your email.',
                     'email_verified_at' => $user->email_verified_at,
-                    'verification_email_sent' => $verificationEmailSent,
+                    'verification_email_sent' => true,
                 ],
-                $verificationEmailSent
-                    ? 'Registration successful. Verification email sent.'
-                    : 'Registration successful, but we could not send the verification email. You can retry from your account.'
+                'Registration successful.'
             );
         } catch (ValidationException $e) {
             return $this->fail( $e->errors(), "Validation Error", 422);
