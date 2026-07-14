@@ -23,10 +23,15 @@ class AuthenticatedSessionController extends Controller
     {
         $user->load('role.permissions');
 
+        $appends = $user->getAppends();
+        $appends = array_values(array_unique(array_merge($appends, ['has_pin', 'banks'])));
+
         if (!$includeDashboardData) {
-            $user->setAppends(['has_pin']);
+            $user->setAppends($appends);
+            return $user;
         }
 
+        $user->setAppends($appends);
         return $user;
     }
 
