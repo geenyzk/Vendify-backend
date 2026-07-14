@@ -5,6 +5,7 @@ use App\Models\DataPlan;
 use App\Models\Role;
 use App\Models\Vendor;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 
@@ -112,4 +113,123 @@ test('adex can fetch remote data plans and create draft catalog entries', functi
         ->and($draftPlan->is_draft)->toBeTrue()
         ->and($draftPlan->active)->toBeFalse()
         ->and($draftPlan->providers()->wherePivot('server_id', '2')->exists())->toBeTrue();
+});
+
+test('sync ignores an active duplicate plan from another provider', function () {
+    $providerA = Vendor::create([
+        'name' => 'Adex',
+        'sub_category' => 'adex',
+        'base_url' => 'https://quicklysim.test',
+        'active' => true,
+    ]);
+    $providerB = Vendor::create([
+        'name' => 'Ogdams',
+        'sub_category' => 'ogdams',
+        'base_url' => 'https://quicklysim.test',
+        'active' => true,
+    ]);
+
+    $plan = DataPlan::create([
+        'network' => 'mtn',
+        'plan_type' => 'DATA SHARE',
+        'plan_name' => '100',
+        'plan_size' => 'MB',
+        'active' => true,
+        'is_draft' => false,
+        'sort_order' => 0,
+        'pricing' => [],
+    ]);
+
+    DB::table('providerables')->insert([
+        'provider_id' => $providerA->id,
+        'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class,
+        'cost_price' => 150,
+        'margin_value' => 0,
+        'margin_type' => 'fiat',
+        'server_id' => 'adex-1',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    Http::fake([
+        'https://quicklysim.test/api/data-plan' => Http::response([
+            [
+                'plan_id' => 99,
+                'network' => 'MTN',
+                'network_type' => 'DATA SHARE',
+                'plan_name' => '100MB',
+                'validate' => 'WEEKLY',
+                'amount' => 120,
+            ],
+        ], 200),
+    ]);
+
+    $provider = new Adex($providerB);
+    $summary = $provider->syncPlans();
+
+    expect($summary['created'])->toBe(0)
+        ->and($summary['updated'])->toBe(0)
+        ->and(DataPlan::count())->toBe(1)
+        ->and(DB::table('providerables')->where('providerable_id', $plan->id)->where('providerable_type', DataPlan::class)->value('provider_id'))->toBe($providerA->id);
+});
+
+test('sync replaces an inactive draft plan with the cheaper provider entry', function () {
+    $providerA = Vendor::create([
+        'name' => 'Adex',
+        'sub_category' => 'adex',
+        'base_url' => 'https://quicklysim.test',
+        'active' => true,
+    ]);
+    $providerB = Vendor::create([
+        'name' => 'Ogdams',
+        'sub_category' => 'ogdams',
+        'base_url' => 'https://quicklysim.test',
+        'active' => true,
+    ]);
+
+    $plan = DataPlan::create([
+        'network' => 'mtn',
+        'plan_type' => 'DATA SHARE',
+        'plan_name' => '100',
+        'plan_size' => 'MB',
+        'active' => false,
+        'is_draft' => true,
+        'sort_order' => 0,
+        'pricing' => [],
+    ]);
+
+    DB::table('providerables')->insert([
+        'provider_id' => $providerA->id,
+        'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class,
+        'cost_price' => 200,
+        'margin_value' => 0,
+        'margin_type' => 'fiat',
+        'server_id' => 'adex-1',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    Http::fake([
+        'https://quicklysim.test/api/data-plan' => Http::response([
+            [
+                'plan_id' => 88,
+                'network' => 'MTN',
+                'network_type' => 'DATA SHARE',
+                'plan_name' => '100MB',
+                'validate' => 'WEEKLY',
+                'amount' => 120,
+            ],
+        ], 200),
+    ]);
+
+    $provider = new Adex($providerB);
+    $summary = $provider->syncPlans();
+
+    expect($summary['created'])->toBe(0)
+        ->and($summary['updated'])->toBe(1)
+        ->and(DataPlan::count())->toBe(1)
+        ->and(DB::table('providerables')->where('providerable_id', $plan->id)->where('providerable_type', DataPlan::class)->value('provider_id'))->toBe($providerB->id)
+        ->and(DB::table('providerables')->where('providerable_id', $plan->id)->where('providerable_type', DataPlan::class)->value('cost_price'))->toBe('120.00');
 });

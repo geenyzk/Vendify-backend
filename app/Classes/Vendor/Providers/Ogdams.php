@@ -328,40 +328,66 @@ class Ogdams extends VendorBase
                 continue;
             }
             [, $amount, $unit] = $m;
+            $planName = (string) $amount;
+            $planSize = strtoupper($unit);
+            $planType = strtoupper((string) ($remote['plan_type'] ?? ''));
+            $network = strtolower((string) ($remote['network'] ?? ''));
 
-            $existingLink = DB::table('providerables')
-                ->where('providerable_type', DataPlan::class)
-                ->where('provider_id', $this->provider->id)
-                ->where('server_id', $remote['vendor_plan_id'])
+            $matchingPlan = DataPlan::query()
+                ->where('network', $network)
+                ->where('plan_name', $planName)
+                ->where('plan_size', $planSize)
+                ->where('plan_type', $planType)
                 ->first();
 
-            if ($existingLink) {
-                DataPlan::where('id', $existingLink->providerable_id)->update([
+            if ($matchingPlan) {
+                $existingLink = DB::table('providerables')
+                    ->where('providerable_id', $matchingPlan->id)
+                    ->where('providerable_type', DataPlan::class)
+                    ->first();
+
+                $matchingPlan->fill([
+                    'plan_type' => $planType,
                     'validity' => $remote['validity'],
                 ]);
-                // Backfill the default markup onto drafts synced before
-                // defaultPricing() existed — but never touch a plan that has
-                // any pricing set or has left draft state: those are (or were)
-                // admin-reviewed prices.
-                DataPlan::where('id', $existingLink->providerable_id)
-                    ->where('is_draft', true)
-                    ->whereNull('pricing')
-                    ->update(['pricing' => json_encode($defaultPricing)]);
-                DB::table('providerables')
-                    ->where('id', $existingLink->id)
-                    ->update([
-                        'cost_price' => $remote['cost_price'],
-                        'updated_at' => now(),
-                    ]);
+
+                if ($matchingPlan->is_draft && ($matchingPlan->pricing === null || $matchingPlan->pricing === [])) {
+                    $matchingPlan->pricing = $defaultPricing;
+                }
+
+                $matchingPlan->save();
+
+                if ($matchingPlan->active) {
+                    if (!$existingLink || (int) ($existingLink->provider_id ?? 0) !== (int) $this->provider->id) {
+                        $summary['skipped']++;
+                        continue;
+                    }
+
+                    $this->storeProviderableLink($matchingPlan->id, $remote, $existingLink?->id);
+                    $summary['updated']++;
+                    continue;
+                }
+
+                $currentCost = (float) ($existingLink->cost_price ?? 0);
+                $shouldReplace = !$existingLink || (int) ($existingLink->provider_id ?? 0) !== (int) $this->provider->id
+                    ? true
+                    : ($remote['cost_price'] < $currentCost || $currentCost === 0);
+
+                if (!$shouldReplace) {
+                    $summary['skipped']++;
+                    continue;
+                }
+
+                $this->storeProviderableLink($matchingPlan->id, $remote, $existingLink?->id);
                 $summary['updated']++;
                 continue;
             }
 
             $dataPlan = DataPlan::create([
-                'network' => $remote['network'],
-                'plan_type' => $remote['plan_type'],
-                'plan_name' => $amount,
-                'plan_size' => strtoupper($unit),
+                'network' => $network,
+                'plan_type' => $planType,
+                'plan_name' => $planName,
+                'plan_size' => $planSize,
                 'validity' => $remote['validity'],
                 'active' => false,
                 'is_draft' => true,
@@ -369,17 +395,7 @@ class Ogdams extends VendorBase
                 'pricing' => $defaultPricing,
             ]);
 
-            DB::table('providerables')->insert([
-                'provider_id' => $this->provider->id,
-                'providerable_id' => $dataPlan->id,
-                'providerable_type' => DataPlan::class,
-                'cost_price' => $remote['cost_price'],
-                'margin_value' => 0,
-                'margin_type' => 'fiat',
-                'server_id' => $remote['vendor_plan_id'],
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            $this->storeProviderableLink($dataPlan->id, $remote);
 
             $summary['created']++;
         }
@@ -396,6 +412,29 @@ class Ogdams extends VendorBase
      * Admins tune individual tiers (resellers/API usually run thinner)
      * when reviewing the draft.
      */
+    private function storeProviderableLink(int $dataPlanId, array $remote, ?int $linkId = null): void
+    {
+        $payload = [
+            'provider_id' => $this->provider->id,
+            'providerable_id' => $dataPlanId,
+            'providerable_type' => DataPlan::class,
+            'cost_price' => $remote['cost_price'],
+            'margin_value' => 0,
+            'margin_type' => 'fiat',
+            'server_id' => $remote['vendor_plan_id'],
+            'updated_at' => now(),
+        ];
+
+        if ($linkId) {
+            DB::table('providerables')->where('id', $linkId)->update($payload);
+            return;
+        }
+
+        DB::table('providerables')->insert(array_merge($payload, [
+            'created_at' => now(),
+        ]));
+    }
+
     private function defaultPricing(): array
     {
         $roles = Role::where('is_staff', false)->pluck('name')->all();
