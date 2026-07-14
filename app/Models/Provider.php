@@ -37,7 +37,7 @@ class Provider extends Model
         }
 
         try {
-            return Cache::remember("payment_provider_connection_{$this->id}", now()->addMinutes(5), function () {
+            return Cache::remember("payment_provider_connection_{$this->id}", now()->addMinutes(3), function () {
                 return PaymentFactory::make($this)->connect();
             });
         } catch (\Throwable $e) {
@@ -58,7 +58,7 @@ class Provider extends Model
         }
 
         try {
-            return Cache::remember("payment_provider_balance_{$this->id}", now()->addMinutes(5), function () {
+            return Cache::remember("payment_provider_balance_{$this->id}", now()->addMinutes(3), function () {
                 return PaymentFactory::make($this)->checkBalance();
             });
         } catch (\Throwable $e) {

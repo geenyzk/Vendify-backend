@@ -131,7 +131,7 @@ class VendorFactory
                 // balance is more than fresh enough for a dashboard tile.
                 $total += Cache::remember(
                     "vendor-balance:{$vendor->id}",
-                    now()->addMinutes(5),
+                    now()->addMinutes(3),
                     fn () => (float) str_replace(',', '', self::make($vendor)->checkBalance())
                 );
             } catch (\Throwable $e) {

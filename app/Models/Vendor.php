@@ -73,7 +73,7 @@ class Vendor extends Model
         try {
             $key = md5($this->base_url . $this->username . $this->password."-123");
             $provider = VendorFactory::make($this);
-            return Cache::remember($key, now()->addMinutes(5), function() use($provider) {
+            return Cache::remember($key, now()->addMinutes(3), function() use($provider) {
                 return $provider->isHealthy();
             });
         } catch (\Throwable $e) {
@@ -97,7 +97,7 @@ class Vendor extends Model
         try {
             $key = md5($this->base_url . $this->username . $this->password ."_balance");
             $provider = VendorFactory::make($this);
-            return Cache::remember($key, now()->addMinutes(60), function() use($provider) {
+            return Cache::remember($key, now()->addMinutes(3), function() use($provider) {
                 return $provider->checkBalance();
             });
         } catch (\Throwable $e) {

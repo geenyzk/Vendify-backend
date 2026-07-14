@@ -106,7 +106,7 @@ class Adex extends VendorBase
             // authenticating with a blank token. Only a real access token is
             // worth caching.
             if (!empty($data['AccessToken'])) {
-                Cache::put($key, $data, now()->addMinutes(5));
+                Cache::put($key, $data, now()->addMinutes(3));
             }
 
             return $data ?? [];
