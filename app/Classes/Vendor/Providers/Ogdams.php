@@ -207,7 +207,11 @@ class Ogdams extends VendorBase
             'provider' => $this->providerName,
             'transaction_type' => $transactionTypes[$service],
             'status' => $status,
-            'transaction_reference' => $response['ref'] ?? $response['reference'] ?? null,
+            // Queued/processing responses do not always echo a vendor ref.
+            // VendorBase merges the original request into this response, so
+            // retain the server-generated reference sent to Ogdams as the
+            // callback key instead of attempting to insert NULL.
+            'transaction_reference' => $response['ref'] ?? $response['reference'] ?? $response['tx_ref'] ?? null,
             'payment_reference' => $response['ref'] ?? null,
             // Post-flatten (see sendRequest()), 'msg' lives at the top level —
             // the 'data.msg' path no longer exists, kept only as a defensive

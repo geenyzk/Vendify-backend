@@ -217,7 +217,10 @@ class VTUServicesController extends Controller
             }
         }
 
-        // $validated['tx_ref'] = Transaction::generateTransactionId();
+        // Generate the reference server-side before the request reaches a
+        // vendor. Providers use this as their idempotency/callback key, and
+        // some asynchronous responses do not echo it back.
+        $validated['tx_ref'] = Transaction::generateTransactionId();
 
         $user = Auth::user();
 
