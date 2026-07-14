@@ -156,8 +156,10 @@ class RegisteredUserController extends Controller
             // never break registration itself — the account already exists
             // and is logged in at this point regardless of whether the
             // verification email goes out.
+            $verificationEmailSent = false;
             try {
                 $user->sendEmailVerificationNotification();
+                $verificationEmailSent = true;
             } catch (\Throwable $e) {
                 Log::warning('Failed to send email verification notification', [
                     'user_id' => $user->id,
@@ -173,8 +175,11 @@ class RegisteredUserController extends Controller
                     'token' => $token,
                     'message' => 'Registration successful! Please verify your email.',
                     'email_verified_at' => $user->email_verified_at,
+                    'verification_email_sent' => $verificationEmailSent,
                 ],
-                'Registration successful'
+                $verificationEmailSent
+                    ? 'Registration successful. Verification email sent.'
+                    : 'Registration successful, but we could not send the verification email. You can retry from your account.'
             );
         } catch (ValidationException $e) {
             return $this->fail( $e->errors(), "Validation Error", 422);
