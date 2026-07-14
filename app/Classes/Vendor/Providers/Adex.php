@@ -528,7 +528,7 @@ class Adex extends VendorBase
                 continue;
             }
 
-            $network = strtolower((string) ($plan['network'] ?? ''));
+            $network = strtoupper((string) ($plan['network'] ?? ''));
             if ($network === '') {
                 continue;
             }
@@ -538,7 +538,7 @@ class Adex extends VendorBase
                 'vendor_plan_id' => (string) ($plan['plan_id'] ?? $plan['id'] ?? ''),
                 'name' => (string) ($plan['plan_name'] ?? ''),
                 'validity' => (string) ($plan['validate'] ?? $plan['validity'] ?? ''),
-                'plan_type' => strtolower((string) ($plan['network_type'] ?? '')),
+                'plan_type' => str_replace("_", " ", strtoupper((string) ($plan['network_type'] ?? ''))),
                 'cost_price' => (float) ($plan['amount'] ?? $plan['price'] ?? 0),
             ];
         }

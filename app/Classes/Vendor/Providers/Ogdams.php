@@ -278,7 +278,7 @@ class Ogdams extends VendorBase
                     'vendor_plan_id' => (string) ($plan['planId'] ?? ''),
                     'name' => (string) ($plan['name'] ?? ''),
                     'validity' => (string) ($plan['validity'] ?? ''),
-                    'plan_type' => strtoupper((string) ($plan['type'] ?? '')),
+                    'plan_type' => str_replace("_", " ",strtoupper((string) ($plan['type'] ?? ''))),
                     // ourPrice is what Ogdams actually bills us; telcoPrice
                     // has shown up as "0.00"/null on several sample plans
                     // above, so it isn't a reliable cost — fall back to it
