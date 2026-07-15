@@ -90,8 +90,8 @@ class ErrorMessage
     private static function fromQueryException(QueryException $e): string
     {
         return match (self::driverCode($e)) {
-            // Column 'x' cannot be null
-            1048 => self::missingFieldMessage($e),
+            // Column 'x' cannot be null / Field 'x' doesn't have a default value
+            1048, 1364 => self::missingFieldMessage($e),
             // Duplicate entry 'x' for key 'y'
             1062 => self::duplicateMessage($e),
             // Out of range / incorrect value for a column
@@ -116,7 +116,8 @@ class ErrorMessage
 
     private static function missingFieldMessage(QueryException $e): string
     {
-        if (preg_match("/Column '([^']+)' cannot be null/i", $e->getMessage(), $m)) {
+        if (preg_match("/Column '([^']+)' cannot be null/i", $e->getMessage(), $m)
+            || preg_match("/Field '([^']+)' doesn't have a default value/i", $e->getMessage(), $m)) {
             return sprintf('%s is required.', self::fieldLabel($m[1]));
         }
 
