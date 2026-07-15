@@ -99,7 +99,7 @@ class Provider extends Model
     {
         // Provider can be attached to multiple "providerable" models; expose DataPlan specifically
         return $this->morphedByMany(DataPlan::class, 'providerable', 'providerables', 'provider_id', 'providerable_id')
-            ->withPivot(['cost_price', 'margin_value', 'margin_type'])
+            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'])
             ->withTimestamps();
     }
 }

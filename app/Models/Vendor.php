@@ -211,7 +211,7 @@ class Vendor extends Model
     public function dataPlans()
     {
         return $this->morphedByMany(DataPlan::class, 'providerable', 'providerables', 'provider_id', 'providerable_id')
-            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id'])
+            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'])
             ->withTimestamps();
     }
 }

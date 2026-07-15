@@ -42,6 +42,7 @@ class DataPlanResource extends JsonResource
             // Servers and their configurations
             'cost_price' => $pivot?->cost_price ?? 0,
             'server_id' => $pivot?->server_id ?? 0,
+            'external_plan_id' => $pivot?->external_plan_id,
             // 'server_id' =>
             'provider_id' => $pivot?->provider_id ?? $provider?->id,
             'fallback_provider_id' => $this->fallback_provider_id,
@@ -62,6 +63,7 @@ class DataPlanResource extends JsonResource
                     'provider_id' => $pivot?->provider_id ?? $provider->id,
                     'cost_price' => $pivot?->cost_price ?? 0,
                     'server_id' => $pivot?->server_id ?? 0,
+                    'external_plan_id' => $pivot?->external_plan_id,
                     'margin_value' => $pivot?->margin_value ?? null,
                     'margin_type' => $pivot?->margin_type ?? null,
                 ],
@@ -69,7 +71,7 @@ class DataPlanResource extends JsonResource
 
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
-            'sort_order' => $this->sort_order
+            'sort_order' => $this->sort_order,
         ];
     }
 }

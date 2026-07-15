@@ -5,13 +5,15 @@ namespace App\Models;
 use App\Models\Concerns\HasProviderFallback;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
-use App\Models\Network;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DataPlan extends Model
 {
     use HasProviderFallback;
 
-    protected $appends = ["price_ngn", 'plan', "status", "price", 'provider', 'use_provider_as_providerable', 'fallback_provider', 'fallback_provider_id', 'fallback_server_id'];
+    protected $appends = ['price_ngn', 'plan', 'status', 'price', 'provider', 'use_provider_as_providerable', 'fallback_provider', 'fallback_provider_id', 'fallback_server_id'];
+
     protected $fillable = [
         'id',
         'plan_name',
@@ -23,22 +25,40 @@ class DataPlan extends Model
         'is_draft',
         'validity',
         'sort_order',
-        'pricing'
-       ];
-    protected $casts = [
-        "active" => "boolean",
-        "is_draft" => "boolean",
-        'pricing' => 'array',
+        'pricing',
     ];
 
+    protected $casts = [
+        'active' => 'boolean',
+        'is_draft' => 'boolean',
+        'pricing' => 'array',
+    ];
 
     // Note: Avoid overriding `save()` to prevent infinite recursion or unexpected
     // behavior. Relationship syncs (providerable) are handled in the
     // `AdminController::syncModelRelations` logic when creating/updating via API.
-     protected static function booted()
+    protected static function booted()
     {
+        static::saving(function (DataPlan $plan) {
+            if (! $plan->exists || ! $plan->active || ! Schema::hasColumn('providerables', 'external_plan_id')) {
+                return;
+            }
+
+            $unpricedImportedPlan = DB::table('providerables')
+                ->where('providerable_id', $plan->getKey())
+                ->where('providerable_type', self::class)
+                ->whereNotNull('external_plan_id')
+                ->where('cost_price', '<=', 0)
+                ->exists();
+
+            if ($unpricedImportedPlan) {
+                $plan->active = false;
+                $plan->is_draft = true;
+            }
+        });
+
         static::retrieved(function ($model) {
-            if (env('APP_TYPE', "standalone") === 'affiliate') {
+            if (env('APP_TYPE', 'standalone') === 'affiliate') {
                 foreach (range(2, 5) as $i) {
                     unset(
                         $model->{"adex_server_$i"},
@@ -52,12 +72,11 @@ class DataPlan extends Model
         });
     }
 
-
     public function toArray()
     {
         $array = parent::toArray();
 
-        if (env('APP_TYPE', "standalone") === 'affiliate') {
+        if (env('APP_TYPE', 'standalone') === 'affiliate') {
             // Keep only adex_server_1, remove others
             foreach (range(2, 5) as $i) {
                 unset(
@@ -67,24 +86,26 @@ class DataPlan extends Model
                 );
             }
 
-            unset($array["spurs_server_1"], $array["msorg_server_1"], $array["vtupass"], $array["payscribe"]);
+            unset($array['spurs_server_1'], $array['msorg_server_1'], $array['vtupass'], $array['payscribe']);
         }
 
         return $array;
     }
 
-    public function getPlanAttribute(){
-        return $this->plan_name . $this->plan_size;
+    public function getPlanAttribute()
+    {
+        return $this->plan_name.$this->plan_size;
     }
 
-     public function getStatusAttribute(){
-        return $this->active ? "active": 'inactive';
+    public function getStatusAttribute()
+    {
+        return $this->active ? 'active' : 'inactive';
     }
 
-
-    public function getPriceAttribute(){
+    public function getPriceAttribute()
+    {
         $user = Auth::user();
-        $type = $user?->role->name ?? "user";   // nullsafe operator
+        $type = $user?->role->name ?? 'user';   // nullsafe operator
         $column = "{$type}_price"; // legacy column name
 
         // Prefer pricing JSON if present
@@ -98,6 +119,7 @@ class DataPlan extends Model
                 if (($entry['type'] ?? 'fiat') === 'percentage') {
                     return round($this->resolveCostPrice() * (1 + $value / 100), 2);
                 }
+
                 return $value;
             }
 
@@ -126,13 +148,14 @@ class DataPlan extends Model
             return (float) $pivotCost;
         }
 
-        $row = \Illuminate\Support\Facades\DB::table('providerables')
+        $row = DB::table('providerables')
             ->where('providerable_id', $this->id)
             ->where('providerable_type', self::class)
             ->first();
 
         return (float) ($row->cost_price ?? 0);
     }
+
     public function getNetworkAttribute($value)
     {
         return strtolower($value);
@@ -150,7 +173,7 @@ class DataPlan extends Model
         // Polymorphic many-to-many relation: this model can have multiple providers
         // Pivot table `providerables` holds `cost_price`, `margin_value`, `margin_type` and timestamps
         return $this->morphToMany(Provider::class, 'providerable', 'providerables', 'providerable_id', 'provider_id')
-            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id'])
+            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'])
             ->withTimestamps();
     }
 
@@ -165,7 +188,9 @@ class DataPlan extends Model
             ? $this->getRelation('providers')->first()
             : $this->providers()->first();
 
-        if ($provider) return $provider;
+        if ($provider) {
+            return $provider;
+        }
 
         // Fallback: derive provider from the network's default network type/provider
         try {
@@ -207,7 +232,7 @@ class DataPlan extends Model
     public function resolveVendor(): ?Vendor
     {
         $provider = $this->providers()->first();
-        if (!$provider) {
+        if (! $provider) {
             return null;
         }
 
@@ -216,7 +241,6 @@ class DataPlan extends Model
 
     protected function getPriceNgnAttribute()
     {
-        return '₦' . number_format($this->price, 2);
+        return '₦'.number_format($this->price, 2);
     }
-
 }

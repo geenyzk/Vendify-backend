@@ -2,13 +2,11 @@
 
 namespace App\Classes\Vendor\Providers;
 
-
 use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\DiscoProviderId;
-use App\Models\Role;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -19,10 +17,10 @@ use Illuminate\Support\Facades\Log;
 class Adex extends VendorBase
 {
     protected string $providerName = 'adex';
+
     private ?string $accessToken = null;
 
-
-    function sendRequest(string $service, array $payload): array
+    public function sendRequest(string $service, array $payload): array
     {
         // Was logging the full raw payload/response unconditionally on every
         // call — customer phone/meter/IUC numbers on every purchase, forever.
@@ -42,32 +40,32 @@ class Adex extends VendorBase
 
     public function checkBalance(): string
     {
-       try {
-         $res = $this->login();
-        // normalizeAmount handles comma-grouped strings ("4,495") that a
-        // plain (float) cast would truncate to 4.
-        return (string) $this->normalizeAmount($res['balance'] ?? 0);
-       } catch (\Throwable $th) {
-        //throw $th;
-        return "0";
-       }
+        try {
+            $res = $this->login();
+
+            // normalizeAmount handles comma-grouped strings ("4,495") that a
+            // plain (float) cast would truncate to 4.
+            return (string) $this->normalizeAmount($res['balance'] ?? 0);
+        } catch (\Throwable $th) {
+            // throw $th;
+            return '0';
+        }
     }
 
-     public function verifyTransaction(string $tx_ref): array
+    public function verifyTransaction(string $tx_ref): array
     {
-        return[];
+        return [];
     }
-
 
     protected function getAuthHeaders(): array
     {
-        if (!$this->accessToken) {
+        if (! $this->accessToken) {
             $this->accessToken = $this->login()['AccessToken'] ?? null;
         }
 
         return [
-            'Authorization' => 'Token ' . $this->accessToken,
-            'Content-Type' => 'application/json'
+            'Authorization' => 'Token '.$this->accessToken,
+            'Content-Type' => 'application/json',
         ];
     }
 
@@ -76,9 +74,9 @@ class Adex extends VendorBase
         return $this->provider->base_url;
     }
 
-     function login(): array
+    public function login(): array
     {
-        $key = md5($this->baseUrl() . $this->provider->username . $this->provider->password);
+        $key = md5($this->baseUrl().$this->provider->username.$this->provider->password);
 
         $cached = Cache::get($key);
         if ($cached) {
@@ -92,11 +90,11 @@ class Adex extends VendorBase
             // for the full 30s client default.
             $response = Http::connectTimeout(5)->timeout(15)
                 ->withHeaders([
-                    'Authorization' => 'Basic ' . base64_encode(
-                        $this->provider->username . ':' . $this->provider->password
+                    'Authorization' => 'Basic '.base64_encode(
+                        $this->provider->username.':'.$this->provider->password
                     ),
                     'Content-Type' => 'application/json',
-                ])->post($this->baseUrl() . "/user");
+                ])->post($this->baseUrl().'/user');
 
             $data = $response->json();
 
@@ -105,13 +103,14 @@ class Adex extends VendorBase
             // transient outage into 5 minutes of every subsequent purchase
             // authenticating with a blank token. Only a real access token is
             // worth caching.
-            if (!empty($data['AccessToken'])) {
+            if (! empty($data['AccessToken'])) {
                 Cache::put($key, $data, now()->addMinutes(3));
             }
 
             return $data ?? [];
         } catch (\Throwable $th) {
             Log::warning('Adex login failed', ['error' => $th->getMessage()]);
+
             return [];
         }
     }
@@ -125,18 +124,19 @@ class Adex extends VendorBase
             'electricity',
             'exam',
             'bulksms',
-            "data_card",
-            "recharge_card",
+            'data_card',
+            'recharge_card',
         ];
     }
 
-     protected function pingEndpoint(): string
+    protected function pingEndpoint(): string
     {
-        return $this->baseUrl() . '/user';
+        return $this->baseUrl().'/user';
     }
 
-    protected function endpoint(string $service) : string {
-            return match($service){
+    protected function endpoint(string $service): string
+    {
+        return match ($service) {
             'airtime' => '/topup',
             'data' => '/data',
             'cable' => '/cable',
@@ -146,12 +146,12 @@ class Adex extends VendorBase
             'data_card' => '/data_card',
             'recharge_card' => '/recharge_card',
             default => throw new \InvalidArgumentException("No endpoint mapped for service [$service]")
-            };
+        };
     }
 
     protected function buildEndpoint(string $service): string
     {
-        return $this->baseUrl() . $this->endpoint($service);
+        return $this->baseUrl().$this->endpoint($service);
     }
 
     /**
@@ -169,6 +169,16 @@ class Adex extends VendorBase
         $legacy = $plan->{$column} ?? null;
         if ($legacy !== null && $legacy !== '' && (string) $legacy !== '0') {
             return (string) $legacy;
+        }
+
+        $externalPlanId = DB::table('providerables')
+            ->where('providerable_id', $plan->getKey())
+            ->where('providerable_type', get_class($plan))
+            ->where('provider_id', $this->provider->id)
+            ->value('external_plan_id');
+
+        if ($externalPlanId !== null && (string) $externalPlanId !== '' && (string) $externalPlanId !== '0') {
+            return (string) $externalPlanId;
         }
 
         $pivotServerId = $this->configuredPlanId($plan);
@@ -194,7 +204,7 @@ class Adex extends VendorBase
                 ];
             case 'data':
                 $dataPlan = DataPlan::find($payload['data_plan']);
-                if (!$dataPlan) {
+                if (! $dataPlan) {
                     throw new \InvalidArgumentException("Data plan [{$payload['data_plan']}] not found");
                 }
                 $dataVendorId = $this->resolveVendorPlanId($dataPlan);
@@ -203,6 +213,7 @@ class Adex extends VendorBase
                         "No Adex plan ID for data plan #{$dataPlan->id} on vendor [{$this->provider->name}] — set the Plan ID on the data plan."
                     );
                 }
+
                 return [
                     'network' => $this->networkIDs[$payload['network']],
                     'phone' => $payload['phone'],
@@ -213,7 +224,7 @@ class Adex extends VendorBase
                 ];
             case 'cable':
                 $cablePlan = CablePlan::find($payload['cable_plan']);
-                if (!$cablePlan) {
+                if (! $cablePlan) {
                     throw new \InvalidArgumentException("Cable plan [{$payload['cable_plan']}] not found");
                 }
                 $cableVendorId = $this->resolveVendorPlanId($cablePlan);
@@ -222,6 +233,7 @@ class Adex extends VendorBase
                         "No Adex plan ID for cable plan #{$cablePlan->id} on vendor [{$this->provider->name}] — set the Plan ID on the cable plan."
                     );
                 }
+
                 return [
                     'cable' => $this->networkIDs[$payload['cable_network']],
                     'iuc' => $payload['iuc'],
@@ -232,10 +244,10 @@ class Adex extends VendorBase
 
             case 'electricity':
                 $disco = DiscoProviderId::forDisco($payload['disco']);
-                $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
+                $discoId = $disco->{str_replace(' ', '_', $this->provider->name)} ?? null;
 
-                if (!$discoId) {
-                    throw new \InvalidArgumentException("Invalid DISCO provider ID");
+                if (! $discoId) {
+                    throw new \InvalidArgumentException('Invalid DISCO provider ID');
                 }
 
                 return [
@@ -274,7 +286,7 @@ class Adex extends VendorBase
                 return [
                     'network' => $payload['network'], // assuming the API expects string like "MTN"
                     'plan_type' => $payload['plan_type'] ?? null,
-                    'quantity' => (int)($payload['quantity'] ?? 1),
+                    'quantity' => (int) ($payload['quantity'] ?? 1),
                     'card_name' => $payload['card_name'] ?? null,
                     'request-id' => $payload['tx_ref'],
                     'amount' => $payload['amount'] ?? null,
@@ -306,14 +318,14 @@ class Adex extends VendorBase
             // Every case below sets its own transaction_type, so this is
             // never actually used — left null (not a specific, misleading
             // guess) in case a future service case is ever added without one.
-            "transaction_type" => null,
+            'transaction_type' => null,
         ];
 
         switch ($service) {
             case 'airtime':
                 $result = [
                     'provider' => $response['network'],
-                    'transaction_type' =>'airtime_recharge',
+                    'transaction_type' => 'airtime_recharge',
                     'account_or_phone' => $response['phone_number'] ?? null,
                     'amount' => $response['amount'] ?? 0.00,
                     'discount_amount' => $response['discount_amount'],
@@ -328,7 +340,7 @@ class Adex extends VendorBase
             case 'data':
                 $result = [
                     'provider' => $response['network'],
-                    'transaction_type' =>'data_subscription',
+                    'transaction_type' => 'data_subscription',
                     'account_or_phone' => $response['phone_number'] ?? null,
                     'amount' => $response['amount'] ?? 0.00,
                     'discount_amount' => 0.00,
@@ -341,7 +353,7 @@ class Adex extends VendorBase
                     'status' => $response['status'],
                     'receiver' => $response['phone_number'] ?? null,
                     'plan_type' => $response['plan_type'] ?? null,
-                    'token' =>  null,
+                    'token' => null,
                 ];
                 break;
             case 'cable':
@@ -422,7 +434,7 @@ class Adex extends VendorBase
                     'status' => $response['status'] ?? 'fail',
                     'message' => $response['message'] ?? '',
                     'amount' => $response['amount'] ?? 0,
-                    'quantity' => (int)($response['quantity'] ?? 0),
+                    'quantity' => (int) ($response['quantity'] ?? 0),
                     'card_name' => $response['card_name'] ?? null,
                     'serial' => $response['serial'] ?? null,
                     'pin' => $response['pin'] ?? null,
@@ -458,27 +470,27 @@ class Adex extends VendorBase
         return array_merge($default, $result);
     }
 
-    function verifyUser(string $service, string $identifier, array $payload): JsonResponse
+    public function verifyUser(string $service, string $identifier, array $payload): JsonResponse
     {
         if ($service == 'cable') {
-        $cableId = $this->cableNetworkIDs[$payload['cable_network']] ?? null;
-        if (!$cableId) {
-            return $this->fail([], "Service type not given");
-            // ['status' => 'error', 'message' => 'Cable ID required'];
-        }
-        $url = $this->baseUrl() . "/cable/cable-validation?iuc={$identifier}&cable={$cableId}";
+            $cableId = $this->cableNetworkIDs[$payload['cable_network']] ?? null;
+            if (! $cableId) {
+                return $this->fail([], 'Service type not given');
+                // ['status' => 'error', 'message' => 'Cable ID required'];
+            }
+            $url = $this->baseUrl()."/cable/cable-validation?iuc={$identifier}&cable={$cableId}";
         } elseif ($service == 'electricity') {
             $disco = DiscoProviderId::forDisco($payload['disco']);
-            $discoId = $disco->{str_replace(" ", "_", $this->provider->name)} ?? null;
+            $discoId = $disco->{str_replace(' ', '_', $this->provider->name)} ?? null;
             // Was reading from an undefined $options variable (this method's
             // parameter is $payload), so meter_type silently always fell
             // back to 'prepaid' regardless of what the customer actually
             // selected — postpaid meters were verified against the wrong type.
             $meterType = $payload['meter_type'] ?? 'prepaid';
-            if (!$discoId) {
-            return $this->fail([], "Service type not given");
+            if (! $discoId) {
+                return $this->fail([], 'Service type not given');
             }
-            $url = $this->baseUrl() . "/bill/bill-validation?meter_number={$identifier}&disco={$discoId}&meter_type={$meterType}";
+            $url = $this->baseUrl()."/bill/bill-validation?meter_number={$identifier}&disco={$discoId}&meter_type={$meterType}";
         } else {
             return $this->fail([], "Verification not supported for service: $service");
         }
@@ -488,39 +500,45 @@ class Adex extends VendorBase
             Log::debug('Adex verifyUser response', ['response' => $response->json()]);
 
             if ($response->ok() && $response->json('status') === 'success') {
-                return $this->success(['name' => $response->json('name')], ucfirst($service) . ' verification successful.', 201);
+                return $this->success(['name' => $response->json('name')], ucfirst($service).' verification successful.', 201);
             }
+
             return $this->fail([], $response->json('message') ?? 'Verification failed.');
         } catch (\Throwable $e) {
             Log::warning('Adex verifyUser failed', ['error' => $e->getMessage()]);
+
             return $this->fail([], $e->getMessage());
         }
     }
 
     protected function getPlans(?array $payload = null): JsonResponse
     {
-        $adminController = new AdminController();
+        $adminController = new AdminController;
+
         return $adminController->universalGet($payload['request'], $payload['table']);
     }
 
     public function fetchRemotePlans(): array
     {
         $response = Http::connectTimeout(5)->timeout(15)
-            ->get($this->baseUrl() . '/data-plan');
-        Log::info($response->json());
+            ->get($this->baseUrl().'/data-plan');
+        Log::debug('Provider plan catalogue fetched', [
+            'provider_id' => $this->provider->id,
+            'status' => $response->status(),
+        ]);
 
-        if (!$response->successful()) {
-            throw new \RuntimeException('ADEX plan list request failed or returned an unexpected shape.');
+        if (! $response->successful()) {
+            throw new \RuntimeException('QuicklySIM plan list request failed.');
         }
 
         $payload = $response->json();
-        if (!is_array($payload)) {
-            throw new \RuntimeException('ADEX plan list request returned an unexpected payload.');
+        if (! is_array($payload)) {
+            throw new \RuntimeException('QuicklySIM plan list request returned an unexpected payload.');
         }
 
         $flat = [];
         foreach ($payload as $plan) {
-            if (!is_array($plan)) {
+            if (! is_array($plan)) {
                 continue;
             }
 
@@ -534,8 +552,7 @@ class Adex extends VendorBase
                 'vendor_plan_id' => (string) ($plan['plan_id'] ?? $plan['id'] ?? ''),
                 'name' => (string) ($plan['plan_name'] ?? ''),
                 'validity' => (string) ($plan['validate'] ?? $plan['validity'] ?? ''),
-                'plan_type' => str_replace("_", " ", strtoupper((string) ($plan['network_type'] ?? ''))),
-                'cost_price' => (float) ($plan['amount'] ?? $plan['price'] ?? 0),
+                'plan_type' => str_replace('_', ' ', strtoupper((string) ($plan['network_type'] ?? ''))),
             ];
         }
 
@@ -545,22 +562,33 @@ class Adex extends VendorBase
     public function syncPlans(): array
     {
         $remotePlans = $this->fetchRemotePlans();
-        $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'message' => 'No eligible data plans found for this provider.'];
-        $defaultPricing = $this->defaultPricing();
+        $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'pending_pricing' => 0, 'message' => 'No eligible data plans found for this provider.'];
+        $seenExternalIds = [];
+        $seenFingerprints = [];
+        $catalogPlans = DataPlan::query()->get();
 
         foreach ($remotePlans as $remote) {
             if ($remote['vendor_plan_id'] === '') {
                 $summary['skipped']++;
+
                 continue;
             }
 
-            if (!preg_match('/([\d.]+)\s*(MB|GB)/i', $remote['name'], $matches)) {
+            if (isset($seenExternalIds[$remote['vendor_plan_id']])) {
                 $summary['skipped']++;
+
+                continue;
+            }
+            $seenExternalIds[$remote['vendor_plan_id']] = true;
+
+            if (! preg_match('/([\d.]+)\s*(MB|GB)/i', $remote['name'], $matches)) {
+                $summary['skipped']++;
+
                 continue;
             }
 
             [, $amount, $unit] = $matches;
-            $planName = (string) $amount;
+            $planName = rtrim(rtrim(number_format((float) $amount, 4, '.', ''), '0'), '.');
             $planSize = strtoupper($unit);
             // DataPlan stores network names lowercase and plan types
             // uppercase (the same convention used by Ogdams sync). Keeping
@@ -568,13 +596,33 @@ class Adex extends VendorBase
             // being missed and duplicated as a second "data share" row.
             $planType = strtoupper((string) ($remote['plan_type'] ?? ''));
             $network = strtolower((string) ($remote['network'] ?? ''));
+            $validity = trim(preg_replace('/\s+/', ' ', (string) ($remote['validity'] ?? '')) ?? '');
+            $fingerprint = $this->planFingerprint($network, $planType, $planName, $planSize, $validity);
 
-            $matchingPlan = DataPlan::query()
-                ->where('network', $network)
-                ->where('plan_name', $planName)
-                ->where('plan_size', $planSize)
-                ->where('plan_type', $planType)
+            if (isset($seenFingerprints[$fingerprint])) {
+                $summary['skipped']++;
+
+                continue;
+            }
+            $seenFingerprints[$fingerprint] = true;
+
+            $externalLink = DB::table('providerables')
+                ->where('provider_id', $this->provider->id)
+                ->where('providerable_type', DataPlan::class)
+                ->where('external_plan_id', $remote['vendor_plan_id'])
                 ->first();
+
+            // The local catalogue identity is the normalized combination of
+            // network, type, size and validity. The external ID is only the
+            // upstream vend identifier and must not become our local key.
+            $matchingPlan = $catalogPlans->first(fn (DataPlan $plan) => $this->planFingerprint(
+                $plan->network,
+                $plan->plan_type,
+                $plan->plan_name,
+                $plan->plan_size,
+                $plan->validity
+            ) === $fingerprint)
+                ?? ($externalLink ? $catalogPlans->firstWhere('id', $externalLink->providerable_id) : null);
 
             if ($matchingPlan) {
                 $existingLink = DB::table('providerables')
@@ -584,38 +632,40 @@ class Adex extends VendorBase
 
                 $matchingPlan->fill([
                     'plan_type' => $planType,
-                    'validity' => $remote['validity'],
+                    'validity' => $validity,
                 ]);
 
-                if ($matchingPlan->is_draft && ($matchingPlan->pricing === null || $matchingPlan->pricing === [])) {
-                    $matchingPlan->pricing = $defaultPricing;
-                }
-
-                $matchingPlan->save();
-
                 if ($matchingPlan->active) {
-                    if (!$existingLink || (int) ($existingLink->provider_id ?? 0) !== (int) $this->provider->id) {
+                    if (! $existingLink || (int) ($existingLink->provider_id ?? 0) !== (int) $this->provider->id) {
                         $summary['skipped']++;
+
                         continue;
                     }
 
+                    $matchingPlan->save();
                     $this->storeProviderableLink($matchingPlan->id, $remote, $existingLink?->id);
                     $summary['updated']++;
+
                     continue;
                 }
 
-                $currentCost = (float) ($existingLink->cost_price ?? 0);
-                $shouldReplace = !$existingLink || (int) ($existingLink->provider_id ?? 0) !== (int) $this->provider->id
-                    ? true
-                    : ($remote['cost_price'] < $currentCost || $currentCost === 0);
-
-                if (!$shouldReplace) {
+                if ($existingLink && (int) ($existingLink->provider_id ?? 0) !== (int) $this->provider->id) {
                     $summary['skipped']++;
+
                     continue;
                 }
 
+                $matchingPlan->active = (float) ($existingLink->cost_price ?? 0) > 0
+                    ? $matchingPlan->active
+                    : false;
+                $matchingPlan->is_draft = (float) ($existingLink->cost_price ?? 0) <= 0;
+                $matchingPlan->save();
                 $this->storeProviderableLink($matchingPlan->id, $remote, $existingLink?->id);
                 $summary['updated']++;
+                if ((float) ($existingLink->cost_price ?? 0) <= 0) {
+                    $summary['pending_pricing']++;
+                }
+
                 continue;
             }
 
@@ -624,16 +674,18 @@ class Adex extends VendorBase
                 'plan_type' => $planType,
                 'plan_name' => $planName,
                 'plan_size' => $planSize,
-                'validity' => $remote['validity'],
+                'validity' => $validity,
                 'active' => false,
                 'is_draft' => true,
                 'sort_order' => 0,
-                'pricing' => $defaultPricing,
+                'pricing' => [],
             ]);
 
             $this->storeProviderableLink($dataPlan->id, $remote);
+            $catalogPlans->push($dataPlan);
 
             $summary['created']++;
+            $summary['pending_pricing']++;
         }
 
         if ($summary['created'] === 0 && $summary['updated'] === 0) {
@@ -649,19 +701,25 @@ class Adex extends VendorBase
 
     private function storeProviderableLink(int $dataPlanId, array $remote, ?int $linkId = null): void
     {
+        $existingLink = $linkId
+            ? DB::table('providerables')->where('id', $linkId)->first()
+            : null;
+
         $payload = [
             'provider_id' => $this->provider->id,
             'providerable_id' => $dataPlanId,
             'providerable_type' => DataPlan::class,
-            'cost_price' => $remote['cost_price'],
-            'margin_value' => 0,
-            'margin_type' => 'fiat',
-            'server_id' => $remote['vendor_plan_id'],
+            'cost_price' => $existingLink->cost_price ?? 0,
+            'margin_value' => $existingLink->margin_value ?? 0,
+            'margin_type' => $existingLink->margin_type ?? 'fiat',
+            'server_id' => null,
+            'external_plan_id' => $remote['vendor_plan_id'],
             'updated_at' => now(),
         ];
 
         if ($linkId) {
             DB::table('providerables')->where('id', $linkId)->update($payload);
+
             return;
         }
 
@@ -670,24 +728,20 @@ class Adex extends VendorBase
         ]));
     }
 
-    private function defaultPricing(): array
+    private function planFingerprint(string $network, string $planType, string $planName, string $planSize, string $validity): string
     {
-        $roles = Role::where('is_staff', false)->pluck('name')->all();
-
-        $pricing = ['user' => ['type' => 'percentage', 'value' => 5]];
-        foreach ($roles as $role) {
-            $pricing[$role] = ['type' => 'percentage', 'value' => 5];
-        }
-
-        return $pricing;
+        return implode('|', array_map(
+            fn (string $value) => strtolower(trim(preg_replace('/[\s_-]+/', ' ', $value) ?? '')),
+            [$network, $planType, $planName, $planSize, $validity]
+        ));
     }
 
-    function callback(Request $request): array
+    public function callback(Request $request): array
     {
 
         return [
-            "status" => $request->status,
-            "tx_ref" => $request['request-id'],
+            'status' => $request->status,
+            'tx_ref' => $request['request-id'],
 
         ];
     }

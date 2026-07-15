@@ -2,14 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\Payment\PaymentFactory;
 use App\Classes\TransactionService;
 use App\Classes\Vendor\VendorFactory;
 use App\Models\ChildCustomer;
+use App\Models\ChildDirective;
 use App\Models\ChildInstance;
 use App\Models\ChildTransaction;
+use App\Models\DataPlan;
 use App\Models\Discount;
 use App\Models\General;
+use App\Models\NetworkType;
 use App\Models\Provider;
+use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
@@ -17,13 +22,15 @@ use App\Support\PerformanceCache;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * @group Admin Management
@@ -65,6 +72,7 @@ class AdminController extends Controller
         for ($i = 6; $i >= 0; $i--) {
             $days->push(Carbon::today()->subDays($i)->format('Y-m-d'));
         }
+
         return $days;
     }
 
@@ -74,6 +82,7 @@ class AdminController extends Controller
             ->groupBy('user_type')
             ->get();
         $colors = ['#36A2EB', '#FF6384', '#FFCE56', '#4BC0C0', '#9966FF'];
+
         return [
             'labels' => $usersRaw->pluck('user_type')->toArray(),
             'datasets' => [[
@@ -81,13 +90,14 @@ class AdminController extends Controller
                 'data' => $usersRaw->pluck('total')->toArray(),
                 'backgroundColor' => $colors,
                 'borderColor' => $colors,
-            ]]
+            ]],
         ];
     }
 
     private function getMonthlyTransactionCount(): int
     {
         $now = Carbon::now();
+
         return Transaction::whereYear('created_at', $now->year)->whereMonth('created_at', $now->month)->count();
     }
 
@@ -95,6 +105,7 @@ class AdminController extends Controller
     {
         $now = Carbon::now();
         $baseQuery = Transaction::whereYear('created_at', $now->year)->whereMonth('created_at', $now->month);
+
         return [
             'successful' => (clone $baseQuery)->where('status', 'success')->count(),
             'failed' => (clone $baseQuery)->where('status', 'fail')->count(),
@@ -125,6 +136,7 @@ class AdminController extends Controller
             $labels[] = Carbon::parse($day)->format('D');
             $values[] = $txData[$day]->total ?? 0;
         }
+
         return ['labels' => $labels, 'datasets' => [['label' => 'Transactions', 'data' => $values, 'backgroundColor' => '#36A2EB', 'borderRadius' => 8]]];
     }
 
@@ -160,6 +172,7 @@ class AdminController extends Controller
         foreach ($categories as $key => $label) {
             $chart[] = ['name' => $label, 'value' => $salesData[$key] ?? 0, 'fill' => $colors[count($chart) % count($colors)]];
         }
+
         return $chart;
     }
 
@@ -183,6 +196,7 @@ class AdminController extends Controller
             now()->addMinutes(5),
             fn () => Discount::where('service_type', 'airtime')->get(),
         );
+
         return $this->success(['discount' => $discounts]);
     }
 
@@ -192,13 +206,14 @@ class AdminController extends Controller
     public function migrateDb(Request $request)
     {
         $admin = $request->user();
-        if (!$admin || !$admin->role || !$admin->role->is_staff || !$admin->role->hasPermission('migrations')) {
+        if (! $admin || ! $admin->role || ! $admin->role->is_staff || ! $admin->role->hasPermission('migrations')) {
             return $this->fail([], 'Unauthorized', 403);
         }
 
         try {
             $exit = Artisan::call('migrate', ['--force' => true]);
             $output = Artisan::output();
+
             return $this->success(['exit_code' => $exit, 'output' => $output], 'Migrations executed');
         } catch (\Throwable $e) {
             return $this->fail(['error' => $e->getMessage()], 'Migration failed', 500);
@@ -236,7 +251,7 @@ class AdminController extends Controller
      * any authenticated user; everything else requires a staff role. Returns
      * a JsonResponse to short-circuit with, or null to proceed.
      */
-    private function denyIfPrivateRead(Request $request, string $table): ?\Illuminate\Http\JsonResponse
+    private function denyIfPrivateRead(Request $request, string $table): ?JsonResponse
     {
         if (in_array($table, self::PUBLIC_TABLES, true)) {
             return null;
@@ -261,7 +276,7 @@ class AdminController extends Controller
         }
 
         $modelClass = $this->getModelClassFromTable($modelSlug);
-        if (!$modelClass || !class_exists($modelClass)) {
+        if (! $modelClass || ! class_exists($modelClass)) {
             return $this->fail([], "Model not found for slug: $modelSlug", 404);
         }
 
@@ -297,6 +312,7 @@ class AdminController extends Controller
 
                 if (Schema::hasColumn($table, $column)) {
                     $query->where($column, $value);
+
                     continue;
                 }
 
@@ -306,6 +322,7 @@ class AdminController extends Controller
                         $operator = str_ends_with($column, '_min') ? '>=' : '<=';
                         $query->where($baseColumn, $operator, $value);
                     }
+
                     continue;
                 }
 
@@ -384,6 +401,7 @@ class AdminController extends Controller
             return $this->success($records);
         } catch (Exception $e) {
             Log::error('Universal Get failed', ['error' => $e->getMessage()]);
+
             return $this->fail([], $e->getMessage(), 500);
         }
     }
@@ -402,7 +420,7 @@ class AdminController extends Controller
         }
 
         $modelClass = $this->getModelClassFromTable($table);
-        if (!class_exists($modelClass)) {
+        if (! class_exists($modelClass)) {
             return $this->fail([], 'Model not found', 404);
         }
 
@@ -414,7 +432,7 @@ class AdminController extends Controller
 
             $record = $query->find($id);
 
-            if (!$record) {
+            if (! $record) {
                 return $this->fail([], 'Record not found', 404);
             }
 
@@ -434,7 +452,7 @@ class AdminController extends Controller
      */
     public static function universalBulkCreateOrUpdate(Request $request, $table)
     {
-        $self = new self();
+        $self = new self;
 
         if (in_array($table, self::RESTRICTED_TABLES, true)) {
             return $self->fail([], 'This resource is not available via the generic table API.', 403);
@@ -446,14 +464,14 @@ class AdminController extends Controller
         // Schema:: call, the same way universalGet() already does.
         $modelClass = $self->getModelClassFromTable($table);
         $hasModel = $modelClass && class_exists($modelClass);
-        $realTable = $hasModel ? (new $modelClass())->getTable() : $table;
+        $realTable = $hasModel ? (new $modelClass)->getTable() : $table;
 
-        if (!Schema::hasTable($realTable)) {
+        if (! Schema::hasTable($realTable)) {
             return $self->fail([], 'Table not found', 404);
         }
 
         $items = $request->input('items');
-        if (!is_array($items) || empty($items)) {
+        if (! is_array($items) || empty($items)) {
             return $self->fail([], 'No valid data provided', 400);
         }
 
@@ -466,11 +484,15 @@ class AdminController extends Controller
 
             foreach ($items as $item) {
                 Log::info($item);
-                if (!is_array($item)) continue;
+                if (! is_array($item)) {
+                    continue;
+                }
 
                 // 1. Prepare Data (Normalize & Clean)
                 $data = $self->prepareModelData($item, $tableColumns);
-                if (empty($data)) continue;
+                if (empty($data)) {
+                    continue;
+                }
 
                 $model = null;
                 $isUpdate = isset($item['id']) && $item['id'] != 0;
@@ -493,12 +515,12 @@ class AdminController extends Controller
                             $model->fill($data)->save();
                         } else {
                             // Fallback create if ID sent but not found
-                            $model = new $modelClass();
+                            $model = new $modelClass;
                             $model->forceFill($data); // Force fill incase ID is passed
                             $model->save();
                         }
                     } else {
-                        $model = new $modelClass();
+                        $model = new $modelClass;
                         $model->forceFill($data);
                         $model->save();
                     }
@@ -543,7 +565,8 @@ class AdminController extends Controller
         } catch (\Throwable $e) {
             DB::rollBack();
             Log::error('Bulk operation failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return $self->fail([], 'Server error: ' . $e->getMessage(), 500);
+
+            return $self->fail([], 'Server error: '.$e->getMessage(), 500);
         }
     }
 
@@ -552,6 +575,7 @@ class AdminController extends Controller
         $data = $request->all();
         $data['id'] = $id;
         $request->merge(['items' => [$data]]);
+
         return self::universalBulkCreateOrUpdate($request, $table);
     }
 
@@ -563,24 +587,34 @@ class AdminController extends Controller
     {
         $modelClass = $this->getModelClassFromTable($table);
         $hasModel = $modelClass && class_exists($modelClass);
-        $realTable = $hasModel ? (new $modelClass())->getTable() : $table;
+        $realTable = $hasModel ? (new $modelClass)->getTable() : $table;
 
-        if (!Schema::hasTable($realTable)) return $this->fail([], 'Table not found', 404);
+        if (! Schema::hasTable($realTable)) {
+            return $this->fail([], 'Table not found', 404);
+        }
 
         $items = $request->input('items');
-        if (!is_array($items) || empty($items)) return $this->fail([], 'No items provided', 400);
+        if (! is_array($items) || empty($items)) {
+            return $this->fail([], 'No items provided', 400);
+        }
 
         $column = $request->input('column', 'sort_order');
         $tableColumns = Schema::getColumnListing($realTable);
-        if (!in_array($column, $tableColumns)) return $this->fail([], "Column {$column} not found on table {$table}", 400);
+        if (! in_array($column, $tableColumns)) {
+            return $this->fail([], "Column {$column} not found on table {$table}", 400);
+        }
 
         try {
             DB::beginTransaction();
             foreach ($items as $it) {
-                if (!isset($it['id'])) continue;
+                if (! isset($it['id'])) {
+                    continue;
+                }
                 $id = $it['id'];
                 $value = $it[$column] ?? $it['order'] ?? null;
-                if ($value === null) continue;
+                if ($value === null) {
+                    continue;
+                }
                 DB::table($realTable)->where('id', $id)->update([$column => $value, 'updated_at' => now()]);
             }
             DB::commit();
@@ -591,11 +625,13 @@ class AdminController extends Controller
 
             $ids = array_column($items, 'id');
             $rows = DB::table($realTable)->whereIn('id', $ids)->orderBy($column)->get();
+
             return $this->success($rows, 'Reorder completed');
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Reorder failed', ['error' => $e->getMessage()]);
-            return $this->fail([], 'Server error: ' . $e->getMessage(), 500);
+
+            return $this->fail([], 'Server error: '.$e->getMessage(), 500);
         }
     }
 
@@ -612,12 +648,16 @@ class AdminController extends Controller
 
         $modelClass = $this->getModelClassFromTable($table);
         $hasModel = $modelClass && class_exists($modelClass);
-        $realTable = $hasModel ? (new $modelClass())->getTable() : $table;
+        $realTable = $hasModel ? (new $modelClass)->getTable() : $table;
 
-        if (!Schema::hasTable($realTable)) return $this->fail([], 'Table not found', 404);
+        if (! Schema::hasTable($realTable)) {
+            return $this->fail([], 'Table not found', 404);
+        }
 
         $ids = $request->input('ids');
-        if (empty($ids) || !is_array($ids)) return $this->fail([], 'No valid IDs provided', 400);
+        if (empty($ids) || ! is_array($ids)) {
+            return $this->fail([], 'No valid IDs provided', 400);
+        }
 
         try {
             DB::beginTransaction();
@@ -638,10 +678,12 @@ class AdminController extends Controller
 
                 return $this->success(['deleted' => $count], "$count record(s) deleted");
             }
+
             return $this->fail([], 'No records found to delete', 404);
 
         } catch (Exception $e) {
             DB::rollBack();
+
             return $this->fail([], $e->getMessage(), 500);
         }
     }
@@ -654,20 +696,20 @@ class AdminController extends Controller
     private function prepareModelData(array $item, array $tableColumns): array
     {
         // Normalize camelCase to snake_case for common issues
-        if (isset($item['serviceType']) && !isset($item['service_type'])) {
+        if (isset($item['serviceType']) && ! isset($item['service_type'])) {
             $item['service_type'] = $item['serviceType'];
         }
 
         // Filter valid columns
         $data = array_filter(
             $item,
-            fn($key) => in_array($key, $tableColumns),
+            fn ($key) => in_array($key, $tableColumns),
             ARRAY_FILTER_USE_KEY
         );
 
         // Parse Standard Dates
         foreach (['created_at', 'updated_at'] as $date) {
-            if (!empty($data[$date])) {
+            if (! empty($data[$date])) {
                 try {
                     $data[$date] = Carbon::parse($data[$date])->format('Y-m-d H:i:s');
                 } catch (Exception $e) {
@@ -683,126 +725,129 @@ class AdminController extends Controller
      * Centralized Logic for syncing relationships (Providers, NetworkTypes, Pivots).
      */
     /**
- * Centralized Logic for syncing relationships and Morphs.
- * Handles: providerable (morph), networkTypes (many-to-many), etc.
- */
-private function syncModelRelations(Model $model, array $item)
-{
-    // Log entry for tracing relation sync input
-    Log::info('syncModelRelations called', ['model' => get_class($model), 'id' => $model->id ?? null, 'item_keys' => array_keys($item)]);
+     * Centralized Logic for syncing relationships and Morphs.
+     * Handles: providerable (morph), networkTypes (many-to-many), etc.
+     */
+    private function syncModelRelations(Model $model, array $item)
+    {
+        // Log entry for tracing relation sync input
+        Log::info('syncModelRelations called', ['model' => get_class($model), 'id' => $model->id ?? null, 'item_keys' => array_keys($item)]);
 
-    // 1. Sync Polymorphic "Providerable" (e.g. DataPlan -> Provider)
-    if (method_exists($model, 'providers')) {
-        // If frontend explicitly indicates not to use providerable, detach any pivot entries
-        if (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable'] === false) {
-            // Insert or update a providerables row with provider_id = null so the plan
-            // is considered "global" (uses NetworkType->provider). Keep default pivot values.
-            $serverIdDefault = $item['providerable']['server_id'] ?? $item['server_id'] ?? null;
-            $fallbackProviderId = $item['providerable']['fallback_provider_id'] ?? null;
-            $pivotDataDefault = [
-                'provider_id' => null,
-                'fallback_provider_id' => $fallbackProviderId,
-                'providerable_id' => $model->id,
-                'providerable_type' => get_class($model),
-                'cost_price' => 0,
-                'margin_value' => 0,
-                'margin_type' => 'fiat',
-                'server_id' => $serverIdDefault,
-                'fallback_server_id' => $item['providerable']['fallback_server_id'] ?? null,
-                'updated_at' => now(),
-                'created_at' => now(),
-            ];
-            try {
-                DB::table('providerables')->updateOrInsert(
-                    ['providerable_id' => $model->id, 'providerable_type' => get_class($model)],
-                    $pivotDataDefault
-                );
-                Log::info('providerables upserted with provider_id = null due to use_provider_as_providerable=false', ['model' => get_class($model), 'id' => $model->id]);
-            } catch (Exception $e) {
-                Log::error('Failed to upsert providerables (null provider)', ['error' => $e->getMessage(), 'model' => get_class($model), 'id' => $model->id ?? null]);
-            }
-        }
-
-        // If providerable payload present, sync the provided provider_id; otherwise do nothing (leave detach as above)
-        if (isset($item['providerable'])) {
-            $prov = $item['providerable'];
-            // Use the top-level toggle to decide whether this plan should use a plan-specific provider
-            $provId = (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable']) ? ($prov['provider_id'] ?? null) : null;
-            $fallbackProviderId = $prov['fallback_provider_id'] ?? null;
-            if ($fallbackProviderId !== null && (int) $fallbackProviderId === (int) $provId) {
-                throw new \InvalidArgumentException('The fallback provider must be different from the primary provider.');
-            }
-            if ($fallbackProviderId !== null && !Vendor::whereKey($fallbackProviderId)->exists()) {
-                throw new \InvalidArgumentException('The selected fallback provider does not exist.');
-            }
-            $pivotData = [
-                'cost_price' => $prov['cost_price'] ?? 0,
-                'margin_value' => $prov['margin_value'] ?? 0,
-                'margin_type' => $prov['margin_type'] ?? 'fiat',
-                'server_id' => $prov['server_id'] ?? $item['server_id'] ?? null,
-                'fallback_provider_id' => $fallbackProviderId,
-                'fallback_server_id' => $prov['fallback_server_id'] ?? null,
-            ];
-
-            Log::info('providerable payload', ['model' => get_class($model), 'id' => $model->id ?? null, 'providerable' => $prov]);
-
-            try {
-                // Use a single upsert to ensure only one providerables row exists per providerable
-                $where = ['providerable_id' => $model->id, 'providerable_type' => get_class($model)];
-                $upsert = [
-                    'provider_id' => $provId,
-                    'fallback_provider_id' => $pivotData['fallback_provider_id'],
-                    'cost_price' => $pivotData['cost_price'],
-                    'margin_value' => $pivotData['margin_value'],
-                    'margin_type' => $pivotData['margin_type'],
-                    'server_id' => $pivotData['server_id'] ?? null,
-                    'fallback_server_id' => $pivotData['fallback_server_id'],
+        // 1. Sync Polymorphic "Providerable" (e.g. DataPlan -> Provider)
+        if (method_exists($model, 'providers')) {
+            // If frontend explicitly indicates not to use providerable, detach any pivot entries
+            if (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable'] === false) {
+                // Insert or update a providerables row with provider_id = null so the plan
+                // is considered "global" (uses NetworkType->provider). Keep default pivot values.
+                $serverIdDefault = $item['providerable']['server_id'] ?? $item['server_id'] ?? null;
+                $fallbackProviderId = $item['providerable']['fallback_provider_id'] ?? null;
+                $pivotDataDefault = [
+                    'provider_id' => null,
+                    'fallback_provider_id' => $fallbackProviderId,
+                    'providerable_id' => $model->id,
+                    'providerable_type' => get_class($model),
+                    'cost_price' => 0,
+                    'margin_value' => 0,
+                    'margin_type' => 'fiat',
+                    'server_id' => $serverIdDefault,
+                    'fallback_server_id' => $item['providerable']['fallback_server_id'] ?? null,
                     'updated_at' => now(),
                     'created_at' => now(),
                 ];
+                try {
+                    DB::table('providerables')->updateOrInsert(
+                        ['providerable_id' => $model->id, 'providerable_type' => get_class($model)],
+                        $pivotDataDefault
+                    );
+                    Log::info('providerables upserted with provider_id = null due to use_provider_as_providerable=false', ['model' => get_class($model), 'id' => $model->id]);
+                } catch (Exception $e) {
+                    Log::error('Failed to upsert providerables (null provider)', ['error' => $e->getMessage(), 'model' => get_class($model), 'id' => $model->id ?? null]);
+                }
+            }
 
-                DB::table('providerables')->updateOrInsert($where, $upsert);
-                Log::info('providerables upserted (single row) with provider_id', ['model' => get_class($model), 'id' => $model->id, 'provider_id' => $provId, 'pivot' => $upsert]);
-            } catch (Exception $e) {
-                Log::error('Failed to upsert providerables (single row)', ['error' => $e->getMessage(), 'model' => get_class($model), 'id' => $model->id ?? null]);
+            // If providerable payload present, sync the provided provider_id; otherwise do nothing (leave detach as above)
+            if (isset($item['providerable'])) {
+                $prov = $item['providerable'];
+                // Use the top-level toggle to decide whether this plan should use a plan-specific provider
+                $provId = (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable']) ? ($prov['provider_id'] ?? null) : null;
+                $fallbackProviderId = $prov['fallback_provider_id'] ?? null;
+                if ($fallbackProviderId !== null && (int) $fallbackProviderId === (int) $provId) {
+                    throw new \InvalidArgumentException('The fallback provider must be different from the primary provider.');
+                }
+                if ($fallbackProviderId !== null && ! Vendor::whereKey($fallbackProviderId)->exists()) {
+                    throw new \InvalidArgumentException('The selected fallback provider does not exist.');
+                }
+                $pivotData = [
+                    'cost_price' => $prov['cost_price'] ?? 0,
+                    'margin_value' => $prov['margin_value'] ?? 0,
+                    'margin_type' => $prov['margin_type'] ?? 'fiat',
+                    'server_id' => $prov['server_id'] ?? $item['server_id'] ?? null,
+                    'fallback_provider_id' => $fallbackProviderId,
+                    'fallback_server_id' => $prov['fallback_server_id'] ?? null,
+                ];
+
+                Log::info('providerable payload', ['model' => get_class($model), 'id' => $model->id ?? null, 'providerable' => $prov]);
+
+                try {
+                    // Use a single upsert to ensure only one providerables row exists per providerable
+                    $where = ['providerable_id' => $model->id, 'providerable_type' => get_class($model)];
+                    $upsert = [
+                        'provider_id' => $provId,
+                        'fallback_provider_id' => $pivotData['fallback_provider_id'],
+                        'cost_price' => $pivotData['cost_price'],
+                        'margin_value' => $pivotData['margin_value'],
+                        'margin_type' => $pivotData['margin_type'],
+                        'server_id' => $pivotData['server_id'] ?? null,
+                        'fallback_server_id' => $pivotData['fallback_server_id'],
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ];
+
+                    DB::table('providerables')->updateOrInsert($where, $upsert);
+                    Log::info('providerables upserted (single row) with provider_id', ['model' => get_class($model), 'id' => $model->id, 'provider_id' => $provId, 'pivot' => $upsert]);
+                } catch (Exception $e) {
+                    Log::error('Failed to upsert providerables (single row)', ['error' => $e->getMessage(), 'model' => get_class($model), 'id' => $model->id ?? null]);
+                }
             }
         }
-    }
 
-    // 2. Sync Many-to-Many "NetworkTypes"
-    if (isset($item['network_type_ids']) && is_array($item['network_type_ids']) && method_exists($model, 'networkTypes')) {
-        $typeConfig = $item['network_type_config'] ?? [];
-        $syncData = [];
+        // 2. Sync Many-to-Many "NetworkTypes"
+        if (isset($item['network_type_ids']) && is_array($item['network_type_ids']) && method_exists($model, 'networkTypes')) {
+            $typeConfig = $item['network_type_config'] ?? [];
+            $syncData = [];
 
-        foreach ($item['network_type_ids'] as $typeId) {
-            $typeModel = \App\Models\NetworkType::find($typeId);
-            $syncData[$typeId] = [
-                'service_type' => $typeModel?->service_type ?? 'airtime',
-                'active' => $typeConfig[$typeId] ?? true
-            ];
+            foreach ($item['network_type_ids'] as $typeId) {
+                $typeModel = NetworkType::find($typeId);
+                $syncData[$typeId] = [
+                    'service_type' => $typeModel?->service_type ?? 'airtime',
+                    'active' => $typeConfig[$typeId] ?? true,
+                ];
+            }
+            $model->networkTypes()->sync($syncData);
         }
-        $model->networkTypes()->sync($syncData);
-    }
 
-    // 3. Propagate service_type updates to pivot tables
-    if (isset($item['service_type']) && $model->getTable() === 'network_types') {
-        DB::table('network_network_type')
-            ->where('network_type_id', $model->id)
-            ->update(['service_type' => $item['service_type'], 'updated_at' => now()]);
+        // 3. Propagate service_type updates to pivot tables
+        if (isset($item['service_type']) && $model->getTable() === 'network_types') {
+            DB::table('network_network_type')
+                ->where('network_type_id', $model->id)
+                ->update(['service_type' => $item['service_type'], 'updated_at' => now()]);
+        }
     }
-}
 
     private function getModelClassFromTable(string $table): string
     {
         $map = [
             'vendors' => Vendor::class,
             'providers' => Provider::class,
-            'data_plans' => \App\Models\DataPlan::class, // Added assumption based on usage
+            'data_plans' => DataPlan::class, // Added assumption based on usage
         ];
 
-        if (isset($map[$table])) return $map[$table];
+        if (isset($map[$table])) {
+            return $map[$table];
+        }
 
         $name = Str::studly(Str::singular($table));
+
         return "App\\Models\\{$name}";
     }
 
@@ -838,7 +883,7 @@ private function syncModelRelations(Model $model, array $item)
                 // For now, assuming admin trusts inputs or Eloquent will ignore invalid ones gracefully-ish
                 try {
                     $query->with(trim($relation));
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     // Ignore invalid relations
                 }
             }
@@ -857,6 +902,7 @@ private function syncModelRelations(Model $model, array $item)
         try {
             $user = User::findOrFail($id);
             TransactionService::fundUser($user, $validated['amount'], $validated['type']);
+
             return $this->success(['user' => $user->refresh()], "User wallet {$validated['type']}ed successfully");
         } catch (Exception $e) {
             return $this->fail([], $e->getMessage(), 500);
@@ -868,6 +914,7 @@ private function syncModelRelations(Model $model, array $item)
         try {
             $vendor = Provider::findOrFail($id);
             $vendor->update(['identifier' => Str::uuid()]);
+
             return $this->success(['identifier' => $vendor->identifier], 'Token refreshed');
         } catch (Exception $e) {
             return $this->fail([], 'Provider not found', 404);
@@ -891,7 +938,7 @@ private function syncModelRelations(Model $model, array $item)
      */
     public function gatewayTypes()
     {
-        return $this->success(\App\Classes\Payment\PaymentFactory::availableGateways());
+        return $this->success(PaymentFactory::availableGateways());
     }
 
     /**
@@ -907,26 +954,151 @@ private function syncModelRelations(Model $model, array $item)
             $vendor = Vendor::findOrFail($id);
             $vendorInstance = VendorFactory::make($vendor);
 
-            if (!method_exists($vendorInstance, 'syncPlans')) {
+            if (! method_exists($vendorInstance, 'syncPlans')) {
                 return $this->fail([], 'This provider does not support syncing plans.', 422);
             }
 
             $summary = $vendorInstance->syncPlans();
+
             return $this->success($summary, 'Plans synced.');
         } catch (Exception $e) {
             return $this->fail([], $e->getMessage(), 500);
         }
     }
 
+    /**
+     * Imported QuicklySIM plans, including rows still waiting for a cost price.
+     */
+    public function vendorPlanImports(string $id)
+    {
+        $vendor = Vendor::findOrFail($id);
+
+        $rows = DB::table('providerables')
+            ->join('data_plans', function ($join) {
+                $join->on('data_plans.id', '=', 'providerables.providerable_id')
+                    ->where('providerables.providerable_type', DataPlan::class);
+            })
+            ->where('providerables.provider_id', $vendor->id)
+            ->whereNotNull('providerables.external_plan_id')
+            ->orderBy('data_plans.network')
+            ->orderBy('data_plans.plan_type')
+            ->orderBy('data_plans.plan_name')
+            ->get([
+                'data_plans.id',
+                'data_plans.network',
+                'data_plans.plan_type',
+                'data_plans.plan_name',
+                'data_plans.plan_size',
+                'data_plans.validity',
+                'data_plans.active',
+                'data_plans.is_draft',
+                'providerables.external_plan_id',
+                'providerables.cost_price',
+                'providerables.margin_value',
+            ])
+            ->map(function ($row) {
+                $cost = (float) $row->cost_price;
+                $markup = (float) $row->margin_value;
+
+                return [
+                    'id' => (int) $row->id,
+                    'external_plan_id' => (string) $row->external_plan_id,
+                    'network' => $row->network,
+                    'plan_type' => $row->plan_type,
+                    'plan_name' => $row->plan_name,
+                    'plan_size' => $row->plan_size,
+                    'validity' => $row->validity,
+                    'cost_price' => $cost > 0 ? $cost : null,
+                    'markup_percent' => $markup,
+                    'selling_price' => $cost > 0 ? round($cost * (1 + $markup / 100), 2) : null,
+                    'priced' => $cost > 0,
+                    'active' => (bool) $row->active,
+                    'is_draft' => (bool) $row->is_draft,
+                ];
+            });
+
+        return $this->success([
+            'provider' => ['id' => $vendor->id, 'name' => $vendor->name],
+            'plans' => $rows,
+        ]);
+    }
+
+    /**
+     * Apply provider costs and a selling-price markup to selected imported plans.
+     * Only rows with a positive provider cost can leave draft state or activate.
+     */
+    public function importVendorPlanPrices(Request $request, string $id)
+    {
+        $vendor = Vendor::findOrFail($id);
+        $validated = $request->validate([
+            'markup_percent' => ['required', 'numeric', 'min:0', 'max:1000'],
+            'activate' => ['sometimes', 'boolean'],
+            'plans' => ['required', 'array', 'min:1'],
+            'plans.*.plan_id' => ['required', 'integer', 'distinct', 'exists:data_plans,id'],
+            'plans.*.cost_price' => ['required', 'numeric', 'gt:0'],
+        ]);
+
+        $markup = (float) $validated['markup_percent'];
+        $activate = (bool) ($validated['activate'] ?? true);
+        $roleNames = Role::where('is_staff', false)->pluck('name')->push('user')->unique();
+        $pricing = $roleNames->mapWithKeys(fn ($role) => [
+            $role => ['type' => 'percentage', 'value' => $markup],
+        ])->all();
+
+        $updated = DB::transaction(function () use ($validated, $vendor, $markup, $activate, $pricing) {
+            $count = 0;
+
+            foreach ($validated['plans'] as $entry) {
+                $link = DB::table('providerables')
+                    ->where('provider_id', $vendor->id)
+                    ->where('providerable_type', DataPlan::class)
+                    ->where('providerable_id', $entry['plan_id'])
+                    ->whereNotNull('external_plan_id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $link) {
+                    throw ValidationException::withMessages([
+                        'plans' => ["Plan #{$entry['plan_id']} is not an imported plan for this provider."],
+                    ]);
+                }
+
+                $cost = round((float) $entry['cost_price'], 2);
+                DB::table('providerables')->where('id', $link->id)->update([
+                    'cost_price' => $cost,
+                    'margin_type' => 'percentage',
+                    'margin_value' => $markup,
+                    'updated_at' => now(),
+                ]);
+
+                DataPlan::whereKey($entry['plan_id'])->update([
+                    'pricing' => json_encode($pricing),
+                    'is_draft' => false,
+                    'active' => $activate,
+                    'updated_at' => now(),
+                ]);
+                $count++;
+            }
+
+            return $count;
+        });
+
+        return $this->success([
+            'updated' => $updated,
+            'markup_percent' => $markup,
+            'activated' => $activate ? $updated : 0,
+        ], 'Provider prices imported successfully.');
+    }
+
     public function banks(string $id)
     {
         try {
             $provider = Provider::findOrFail($id);
-            $gateway = \App\Classes\Payment\PaymentFactory::make($provider);
+            $gateway = PaymentFactory::make($provider);
             $banks = Cache::remember(
                 "provider_banks_{$provider->name}",
                 now()->addDay(),
-                fn() => $gateway->getBanks()
+                fn () => $gateway->getBanks()
             );
 
             return $this->success(['banks' => $banks]);
@@ -940,23 +1112,25 @@ private function syncModelRelations(Model $model, array $item)
     // /table/child_instances list/show response) — these two admin-only
     // actions are the only way to actually see it, mirroring refreshToken()
     // above for vendor identifiers.
-    function childInstanceSecret(string $id)
+    public function childInstanceSecret(string $id)
     {
-        $instance = \App\Models\ChildInstance::find($id);
-        if (!$instance) {
+        $instance = ChildInstance::find($id);
+        if (! $instance) {
             return $this->fail([], 'Affiliate not found', 404);
         }
+
         return $this->success(['secret' => $instance->shared_secret]);
     }
 
-    function regenerateChildInstanceSecret(string $id)
+    public function regenerateChildInstanceSecret(string $id)
     {
-        $instance = \App\Models\ChildInstance::find($id);
-        if (!$instance) {
+        $instance = ChildInstance::find($id);
+        if (! $instance) {
             return $this->fail([], 'Affiliate not found', 404);
         }
         $instance->shared_secret = Str::random(64);
         $instance->save();
+
         return $this->success(['secret' => $instance->shared_secret]);
     }
 
@@ -965,13 +1139,13 @@ private function syncModelRelations(Model $model, array $item)
     // into its own real slug/secret via ChildRegistrationController::register()
     // the first time it connects; nothing else about the connection (base_url,
     // status) is admin-configured up front.
-    function generateChildRegistrationCode(Request $request)
+    public function generateChildRegistrationCode(Request $request)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
         ]);
 
-        $instance = \App\Models\ChildInstance::create([
+        $instance = ChildInstance::create([
             'name' => $validated['name'],
             'registration_code' => Str::upper(Str::random(10)),
             'registration_code_expires_at' => now()->addDay(),
@@ -992,10 +1166,10 @@ private function syncModelRelations(Model $model, array $item)
     // write path: the Universal Table CRUD's create routes all require an
     // id up front (updateOrInsert keyed on it), so they only ever support
     // editing an existing row, not creating a brand new one.
-    function createChildDirective(Request $request, string $id)
+    public function createChildDirective(Request $request, string $id)
     {
-        $instance = \App\Models\ChildInstance::find($id);
-        if (!$instance) {
+        $instance = ChildInstance::find($id);
+        if (! $instance) {
             return $this->fail([], 'Affiliate not found', 404);
         }
 
@@ -1004,7 +1178,7 @@ private function syncModelRelations(Model $model, array $item)
             'payload' => 'nullable|array',
         ]);
 
-        $directive = \App\Models\ChildDirective::create([
+        $directive = ChildDirective::create([
             'child_instance_id' => $instance->id,
             'type' => $validated['type'],
             'payload' => $validated['payload'] ?? [],
@@ -1019,16 +1193,16 @@ private function syncModelRelations(Model $model, array $item)
     // declared in order: Laravel binds controller params POSITIONALLY, so a
     // signature missing $id would silently receive the instance id in
     // $directiveId (the exact bug that once broke every directive ack).
-    function deleteChildDirective(Request $request, string $id, string $directiveId)
+    public function deleteChildDirective(Request $request, string $id, string $directiveId)
     {
-        $instance = \App\Models\ChildInstance::find($id);
-        if (!$instance) {
+        $instance = ChildInstance::find($id);
+        if (! $instance) {
             return $this->fail([], 'Affiliate not found', 404);
         }
 
-        $directive = \App\Models\ChildDirective::where('child_instance_id', $instance->id)
+        $directive = ChildDirective::where('child_instance_id', $instance->id)
             ->find((int) $directiveId);
-        if (!$directive) {
+        if (! $directive) {
             return $this->fail([], 'Directive not found', 404);
         }
 
@@ -1043,5 +1217,4 @@ private function syncModelRelations(Model $model, array $item)
             $wasPending ? 'Directive retracted before delivery' : 'Directive deleted'
         );
     }
-
 }

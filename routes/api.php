@@ -1,53 +1,52 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\UserController;
+use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AdminController;
-use App\Http\Controllers\WebhookController;
-use App\Http\Controllers\OgdamsWebhookController;
-use App\Http\Controllers\CustomerController;
-use App\Http\Controllers\PayscribeController;
-use App\Http\Controllers\TransactionController;
-use App\Http\Controllers\VTUServicesController;
-use App\Http\Controllers\ServiceControlController;
-use App\Http\Controllers\ServiceRoutingController;
-use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\AiManagerController;
+use App\Http\Controllers\AirtimeToCashController;
+use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\AppReleaseController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
-use App\Http\Controllers\Auth\VerifyEmailController;
-use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\NewPasswordController;
-
-use App\Http\Controllers\PromotionController;
-use App\Http\Controllers\EventController;
-use App\Http\Controllers\DiscountController;
-use App\Http\Controllers\RoleController;
-use App\Http\Controllers\PermissionController;
-use App\Http\Controllers\AnalyticsController;
-use App\Http\Controllers\TemplateController;
-use App\Http\Controllers\WelcomeMessageController;
-use App\Http\Controllers\ServiceCostMarginController;
-use App\Http\Controllers\AccountController;
+use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BrandingController;
-use App\Http\Controllers\GeneralController;
-use App\Http\Controllers\AirtimeToCashController;
-use App\Http\Controllers\WalletTransferController;
-use App\Http\Controllers\WalletWithdrawalController;
-use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\BroadcastController;
-use App\Http\Controllers\SearchController;
-use App\Http\Controllers\AiManagerController;
 use App\Http\Controllers\ChildCustomerContactController;
 use App\Http\Controllers\ChildCustomerMigrationController;
 use App\Http\Controllers\ChildDirectiveController;
 use App\Http\Controllers\ChildRegistrationController;
 use App\Http\Controllers\ChildTunnelController;
+use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\DiscountController;
+use App\Http\Controllers\EventController;
+use App\Http\Controllers\GeneralController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\OgdamsWebhookController;
+use App\Http\Controllers\PayscribeController;
+use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\PromotionController;
 use App\Http\Controllers\ResetWebsiteController;
+use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SearchController;
+use App\Http\Controllers\ServiceControlController;
+use App\Http\Controllers\ServiceCostMarginController;
+use App\Http\Controllers\ServiceRoutingController;
 use App\Http\Controllers\SimDeviceAdminController;
 use App\Http\Controllers\SimDeviceController;
 use App\Http\Controllers\SimDeviceRegistrationController;
 use App\Http\Controllers\SimJobController;
-use App\Http\Controllers\AppReleaseController;
+use App\Http\Controllers\TemplateController;
+use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\VTUServicesController;
+use App\Http\Controllers\WalletTransferController;
+use App\Http\Controllers\WalletWithdrawalController;
+use App\Http\Controllers\WebhookController;
+use App\Http\Controllers\WelcomeMessageController;
+use Illuminate\Support\Facades\Route;
 
 // Public — read before login (landing page, auth screens) so they can show
 // the real configured brand name/logo/page-title instead of a hardcoded
@@ -62,13 +61,13 @@ Route::get('/app/latest', [AppReleaseController::class, 'latest']);
 Route::get('/app/download', [AppReleaseController::class, 'download']);
 Route::get('/app/download/{id}', [AppReleaseController::class, 'download'])->whereNumber('id');
 
-Route::post("/login", [AuthenticatedSessionController::class, 'store']);
-Route::post("/register", [RegisteredUserController::class, 'store']);
-Route::post("/forgot-password", [PasswordResetLinkController::class, 'apiStore'])
+Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+Route::post('/register', [RegisteredUserController::class, 'store']);
+Route::post('/forgot-password', [PasswordResetLinkController::class, 'apiStore'])
     ->middleware('throttle:6,1');
-Route::post("/reset-password", [NewPasswordController::class, 'apiStore'])
+Route::post('/reset-password', [NewPasswordController::class, 'apiStore'])
     ->middleware('throttle:6,1');
-Route::any("/webhook/{type}/{identifier}", [WebhookController::class, 'handle']);
+Route::any('/webhook/{type}/{identifier}', [WebhookController::class, 'handle']);
 Route::get('/webhooks/ogdams', OgdamsWebhookController::class);
 
 // Pull/ack half of the parent<->child channel — the child polls these on
@@ -144,12 +143,11 @@ Route::middleware(['auth:sanctum', 'user_type:admin'])->group(function () {
     Route::delete('/app/releases/{id}', [AppReleaseController::class, 'destroy'])->whereNumber('id');
 });
 
-
 Route::middleware(['auth:sanctum'])->group(function () {
-    Route::get("/user", [AuthenticatedSessionController::class, 'index']);
+    Route::get('/user', [AuthenticatedSessionController::class, 'index']);
     // SPA clients should POST to /logout to properly invalidate the session.
     // We allow GET too so browser visits don't break existing behavior.
-    Route::match(['get', 'post'], "/logout", [AuthenticatedSessionController::class, 'destroy']);
+    Route::match(['get', 'post'], '/logout', [AuthenticatedSessionController::class, 'destroy']);
 
     // Self-service account settings — shared by the admin and customer
     // "Settings" pages alike, scoped to whoever is logged in (no role gate).
@@ -176,11 +174,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 
-        // Promotion routes
-        Route::post('/promotions/validate', [PromotionController::class, 'validatePromotion']);
-        Route::post('/promotions/apply', [PromotionController::class, 'apply']);
+    // Promotion routes
+    Route::post('/promotions/validate', [PromotionController::class, 'validatePromotion']);
+    Route::post('/promotions/apply', [PromotionController::class, 'apply']);
 
-    Route::prefix("customer")->group(function(){
+    Route::prefix('customer')->group(function () {
         Route::get('/stats', [CustomerController::class, 'stats']);
         Route::get('/referral-stats', [CustomerController::class, 'referralStats']);
         Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);
@@ -205,8 +203,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/wallet-withdrawals', [WalletWithdrawalController::class, 'submit']);
     });
 
-
-    Route::prefix("admin")->middleware('user_type:admin')->group(function () {
+    Route::prefix('admin')->middleware('user_type:admin')->group(function () {
         Route::resource('users', UserController::class)
             ->withoutMiddleware(['auth:sanctum', 'user_type:admin'])
             ->only(['store']);
@@ -250,7 +247,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/search', [SearchController::class, 'adminSearch']);
 
         Route::middleware('permission:wallets')->group(function () {
-            Route::post("/users/{id}/fund", [AdminController::class, 'fundUser']);
+            Route::post('/users/{id}/fund', [AdminController::class, 'fundUser']);
 
             Route::get('/wallet-withdrawals', [WalletWithdrawalController::class, 'adminIndex']);
             Route::post('/wallet-withdrawals/{withdrawal}/approve', [WalletWithdrawalController::class, 'approve']);
@@ -335,7 +332,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
         Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans']);
-        Route::get("/airtime_discount", [AdminController::class, 'airtimeDiscount']);
+        Route::get('/vendor/{id}/plan-imports', [AdminController::class, 'vendorPlanImports']);
+        Route::post('/vendor/{id}/plan-imports', [AdminController::class, 'importVendorPlanPrices']);
+        Route::get('/airtime_discount', [AdminController::class, 'airtimeDiscount']);
 
         // Discount — a flash-sale-style price cut the platform applies
         // automatically (no code needed), scoped to a service type and
@@ -359,11 +358,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->except(['create', 'edit']);
     });
 
-
     Route::get('/permissions', [PermissionController::class, 'index']);
     Route::get('/admin/permissions', [PermissionController::class, 'index']);
 
-    Route::get("/system-information-get", [AdminController::class, 'systemInformation']);
+    Route::get('/system-information-get', [AdminController::class, 'systemInformation']);
     // Email verification endpoints (API)
     Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
         ->middleware('throttle:6,1')
