@@ -15,7 +15,7 @@ class CablePlan extends Model
     protected $appends = [
         "status", "price", "servers", "price_ngn", "charge_fee_amount",
         "provider", "use_provider_as_providerable", "cost_price", "server_id",
-        "fallback_provider", "fallback_provider_id", "fallback_server_id",
+        "fallback_provider", "fallback_provider_id", "fallback_server_id", "fallback_cost_price",
     ];
     protected $casts = [
         "active" => "boolean",

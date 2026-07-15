@@ -47,6 +47,9 @@ class DataPlanResource extends JsonResource
             'provider_id' => $pivot?->provider_id ?? $provider?->id,
             'fallback_provider_id' => $this->fallback_provider_id,
             'fallback_server_id' => $this->fallback_server_id,
+            // Null = no distinct fallback price; sales served by the fallback
+            // are then costed at the primary's cost_price above.
+            'fallback_cost_price' => $this->fallback_cost_price,
             'fallback_provider' => $fallbackProvider ? [
                 'id' => $fallbackProvider->id,
                 'name' => $fallbackProvider->name,

@@ -41,6 +41,47 @@ trait HasProviderFallback
         return $id ? Provider::find($id) : null;
     }
 
+    /**
+     * What the fallback provider charges us for this plan. Null means "no
+     * distinct fallback price" — callers should read the primary cost_price.
+     */
+    public function getFallbackCostPriceAttribute(): ?float
+    {
+        $value = $this->providerRoutingRow()?->fallback_cost_price ?? null;
+
+        return $value !== null ? (float) $value : null;
+    }
+
+    /**
+     * The cost of this plan from a specific provider. Use when you know which
+     * vendor served (or will serve) a sale — a fallback resells at its own
+     * price, so costing a failed-over sale at the primary's price overstates
+     * or understates profit.
+     *
+     * Reads the routing row directly rather than delegating to the model's own
+     * resolveCostPrice(): AirtimePlan uses this trait but has no such method,
+     * and both read the same providerables row anyway.
+     */
+    public function costPriceFor(?int $providerId): float
+    {
+        $row = $this->providerRoutingRow();
+        if (!$row) {
+            return 0.0;
+        }
+
+        // Only a *different* vendor in the fallback slot counts as a fallback
+        // sale; a plan may legitimately name the same vendor in both slots.
+        $isFallback = $providerId !== null
+            && (int) ($row->fallback_provider_id ?? 0) === $providerId
+            && (int) ($row->provider_id ?? 0) !== $providerId;
+
+        if ($isFallback && ($row->fallback_cost_price ?? null) !== null) {
+            return (float) $row->fallback_cost_price;
+        }
+
+        return (float) ($row->cost_price ?? 0);
+    }
+
     public function resolveFallbackVendor(): ?Vendor
     {
         $id = $this->fallback_provider_id;

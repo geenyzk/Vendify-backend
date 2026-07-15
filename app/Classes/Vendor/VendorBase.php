@@ -156,9 +156,9 @@ abstract class VendorBase implements VendorInterface
     {
         switch ($service) {
             case 'data':
-                return self::planCost(\App\Models\DataPlan::class, $payload['data_plan'] ?? null);
+                return $this->planCost(\App\Models\DataPlan::class, $payload['data_plan'] ?? null);
             case 'cable':
-                return self::planCost(\App\Models\CablePlan::class, $payload['cable_plan'] ?? null);
+                return $this->planCost(\App\Models\CablePlan::class, $payload['cable_plan'] ?? null);
             case 'electricity':
                 $token = (float) ($payload['amount'] ?? 0);
                 return $token > 0 ? $token : null;
@@ -167,16 +167,42 @@ abstract class VendorBase implements VendorInterface
         }
     }
 
-    private static function planCost(string $modelClass, $planId): ?float
+    /**
+     * The cost of goods for this plan *from the vendor actually serving the
+     * sale*. A plan's fallback provider resells it at its own price, so a
+     * failed-over sale must be costed against `fallback_cost_price`, not the
+     * primary's `cost_price` — otherwise the recorded profit is measured
+     * against a provider that was never paid.
+     *
+     * `fallback_cost_price` is nullable: when it isn't set (legacy rows, or a
+     * fallback that genuinely costs the same) we fall back to `cost_price`,
+     * which is exactly the old behaviour.
+     */
+    private function planCost(string $modelClass, $planId): ?float
     {
         if (!$planId) {
             return null;
         }
 
-        $cost = DB::table('providerables')
+        $row = DB::table('providerables')
             ->where('providerable_id', $planId)
             ->where('providerable_type', $modelClass)
-            ->value('cost_price');
+            ->first();
+
+        if (!$row) {
+            return null;
+        }
+
+        $actingId = (int) ($this->provider->id ?? 0);
+        // Only treat this as a fallback sale when the fallback is a *different*
+        // vendor than the primary; a plan can name the same vendor in both.
+        $servedByFallback = $actingId > 0
+            && (int) ($row->fallback_provider_id ?? 0) === $actingId
+            && (int) ($row->provider_id ?? 0) !== $actingId;
+
+        $cost = $servedByFallback
+            ? ($row->fallback_cost_price ?? $row->cost_price)
+            : ($row->cost_price ?? null);
 
         return $cost !== null ? (float) $cost : null;
     }

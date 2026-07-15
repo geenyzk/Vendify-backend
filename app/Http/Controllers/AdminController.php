@@ -729,6 +729,20 @@ class AdminController extends Controller
      * Centralized Logic for syncing relationships and Morphs.
      * Handles: providerable (morph), networkTypes (many-to-many), etc.
      */
+    /**
+     * Normalise an optional cost field: a blank/absent value means "no distinct
+     * price" and must stay NULL, not become 0 — a 0 would tell the profit
+     * calculation the goods were free.
+     */
+    private static function nullableCost($value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) ? (float) $value : null;
+    }
+
     private function syncModelRelations(Model $model, array $item)
     {
         // Log entry for tracing relation sync input
@@ -748,6 +762,7 @@ class AdminController extends Controller
                     'providerable_id' => $model->id,
                     'providerable_type' => get_class($model),
                     'cost_price' => 0,
+                    'fallback_cost_price' => self::nullableCost($item['providerable']['fallback_cost_price'] ?? null),
                     'margin_value' => 0,
                     'margin_type' => 'fiat',
                     'server_id' => $serverIdDefault,
@@ -780,6 +795,10 @@ class AdminController extends Controller
                 }
                 $pivotData = [
                     'cost_price' => $prov['cost_price'] ?? 0,
+                    // Null (not 0) when the admin leaves it blank, so the plan
+                    // keeps costing failed-over sales at the primary's price
+                    // rather than recording them as free.
+                    'fallback_cost_price' => self::nullableCost($prov['fallback_cost_price'] ?? null),
                     'margin_value' => $prov['margin_value'] ?? 0,
                     'margin_type' => $prov['margin_type'] ?? 'fiat',
                     'server_id' => $prov['server_id'] ?? $item['server_id'] ?? null,
@@ -796,6 +815,7 @@ class AdminController extends Controller
                         'provider_id' => $provId,
                         'fallback_provider_id' => $pivotData['fallback_provider_id'],
                         'cost_price' => $pivotData['cost_price'],
+                        'fallback_cost_price' => $pivotData['fallback_cost_price'],
                         'margin_value' => $pivotData['margin_value'],
                         'margin_type' => $pivotData['margin_type'],
                         'server_id' => $pivotData['server_id'] ?? null,
