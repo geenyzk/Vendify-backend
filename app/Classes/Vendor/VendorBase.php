@@ -159,12 +159,45 @@ abstract class VendorBase implements VendorInterface
                 return $this->planCost(\App\Models\DataPlan::class, $payload['data_plan'] ?? null);
             case 'cable':
                 return $this->planCost(\App\Models\CablePlan::class, $payload['cable_plan'] ?? null);
+            case 'airtime':
+                return $this->airtimeCost($payload);
             case 'electricity':
                 $token = (float) ($payload['amount'] ?? 0);
                 return $token > 0 ? $token : null;
             default:
                 return null;
         }
+    }
+
+    /**
+     * Airtime has no fixed cost price: it sells at face value and the provider
+     * bills us less by an agreed commission, so that discount IS the cost of
+     * goods — NGN 1,000 of airtime at a 3.5% discount costs us NGN 965.
+     *
+     * Returns null when the serving provider has no discount configured, which
+     * keeps airtime out of the profit figure exactly as before rather than
+     * costing it at zero (which would book the whole sale as profit).
+     */
+    private function airtimeCost(array $payload): ?float
+    {
+        $amount = (float) ($payload['amount'] ?? 0);
+        $network = $payload['network'] ?? null;
+        if ($amount <= 0 || !$network) {
+            return null;
+        }
+
+        // Same plan resolution as VTUServiceFactory::airtimePlanVendor — a plan
+        // with no category is "vtu", and an exact category match wins.
+        $category = $payload['network_type'] ?? 'vtu';
+        $plans = \App\Models\AirtimePlan::where('name', $network)->where('active', true)->get();
+        $plan = $plans->first(fn ($p) => ($p->category ?: 'vtu') === $category) ?? $plans->first();
+
+        $discount = $plan?->discountFor((int) ($this->provider->id ?? 0));
+        if ($discount === null) {
+            return null;
+        }
+
+        return round($amount * (1 - $discount / 100), 2);
     }
 
     /**

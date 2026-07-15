@@ -82,6 +82,48 @@ trait HasProviderFallback
         return (float) ($row->cost_price ?? 0);
     }
 
+    /**
+     * The commission the primary provider gives us off face value, as a
+     * percentage (3.50 = they bill us 96.5% of face). Null = not configured.
+     */
+    public function getProviderDiscountAttribute(): ?float
+    {
+        $value = $this->providerRoutingRow()?->provider_discount ?? null;
+
+        return $value !== null ? (float) $value : null;
+    }
+
+    /** As provider_discount, but for the fallback provider's own agreement. */
+    public function getFallbackProviderDiscountAttribute(): ?float
+    {
+        $value = $this->providerRoutingRow()?->fallback_provider_discount ?? null;
+
+        return $value !== null ? (float) $value : null;
+    }
+
+    /**
+     * The face-value discount offered by a specific provider, or null when
+     * that provider has none configured. Each vendor negotiates its own rate,
+     * so a failed-over sale must use the fallback's figure.
+     */
+    public function discountFor(?int $providerId): ?float
+    {
+        $row = $this->providerRoutingRow();
+        if (!$row) {
+            return null;
+        }
+
+        $isFallback = $providerId !== null
+            && (int) ($row->fallback_provider_id ?? 0) === $providerId
+            && (int) ($row->provider_id ?? 0) !== $providerId;
+
+        $value = $isFallback
+            ? ($row->fallback_provider_discount ?? null)
+            : ($row->provider_discount ?? null);
+
+        return $value !== null ? (float) $value : null;
+    }
+
     public function resolveFallbackVendor(): ?Vendor
     {
         $id = $this->fallback_provider_id;

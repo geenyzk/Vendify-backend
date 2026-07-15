@@ -763,6 +763,8 @@ class AdminController extends Controller
                     'providerable_type' => get_class($model),
                     'cost_price' => 0,
                     'fallback_cost_price' => self::nullableCost($item['providerable']['fallback_cost_price'] ?? null),
+                    'provider_discount' => self::nullableCost($item['providerable']['provider_discount'] ?? null),
+                    'fallback_provider_discount' => self::nullableCost($item['providerable']['fallback_provider_discount'] ?? null),
                     'margin_value' => 0,
                     'margin_type' => 'fiat',
                     'server_id' => $serverIdDefault,
@@ -799,6 +801,11 @@ class AdminController extends Controller
                     // keeps costing failed-over sales at the primary's price
                     // rather than recording them as free.
                     'fallback_cost_price' => self::nullableCost($prov['fallback_cost_price'] ?? null),
+                    // Airtime's cost basis: the % each provider knocks off face
+                    // value. Null (not 0) when unset, so airtime stays out of
+                    // the profit figure instead of booking a 100% margin.
+                    'provider_discount' => self::nullableCost($prov['provider_discount'] ?? null),
+                    'fallback_provider_discount' => self::nullableCost($prov['fallback_provider_discount'] ?? null),
                     'margin_value' => $prov['margin_value'] ?? 0,
                     'margin_type' => $prov['margin_type'] ?? 'fiat',
                     'server_id' => $prov['server_id'] ?? $item['server_id'] ?? null,
@@ -816,6 +823,8 @@ class AdminController extends Controller
                         'fallback_provider_id' => $pivotData['fallback_provider_id'],
                         'cost_price' => $pivotData['cost_price'],
                         'fallback_cost_price' => $pivotData['fallback_cost_price'],
+                        'provider_discount' => $pivotData['provider_discount'],
+                        'fallback_provider_discount' => $pivotData['fallback_provider_discount'],
                         'margin_value' => $pivotData['margin_value'],
                         'margin_type' => $pivotData['margin_type'],
                         'server_id' => $pivotData['server_id'] ?? null,
