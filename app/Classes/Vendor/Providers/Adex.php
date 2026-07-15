@@ -528,7 +528,7 @@ class Adex extends VendorBase
                 continue;
             }
 
-            $network = strtoupper((string) ($plan['network'] ?? ''));
+            $network = strtolower((string) ($plan['network'] ?? ''));
             if ($network === '') {
                 continue;
             }
@@ -566,7 +566,11 @@ class Adex extends VendorBase
             [, $amount, $unit] = $matches;
             $planName = (string) $amount;
             $planSize = strtoupper($unit);
-            $planType = strtolower((string) ($remote['plan_type'] ?? ''));
+            // DataPlan stores network names lowercase and plan types
+            // uppercase (the same convention used by Ogdams sync). Keeping
+            // that canonical form prevents an existing DATA SHARE plan from
+            // being missed and duplicated as a second "data share" row.
+            $planType = strtoupper((string) ($remote['plan_type'] ?? ''));
             $network = strtolower((string) ($remote['network'] ?? ''));
 
             $matchingPlan = DataPlan::query()

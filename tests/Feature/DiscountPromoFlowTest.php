@@ -229,5 +229,7 @@ class DiscountPromoFlowTest
     }
 }
 
-// Run tests
-DiscountPromoFlowTest::runAll();
+// This is a manual diagnostic helper, not a PHPUnit/Pest test case. Calling
+// runAll() here executes database queries while Pest is only discovering test
+// files, before Laravel has booted. Run DiscountPromoFlowTest::runAll()
+// explicitly from Tinker when this diagnostic output is needed.

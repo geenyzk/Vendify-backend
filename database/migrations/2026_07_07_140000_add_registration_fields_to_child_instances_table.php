@@ -26,12 +26,14 @@ return new class extends Migration
         // create) — now it's genuinely null until self-registration
         // completes. Using raw SQL rather than Schema::table()->change()
         // since that requires doctrine/dbal, which isn't installed.
-        DB::statement('ALTER TABLE child_instances MODIFY shared_secret TEXT NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE child_instances MODIFY shared_secret TEXT NULL');
 
         // New instances start 'pending' (registration code generated, not
         // yet used) rather than 'active' — they become 'active' only once
         // the child actually completes self-registration.
-        DB::statement("ALTER TABLE child_instances MODIFY status ENUM('pending', 'active', 'paused', 'revoked') NOT NULL DEFAULT 'pending'");
+            DB::statement("ALTER TABLE child_instances MODIFY status ENUM('pending', 'active', 'paused', 'revoked') NOT NULL DEFAULT 'pending'");
+        }
     }
 
     public function down(): void
@@ -39,7 +41,9 @@ return new class extends Migration
         Schema::table('child_instances', function (Blueprint $table) {
             $table->dropColumn(['registration_code', 'registration_code_expires_at', 'registered_at']);
         });
-        DB::statement('ALTER TABLE child_instances MODIFY shared_secret TEXT NOT NULL');
-        DB::statement("ALTER TABLE child_instances MODIFY status ENUM('active', 'paused', 'revoked') NOT NULL DEFAULT 'active'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE child_instances MODIFY shared_secret TEXT NOT NULL');
+            DB::statement("ALTER TABLE child_instances MODIFY status ENUM('active', 'paused', 'revoked') NOT NULL DEFAULT 'active'");
+        }
     }
 };

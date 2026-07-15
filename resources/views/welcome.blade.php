@@ -69,12 +69,16 @@
                                     Open dashboard
                                 </a>
                             @else
-                                <a href="{{ route('register') }}" class="inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">
-                                    Get started
-                                </a>
-                                <a href="{{ route('login') }}" class="inline-flex items-center justify-center rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
-                                    Sign in
-                                </a>
+                                @if (Route::has('register'))
+                                    <a href="{{ route('register') }}" class="inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">
+                                        Get started
+                                    </a>
+                                @endif
+                                @if (Route::has('login'))
+                                    <a href="{{ route('login') }}" class="inline-flex items-center justify-center rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+                                        Sign in
+                                    </a>
+                                @endif
                             @endauth
                         </div>
 

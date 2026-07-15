@@ -11,11 +11,15 @@ return new class extends Migration
         // base_url is optional/informational (nothing in Phase 1 actually
         // calls out to the child), so it can no longer be required at
         // creation time.
-        DB::statement('ALTER TABLE child_instances MODIFY base_url VARCHAR(255) NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE child_instances MODIFY base_url VARCHAR(255) NULL');
+        }
     }
 
     public function down(): void
     {
-        DB::statement('ALTER TABLE child_instances MODIFY base_url VARCHAR(255) NOT NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE child_instances MODIFY base_url VARCHAR(255) NOT NULL');
+        }
     }
 };

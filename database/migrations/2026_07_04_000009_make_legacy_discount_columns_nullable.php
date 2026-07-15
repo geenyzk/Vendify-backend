@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -20,7 +20,9 @@ return new class extends Migration
         // ones still present.
         foreach (['user_discount', 'agent_discount', 'api_discount'] as $column) {
             if (Schema::hasColumn('discounts', $column)) {
-                DB::statement("ALTER TABLE discounts MODIFY {$column} DECIMAL(10,2) NULL DEFAULT 0");
+                Schema::table('discounts', function (Blueprint $table) use ($column) {
+                    $table->decimal($column, 10, 2)->nullable()->default(0)->change();
+                });
             }
         }
     }
@@ -30,8 +32,12 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement('ALTER TABLE discounts MODIFY user_discount DECIMAL(10,2) NOT NULL');
-        DB::statement('ALTER TABLE discounts MODIFY agent_discount DECIMAL(10,2) NOT NULL');
-        DB::statement('ALTER TABLE discounts MODIFY api_discount DECIMAL(10,2) NOT NULL');
+        foreach (['user_discount', 'agent_discount', 'api_discount'] as $column) {
+            if (Schema::hasColumn('discounts', $column)) {
+                Schema::table('discounts', function (Blueprint $table) use ($column) {
+                    $table->decimal($column, 10, 2)->nullable(false)->default(null)->change();
+                });
+            }
+        }
     }
 };

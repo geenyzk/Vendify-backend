@@ -15,6 +15,26 @@ class Provider extends Model
     protected $appends = ["webhook", "connection", "balance"];
     protected $casts = ["active" => "boolean", "auto_fund_enabled" => "boolean"];
 
+    protected static function booted(): void
+    {
+        static::saving(function (Provider $provider) {
+            // The provider form may submit null when the webhook toggle is
+            // not present. MySQL rejects an explicit NULL even though this
+            // column has a default, so retain the stored value on updates
+            // and use the schema default for new providers. Do not use
+            // empty(), because "0" is a valid disabled setting.
+            if (array_key_exists('webhook_access', $provider->getAttributes())
+                && $provider->getAttribute('webhook_access') === null) {
+                $provider->setAttribute(
+                    'webhook_access',
+                    $provider->exists
+                        ? ($provider->getRawOriginal('webhook_access') ?? '1')
+                        : '1'
+                );
+            }
+        });
+    }
+
     function scopeGetPaymentProviders($query) {
         $query
         ->whereIn("name", function($subQuery){

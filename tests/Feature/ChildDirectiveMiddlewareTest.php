@@ -1,7 +1,21 @@
 <?php
 
 use App\Http\Middleware\VerifyChildSignature;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+
+beforeEach(function () {
+    Schema::dropIfExists('child_instances');
+    Schema::create('child_instances', function (Blueprint $table) {
+        $table->id();
+        $table->string('slug')->unique();
+        $table->string('status')->default('active');
+        $table->text('shared_secret');
+        $table->timestamp('last_seen_at')->nullable();
+        $table->timestamps();
+    });
+});
 
 test('child directive requests are rejected with a clear auth error when the instance is unknown', function () {
     $request = Request::create('/api/child/example/directives', 'GET');

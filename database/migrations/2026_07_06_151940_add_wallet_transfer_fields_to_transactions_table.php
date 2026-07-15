@@ -18,11 +18,16 @@ return new class extends Migration
             return;
         }
 
-        DB::statement("ALTER TABLE transactions MODIFY transaction_type ENUM(
-            'airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill', 'exam',
-            'betting_funding', 'airtime_pin', 'data_pin', 'wallet_funding', 'manual_funding', 'bulksms',
-            'wallet_transfer_in', 'wallet_transfer_out', 'wallet_withdrawal'
-        ) NOT NULL");
+        // SQLite represents enums as plain text and does not support MySQL's
+        // MODIFY ... ENUM syntax. It already accepts the new values, so only
+        // the production MySQL schema needs its enum definition widened.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE transactions MODIFY transaction_type ENUM(
+                'airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill', 'exam',
+                'betting_funding', 'airtime_pin', 'data_pin', 'wallet_funding', 'manual_funding', 'bulksms',
+                'wallet_transfer_in', 'wallet_transfer_out', 'wallet_withdrawal'
+            ) NOT NULL");
+        }
 
         Schema::table('transactions', function (Blueprint $table) {
             // Links a pair of related ledger rows: the sender/recipient side
@@ -41,9 +46,11 @@ return new class extends Migration
             $table->dropColumn('related_reference');
         });
 
-        DB::statement("ALTER TABLE transactions MODIFY transaction_type ENUM(
-            'airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill', 'exam',
-            'betting_funding', 'airtime_pin', 'data_pin', 'wallet_funding', 'manual_funding', 'bulksms'
-        ) NOT NULL");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE transactions MODIFY transaction_type ENUM(
+                'airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill', 'exam',
+                'betting_funding', 'airtime_pin', 'data_pin', 'wallet_funding', 'manual_funding', 'bulksms'
+            ) NOT NULL");
+        }
     }
 };

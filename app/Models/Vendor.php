@@ -52,6 +52,20 @@ class Vendor extends Model
             if ($vendor->sub_category === 'ogdams') {
                 $vendor->sub_category = 'simhost';
             }
+
+            // An unchecked/omitted webhook control can arrive from the
+            // shared provider form as null. Preserve the existing value on
+            // updates and use the database default on creates; an explicit
+            // "0" must remain valid so disabled webhook access stays off.
+            if (array_key_exists('webhook_access', $vendor->getAttributes())
+                && $vendor->getAttribute('webhook_access') === null) {
+                $vendor->setAttribute(
+                    'webhook_access',
+                    $vendor->exists
+                        ? ($vendor->getRawOriginal('webhook_access') ?? '1')
+                        : '1'
+                );
+            }
         });
     }
 

@@ -74,7 +74,7 @@ test('adex can fetch remote data plans and create draft catalog entries', functi
     ]);
 
     Http::fake([
-        'https://quicklysim.test/api/data-plan' => Http::response([
+        'https://quicklysim.test/data-plan' => Http::response([
             [
                 'plan_id' => 2,
                 'network' => 'MTN',
@@ -153,7 +153,7 @@ test('sync ignores an active duplicate plan from another provider', function () 
     ]);
 
     Http::fake([
-        'https://quicklysim.test/api/data-plan' => Http::response([
+        'https://quicklysim.test/data-plan' => Http::response([
             [
                 'plan_id' => 99,
                 'network' => 'MTN',
@@ -212,7 +212,7 @@ test('sync replaces an inactive draft plan with the cheaper provider entry', fun
     ]);
 
     Http::fake([
-        'https://quicklysim.test/api/data-plan' => Http::response([
+        'https://quicklysim.test/data-plan' => Http::response([
             [
                 'plan_id' => 88,
                 'network' => 'MTN',
@@ -231,5 +231,5 @@ test('sync replaces an inactive draft plan with the cheaper provider entry', fun
         ->and($summary['updated'])->toBe(1)
         ->and(DataPlan::count())->toBe(1)
         ->and(DB::table('providerables')->where('providerable_id', $plan->id)->where('providerable_type', DataPlan::class)->value('provider_id'))->toBe($providerB->id)
-        ->and(DB::table('providerables')->where('providerable_id', $plan->id)->where('providerable_type', DataPlan::class)->value('cost_price'))->toBe('120.00');
+        ->and((float) DB::table('providerables')->where('providerable_id', $plan->id)->where('providerable_type', DataPlan::class)->value('cost_price'))->toBe(120.0);
 });
