@@ -38,6 +38,7 @@ class ToolRegistry
         $this->register(new GetServiceRoutingTool());
         $this->register(new GetRoleCostMarginsTool());
         $this->register(new ListNetworksTool());
+        $this->register(new ListTemplatesTool());
 
         // Mutating tools — proposal-only, gated by their real permission slug.
         $this->register(new RefundTransactionTool());
@@ -64,6 +65,7 @@ class ToolRegistry
         $this->register(new SetRoleCostMarginsTool());
         $this->register(new UpdateUserStatusTool());
         $this->register(new ManageNetworkTool());
+        $this->register(new ManageTemplateTool());
     }
 
     public function register(AiTool $tool): void

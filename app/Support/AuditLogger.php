@@ -84,7 +84,10 @@ class AuditLogger
                 'subject_label' => $subjectLabel ?? ($subject ? self::labelFor($subject) : null),
                 'description' => $description,
                 'changes' => $changes !== null ? self::redact($changes) : null,
-                'context' => $context !== [] ? $context : null,
+                // Redacted too: callers pass arbitrary payloads here (AI tool
+                // arguments, request context), which can carry credentials just
+                // as easily as a changed column can.
+                'context' => $context !== [] ? self::redact($context) : null,
                 'ip_address' => $request?->ip(),
                 'user_agent' => $request ? substr((string) $request->userAgent(), 0, 512) : null,
             ]);
