@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AuditLogger;
 use Illuminate\Http\Request;
 
 use App\Classes\TransactionPruner;
@@ -153,6 +154,26 @@ class TransactionController extends Controller
         } catch (\Throwable $e) {
             return $this->failFromException($e, 'Transaction refund failed');
         }
+
+        // Money left the platform on an admin's say-so — one of the few actions
+        // worth auditing on its own, with the reason they gave.
+        AuditLogger::record(
+            'refund',
+            subject: $transaction,
+            changes: ['status' => ['old' => 'success', 'new' => 'fail']],
+            description: sprintf(
+                'Refunded NGN %s to %s for %s',
+                number_format((float) $transaction->amount, 2),
+                $transaction->user->fullname ?? $transaction->user->email,
+                $transaction->transaction_reference,
+            ),
+            context: [
+                'reason' => $validated['reason'],
+                'amount' => (float) $transaction->amount,
+                'reference' => $transaction->transaction_reference,
+            ],
+            subjectLabel: $transaction->transaction_reference,
+        );
 
         return $this->success(new TransactionResource($transaction->fresh('user')), 'Transaction refunded and wallet credited');
     }

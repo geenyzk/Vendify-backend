@@ -2,6 +2,7 @@
 
 namespace App\Services\AiManager;
 
+use App\Support\AuditLogger;
 use App\Models\AiActionProposal;
 use App\Models\AiConversation;
 use App\Models\AiMessage;
@@ -478,6 +479,22 @@ class AiManagerService
             'result' => $result,
             'executed_at' => now(),
         ]);
+
+        // The AI can only ever propose; this is the moment a human turned a
+        // proposal into a real change, so it belongs in the trail on its own —
+        // separate from whatever model writes the tool itself performed.
+        AuditLogger::record(
+            'ai_action_approved',
+            subject: $proposal,
+            description: sprintf('Approved AI action #%d: %s', $proposal->id, $proposal->summary),
+            context: [
+                'tool' => $proposal->tool,
+                'arguments' => $proposal->arguments,
+                'conversation_id' => $proposal->ai_conversation_id,
+            ],
+            subjectLabel: $proposal->summary,
+            actor: $actor,
+        );
 
         if ($recordSystemNote) {
             $this->recordSystemNote(

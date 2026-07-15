@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Support\AuditLogger;
 use App\Classes\Payment\Payment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
@@ -82,6 +83,18 @@ class AuthenticatedSessionController extends Controller
                     'user_id' => $user->id,
                     'error' => $e->getMessage(),
                 ]);
+            }
+
+            // Only staff sign-ins are audited. Customers log in constantly and
+            // would bury the admin trail in noise; who accessed the control
+            // panel is the part that actually matters for an audit.
+            if ($user->user_type === 'admin' || ($user->role?->is_staff ?? false)) {
+                AuditLogger::record(
+                    'login',
+                    subject: $user,
+                    description: sprintf('%s signed in', $user->fullname ?? $user->email),
+                    actor: $user,
+                );
             }
 
             return $this->success([

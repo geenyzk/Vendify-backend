@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AuditLogger;
 use App\Models\ChildCustomer;
 use App\Models\ChildDirective;
 use App\Models\ChildSyncEvent;
@@ -145,6 +146,19 @@ class ResetWebsiteController extends Controller
             'by_admin_username' => $admin->username,
             'deleted_counts' => $counts,
         ]);
+
+        // The single most destructive action in the panel — always audited,
+        // with exactly what it wiped.
+        AuditLogger::record(
+            'website_reset',
+            description: sprintf(
+                'Reset website data (%s)',
+                collect($counts)
+                    ->map(fn ($count, $what) => "{$count} {$what}")
+                    ->implode(', '),
+            ),
+            context: ['deleted_counts' => $counts],
+        );
 
         return $this->success($counts, 'Website data has been reset.');
     }

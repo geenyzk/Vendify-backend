@@ -18,6 +18,7 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\AuditLogger;
 use App\Support\ErrorMessage;
 use App\Support\PerformanceCache;
 use Carbon\Carbon;
@@ -931,9 +932,31 @@ class AdminController extends Controller
 
         try {
             $user = User::findOrFail($id);
+            $balanceBefore = (float) $user->wallet_balance;
             TransactionService::fundUser($user, $validated['amount'], $validated['type']);
+            $user->refresh();
 
-            return $this->success(['user' => $user->refresh()], "User wallet {$validated['type']}ed successfully");
+            // Logged explicitly: User::$auditExclude keeps wallet_balance out of
+            // the automatic diff (it moves on every customer transaction), so a
+            // manual admin adjustment would otherwise leave no trace at all.
+            AuditLogger::record(
+                'wallet_' . $validated['type'],
+                subject: $user,
+                changes: ['wallet_balance' => [
+                    'old' => $balanceBefore,
+                    'new' => (float) $user->wallet_balance,
+                ]],
+                description: sprintf(
+                    'Manually %sed NGN %s %s %s\'s wallet',
+                    $validated['type'],
+                    number_format((float) $validated['amount'], 2),
+                    $validated['type'] === 'credit' ? 'to' : 'from',
+                    $user->fullname ?? $user->email,
+                ),
+                context: ['amount' => (float) $validated['amount'], 'type' => $validated['type']],
+            );
+
+            return $this->success(['user' => $user], "User wallet {$validated['type']}ed successfully");
         } catch (Exception $e) {
             return $this->failFromException($e);
         }
