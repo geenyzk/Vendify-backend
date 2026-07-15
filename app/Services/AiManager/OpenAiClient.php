@@ -147,7 +147,15 @@ class OpenAiClient
         }
 
         if ($response->failed()) {
-            throw new AiManagerException('The AI service returned an error. Please try again.');
+            $body = $response->json();
+            $this->logApiError(
+                'AI Manager: OpenAI stream could not be opened',
+                $response->status(),
+                is_array($body) ? ($body['error'] ?? []) : [],
+                $response->header('x-request-id'),
+            );
+
+            throw new AiManagerException($this->publicErrorMessage($response->status()));
         }
 
         $stream = $response->toPsrResponse()->getBody();
@@ -156,7 +164,13 @@ class OpenAiClient
         $streamedContent = '';
 
         while (!$stream->eof()) {
-            $buffer .= $stream->read(2048);
+            $chunk = $stream->read(2048);
+            if ($chunk === '') {
+                // A PSR-7 stream may report eof only after an additional read.
+                // Do not spin forever when the connection has already closed.
+                break;
+            }
+            $buffer .= $chunk;
 
             while (($nl = strpos($buffer, "\n")) !== false) {
                 $line = trim(substr($buffer, 0, $nl));
@@ -184,8 +198,30 @@ class OpenAiClient
                     // The completed event carries the authoritative response
                     // (id + all output items incl. function calls).
                     $final = $this->normalizeResponse($event['response']);
+                } elseif ($type === 'response.incomplete' && isset($event['response']) && is_array($event['response'])) {
+                    // An incomplete response can still contain useful text. Keep
+                    // it when present; otherwise make the turn eligible for the
+                    // non-streaming recovery path in AiManagerService.
+                    $incomplete = $this->normalizeResponse($event['response']);
+                    if ($incomplete['content'] !== null || !empty($incomplete['tool_calls'])) {
+                        $final = $incomplete;
+                    } else {
+                        $reason = $event['response']['incomplete_details']['reason'] ?? null;
+                        $this->logStreamError($type, [
+                            'code' => $reason,
+                            'message' => 'The response ended before producing output.',
+                        ], $event['response']['id'] ?? null);
+                        throw new AiManagerException('The AI service could not finish the response. Please try again.');
+                    }
+                } elseif ($type === 'response.failed') {
+                    $error = is_array($event['response']['error'] ?? null)
+                        ? $event['response']['error']
+                        : [];
+                    $this->logStreamError($type, $error, $event['response']['id'] ?? null);
+                    throw new AiManagerException('The AI service could not finish the response. Please try again.');
                 } elseif ($type === 'error') {
-                    throw new AiManagerException('The AI service reported an error mid-stream.');
+                    $this->logStreamError($type, $event, $event['request_id'] ?? null);
+                    throw new AiManagerException('The AI service could not finish the response. Please try again.');
                 }
             }
         }
@@ -193,9 +229,14 @@ class OpenAiClient
         // Fall back to the text we accumulated if no completed event arrived.
         if ($final === null) {
             $trimmed = trim($streamedContent);
+            if ($trimmed === '') {
+                Log::warning('AI Manager: OpenAI stream closed without a terminal event');
+                throw new AiManagerException('The AI service connection ended unexpectedly. Please try again.');
+            }
+
             $final = [
                 'response_id' => $previousResponseId,
-                'content' => $trimmed !== '' ? $trimmed : null,
+                'content' => $trimmed,
                 'tool_calls' => [],
             ];
         }
@@ -287,6 +328,43 @@ class OpenAiClient
     private function supportsTemperature(): bool
     {
         return !preg_match('/^(o\d|gpt-5)/i', $this->model());
+    }
+
+    /**
+     * Record provider details for operators without exposing them in the UI.
+     *
+     * @param array<string, mixed> $error
+     */
+    private function logStreamError(string $eventType, array $error, ?string $responseId): void
+    {
+        Log::error('AI Manager: OpenAI stream returned an error', [
+            'event_type' => $eventType,
+            'type' => $error['type'] ?? null,
+            'code' => $error['code'] ?? null,
+            'message' => $error['message'] ?? 'Unknown streaming error.',
+            'param' => $error['param'] ?? null,
+            'response_id' => $responseId,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $error
+     */
+    private function logApiError(string $logMessage, int $status, array $error, ?string $requestId): void
+    {
+        Log::error($logMessage, [
+            'status' => $status,
+            'type' => $error['type'] ?? null,
+            'code' => $error['code'] ?? null,
+            'message' => $error['message'] ?? 'OpenAI request failed.',
+            'request_id' => $requestId,
+        ]);
+    }
+
+    private function publicErrorMessage(int $status): string
+    {
+        return 'The AI service returned an error'
+            . ($status === 401 ? ' (check OPENAI_API_KEY).' : '. Please try again.');
     }
 
     /**

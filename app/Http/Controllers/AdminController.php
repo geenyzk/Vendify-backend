@@ -698,14 +698,17 @@ private function syncModelRelations(Model $model, array $item)
             // Insert or update a providerables row with provider_id = null so the plan
             // is considered "global" (uses NetworkType->provider). Keep default pivot values.
             $serverIdDefault = $item['providerable']['server_id'] ?? $item['server_id'] ?? null;
+            $fallbackProviderId = $item['providerable']['fallback_provider_id'] ?? null;
             $pivotDataDefault = [
                 'provider_id' => null,
+                'fallback_provider_id' => $fallbackProviderId,
                 'providerable_id' => $model->id,
                 'providerable_type' => get_class($model),
                 'cost_price' => 0,
                 'margin_value' => 0,
                 'margin_type' => 'fiat',
                 'server_id' => $serverIdDefault,
+                'fallback_server_id' => $item['providerable']['fallback_server_id'] ?? null,
                 'updated_at' => now(),
                 'created_at' => now(),
             ];
@@ -725,11 +728,20 @@ private function syncModelRelations(Model $model, array $item)
             $prov = $item['providerable'];
             // Use the top-level toggle to decide whether this plan should use a plan-specific provider
             $provId = (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable']) ? ($prov['provider_id'] ?? null) : null;
+            $fallbackProviderId = $prov['fallback_provider_id'] ?? null;
+            if ($fallbackProviderId !== null && (int) $fallbackProviderId === (int) $provId) {
+                throw new \InvalidArgumentException('The fallback provider must be different from the primary provider.');
+            }
+            if ($fallbackProviderId !== null && !Vendor::whereKey($fallbackProviderId)->exists()) {
+                throw new \InvalidArgumentException('The selected fallback provider does not exist.');
+            }
             $pivotData = [
                 'cost_price' => $prov['cost_price'] ?? 0,
                 'margin_value' => $prov['margin_value'] ?? 0,
                 'margin_type' => $prov['margin_type'] ?? 'fiat',
                 'server_id' => $prov['server_id'] ?? $item['server_id'] ?? null,
+                'fallback_provider_id' => $fallbackProviderId,
+                'fallback_server_id' => $prov['fallback_server_id'] ?? null,
             ];
 
             Log::info('providerable payload', ['model' => get_class($model), 'id' => $model->id ?? null, 'providerable' => $prov]);
@@ -739,10 +751,12 @@ private function syncModelRelations(Model $model, array $item)
                 $where = ['providerable_id' => $model->id, 'providerable_type' => get_class($model)];
                 $upsert = [
                     'provider_id' => $provId,
+                    'fallback_provider_id' => $pivotData['fallback_provider_id'],
                     'cost_price' => $pivotData['cost_price'],
                     'margin_value' => $pivotData['margin_value'],
                     'margin_type' => $pivotData['margin_type'],
                     'server_id' => $pivotData['server_id'] ?? null,
+                    'fallback_server_id' => $pivotData['fallback_server_id'],
                     'updated_at' => now(),
                     'created_at' => now(),
                 ];

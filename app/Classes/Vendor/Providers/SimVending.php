@@ -97,9 +97,7 @@ class SimVending extends VendorBase
                 // store on the providerables pivot's server_id — same slot
                 // other vendors keep their remote plan IDs in. The agent
                 // falls back to its own network+size mapping when absent.
-                $vendCode = $dataPlan->providers()
-                    ->wherePivot('provider_id', $this->provider->id)
-                    ->first()?->pivot?->server_id;
+                $vendCode = $this->configuredPlanId($dataPlan);
                 return [
                     'reference' => $payload['tx_ref'],
                     'network' => strtolower((string) $payload['network']),

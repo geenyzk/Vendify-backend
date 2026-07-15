@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasProviderFallback;
 use Illuminate\Database\Eloquent\Model;
 
 class AirtimePlan extends Model
 {
+    use HasProviderFallback;
+
     protected $fillable = ["name", "category", "type", "min", "max", "active"];
 
     protected $casts = [
@@ -14,7 +17,7 @@ class AirtimePlan extends Model
 
     // Expose the attached provider (and whether one is set) so the admin form
     // can pre-fill the provider picker on edit — mirrors DataPlan.
-    protected $appends = ["provider", "use_provider_as_providerable"];
+    protected $appends = ["provider", "use_provider_as_providerable", "fallback_provider", "fallback_provider_id", "fallback_server_id"];
 
     public function toArray()
     {

@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\Model;
 
 abstract class VendorBase implements VendorInterface
 {
@@ -201,6 +202,33 @@ abstract class VendorBase implements VendorInterface
         return $gb > 0 ? $gb : null;
     }
 
+    /**
+     * Resolve the upstream plan identifier for this exact provider. Plans can
+     * store different identifiers for their primary and fallback vendors.
+     */
+    protected function configuredPlanId(Model $plan): ?string
+    {
+        $row = DB::table('providerables')
+            ->where('providerable_id', $plan->getKey())
+            ->where('providerable_type', get_class($plan))
+            ->first();
+
+        if (!$row) {
+            return null;
+        }
+
+        $value = null;
+        if ((int) ($row->provider_id ?? 0) === (int) $this->provider->id) {
+            $value = $row->server_id ?? null;
+        } elseif ((int) ($row->fallback_provider_id ?? 0) === (int) $this->provider->id) {
+            $value = $row->fallback_server_id ?? null;
+        }
+
+        return $value !== null && (string) $value !== '' && (string) $value !== '0'
+            ? (string) $value
+            : null;
+    }
+
     abstract public function sendRequest(string $service, array $payload): array;
 
 
@@ -215,6 +243,11 @@ abstract class VendorBase implements VendorInterface
     public function supportsService(string $service): bool
     {
         return in_array($service, $this->getSupportedServices());
+    }
+
+    public function providerId(): int
+    {
+        return (int) $this->provider->id;
     }
 
     public function sandbox(): static

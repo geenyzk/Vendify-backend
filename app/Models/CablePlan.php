@@ -3,17 +3,19 @@
 namespace App\Models;
 
 use App\HasServers;
+use App\Models\Concerns\HasProviderFallback;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
 class CablePlan extends Model
 {
     //
-    use HasServers;
+    use HasServers, HasProviderFallback;
 
     protected $appends = [
         "status", "price", "servers", "price_ngn", "charge_fee_amount",
         "provider", "use_provider_as_providerable", "cost_price", "server_id",
+        "fallback_provider", "fallback_provider_id", "fallback_server_id",
     ];
     protected $casts = [
         "active" => "boolean",
@@ -81,6 +83,13 @@ class CablePlan extends Model
         }
 
         return $this->providers()->exists();
+    }
+
+    public function resolveVendor(): ?Vendor
+    {
+        $provider = $this->providers()->first();
+
+        return $provider ? Vendor::find($provider->id) : null;
     }
 
     /**

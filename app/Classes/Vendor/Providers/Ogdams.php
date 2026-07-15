@@ -165,9 +165,7 @@ class Ogdams extends VendorBase
                 // a legacy `ogdams` column at all, so reading one here would
                 // always be null. Read from the pivot instead — the same
                 // place syncPlans() below writes to.
-                $vendorPlanId = $dataPlan->providers()
-                    ->wherePivot('provider_id', $this->provider->id)
-                    ->first()?->pivot?->server_id;
+                $vendorPlanId = $this->configuredPlanId($dataPlan);
                 if (!$vendorPlanId) {
                     throw new \InvalidArgumentException("Data plan [{$dataPlan->id}] has no Ogdams plan ID configured");
                 }

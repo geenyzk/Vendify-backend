@@ -19,6 +19,7 @@ class DataPlanResource extends JsonResource
             : $this->provider;
 
         $pivot = $provider?->pivot;
+        $fallbackProvider = $this->fallback_provider;
 
         return [
             'id' => $this->id,
@@ -43,6 +44,12 @@ class DataPlanResource extends JsonResource
             'server_id' => $pivot?->server_id ?? 0,
             // 'server_id' =>
             'provider_id' => $pivot?->provider_id ?? $provider?->id,
+            'fallback_provider_id' => $this->fallback_provider_id,
+            'fallback_server_id' => $this->fallback_server_id,
+            'fallback_provider' => $fallbackProvider ? [
+                'id' => $fallbackProvider->id,
+                'name' => $fallbackProvider->name,
+            ] : null,
             // 'pivot' => $this->provider->pivot,
             // Providers (vendors) offering this plan with pivot info
             'provider' => $provider ? [

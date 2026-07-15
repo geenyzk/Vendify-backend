@@ -5,6 +5,7 @@ namespace App\Classes\VTUServices;
 use App\Classes\Vendor\Providers\SimVending;
 use App\Classes\Vendor\VendorFactory;
 use App\Models\AirtimePlan;
+use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\ServiceRoute;
 use App\Models\Vendor;
@@ -40,6 +41,31 @@ class VTUServiceFactory
     }
 
     /**
+     * Build the explicitly configured backup handler for a plan. Unlike the
+     * normal precedence chain, this never guesses another vendor: failover is
+     * attempted only when an admin selected one in the plan create/edit form.
+     */
+    public static function makeFallback($service = '', $sub = '', $network = null, $planId = null, ?float $amount = null)
+    {
+        $provider = null;
+
+        if ($service === 'data' && $planId) {
+            $provider = DataPlan::find($planId)?->resolveFallbackVendor();
+        } elseif ($service === 'cable' && $planId) {
+            $provider = CablePlan::find($planId)?->resolveFallbackVendor();
+        } elseif ($service === 'airtime' && $network) {
+            $plans = AirtimePlan::where('name', $network)->where('active', true)->get();
+            $plan = $plans->first(fn ($candidate) => ($candidate->category ?: 'vtu') === $sub)
+                ?? $plans->first();
+            $provider = $plan?->resolveFallbackVendor();
+        }
+
+        $provider = self::usable($provider, $service, $network, $planId, $amount);
+
+        return $provider ? VendorFactory::make($provider) : null;
+    }
+
+    /**
      * Which Vendor fulfils this request.
      *
      * Airtime prefers the provider configured on the specific Airtime Plan
@@ -69,6 +95,13 @@ class VTUServiceFactory
         // fall back to the routing rules below.
         if ($service === 'data' && $planId) {
             $vendor = self::usable(DataPlan::find($planId)?->resolveVendor(), $service, $network, $planId, $amount);
+            if ($vendor) {
+                return $vendor;
+            }
+        }
+
+        if ($service === 'cable' && $planId) {
+            $vendor = self::usable(CablePlan::find($planId)?->resolveVendor(), $service, $network, $planId, $amount);
             if ($vendor) {
                 return $vendor;
             }

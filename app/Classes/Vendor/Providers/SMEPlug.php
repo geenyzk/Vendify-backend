@@ -103,6 +103,8 @@ class SMEPlug extends VendorBase
     {
         switch ($service) {
             case 'airtime':
+                $planId = $this->configuredPlanId($dataPlan)
+                    ?? $dataPlan->{str_replace(" ", "_", $this->provider->name)};
                 return [
                     'network_id' => $this->networkIDs[$payload['network']],
                     'phone' => $payload['phone'],
@@ -117,7 +119,7 @@ class SMEPlug extends VendorBase
                 return [
                     'network_id' => $this->networkIDs[$payload['network']],
                     'phone' => $payload['phone'],
-                    'plan_id' => $dataPlan->{str_replace(" ", "_", $this->provider->name)},
+                    'plan_id' => $planId,
                     'customer_reference' => $payload['tx_ref'],
                 ];
             default:

@@ -128,6 +128,8 @@ class Vtpass extends VendorBase
     {
         switch ($service) {
             case 'airtime':
+                $variationCode = $this->configuredPlanId($dataPlan)
+                    ?? $dataPlan->{str_replace(" ", "_", $this->provider->name)};
                 return [
                     'request_id' => $payload['tx_ref'],
                     'serviceID' => strtolower($payload['network']),
@@ -144,7 +146,7 @@ class Vtpass extends VendorBase
                     'request_id' => $payload['tx_ref'],
                     'serviceID' => strtolower($payload['network'] . '-data'),
                     'billersCode' => $payload['phone'],
-                    'variation_code' => $dataPlan->{str_replace(" ", "_", $this->provider->name)},
+                    'variation_code' => $variationCode,
                     'amount' => $payload['amount'] ?? null,
                 ];
 
@@ -153,11 +155,13 @@ class Vtpass extends VendorBase
                 if (!$cablePlan) {
                     throw new \InvalidArgumentException("Cable plan [{$payload['cable_plan']}] not found");
                 }
+                $variationCode = $this->configuredPlanId($cablePlan)
+                    ?? $cablePlan->{str_replace(" ", "_", $this->provider->name)};
                 return [
                     'request_id' => $payload['tx_ref'],
                     'serviceID' => strtolower($payload['cable_network']),
                     'billersCode' => $payload['iuc'],
-                    'variation_code' => $cablePlan->{str_replace(" ", "_", $this->provider->name)},
+                    'variation_code' => $variationCode,
                 ];
 
             case 'electricity':

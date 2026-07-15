@@ -171,11 +171,7 @@ class Adex extends VendorBase
             return (string) $legacy;
         }
 
-        $pivotServerId = optional($plan->providers()->first())->pivot->server_id
-            ?? \Illuminate\Support\Facades\DB::table('providerables')
-                ->where('providerable_id', $plan->id)
-                ->where('providerable_type', get_class($plan))
-                ->value('server_id');
+        $pivotServerId = $this->configuredPlanId($plan);
 
         if ($pivotServerId === null || (string) $pivotServerId === '' || (string) $pivotServerId === '0') {
             return null;

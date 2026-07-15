@@ -218,6 +218,66 @@ class AiManagerResponsesApiTest extends TestCase
         (new OpenAiClient())->chat([['role' => 'user', 'content' => 'Hello']]);
     }
 
+    public function test_stream_failed_event_is_logged_and_sanitized(): void
+    {
+        Log::spy();
+        Http::fake([
+            'api.openai.test/v1/responses' => Http::response(
+                "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_failed\",\"error\":{\"code\":\"server_error\",\"message\":\"Internal provider detail\"}}}\n\n",
+                200,
+                ['Content-Type' => 'text/event-stream'],
+            ),
+        ]);
+
+        $this->expectException(AiManagerException::class);
+        $this->expectExceptionMessage('The AI service could not finish the response. Please try again.');
+
+        try {
+            (new OpenAiClient())->chatStream(
+                [['role' => 'user', 'content' => 'Hello']],
+                [],
+                [],
+                null,
+                fn () => null,
+            );
+        } finally {
+            Log::shouldHaveReceived('error')->withArgs(fn ($message, $context) =>
+                $message === 'AI Manager: OpenAI stream returned an error'
+                && $context['event_type'] === 'response.failed'
+                && $context['code'] === 'server_error'
+                && $context['message'] === 'Internal provider detail'
+            );
+        }
+    }
+
+    public function test_stream_failure_before_text_recovers_with_non_streaming_continuation(): void
+    {
+        $client = new RecoveringStreamOpenAiClient([
+            ['response_id' => 'resp_tool', 'content' => null, 'tool_calls' => [[
+                'call_id' => 'call_read',
+                'name' => 'test_read',
+                'arguments' => ['value' => 'plans'],
+            ]]],
+            ['response_id' => 'resp_final', 'content' => 'Here are the plans.', 'tool_calls' => []],
+        ], failStreamCall: 2);
+
+        $events = [];
+        $result = $this->serviceWithClient($client)->streamMessage(
+            $this->conversation(),
+            $this->admin(),
+            'Look up plans',
+            function (string $event, array $data) use (&$events): void {
+                $events[] = [$event, $data];
+            },
+        );
+
+        $this->assertSame('Here are the plans.', $result['assistant']->content);
+        $this->assertSame('resp_tool', $client->calls[1]['previous_response_id']);
+        $this->assertSame('function_call_output', $client->calls[1]['function_outputs'][0]['type']);
+        $this->assertContains(['tools', ['tools' => ['test_read']]], $events);
+        $this->assertContains(['done', []], $events);
+    }
+
     public function test_plain_text_service_response_is_saved(): void
     {
         $service = $this->serviceWithClient([
@@ -444,6 +504,32 @@ class FakeOpenAiClient extends OpenAiClient
             'content' => 'No queued fake response.',
             'tool_calls' => [],
         ];
+    }
+}
+
+class RecoveringStreamOpenAiClient extends FakeOpenAiClient
+{
+    private int $streamCalls = 0;
+
+    public function __construct(array $responses, private readonly int $failStreamCall)
+    {
+        parent::__construct($responses);
+    }
+
+    public function chatStream(
+        array $messages,
+        array $tools,
+        array $functionOutputs,
+        ?string $previousResponseId,
+        callable $onDelta,
+    ): array {
+        $this->streamCalls++;
+
+        if ($this->streamCalls === $this->failStreamCall) {
+            throw new AiManagerException('The AI service could not finish the response. Please try again.');
+        }
+
+        return $this->chat($messages, $tools, $functionOutputs, $previousResponseId);
     }
 }
 

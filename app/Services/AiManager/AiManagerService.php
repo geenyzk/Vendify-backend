@@ -126,13 +126,37 @@ class AiManagerService
             $messages = $this->buildMessages($conversation, $actor);
 
             if ($emit) {
-                $reply = $this->client->chatStream(
-                    $messages,
-                    $tools,
-                    $functionOutputs,
-                    $previousResponseId,
-                    fn (string $delta) => $emit('token', ['text' => $delta]),
-                );
+                $receivedText = false;
+
+                try {
+                    $reply = $this->client->chatStream(
+                        $messages,
+                        $tools,
+                        $functionOutputs,
+                        $previousResponseId,
+                        function (string $delta) use ($emit, &$receivedText): void {
+                            $receivedText = $receivedText || $delta !== '';
+                            $emit('token', ['text' => $delta]);
+                        },
+                    );
+                } catch (AiManagerException $e) {
+                    // Responses API streams can fail transiently after a local
+                    // tool has completed. If no answer text reached the browser,
+                    // safely retry this exact continuation without streaming.
+                    // This avoids duplicating visible text while keeping the
+                    // tool output and previous_response_id intact.
+                    if ($receivedText) {
+                        throw $e;
+                    }
+
+                    Log::warning('AI Manager: recovering failed stream with a non-streaming request', [
+                        'iteration' => $iteration + 1,
+                        'has_tool_outputs' => !empty($functionOutputs),
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    $reply = $this->client->chat($messages, $tools, $functionOutputs, $previousResponseId);
+                }
             } else {
                 $reply = $this->client->chat($messages, $tools, $functionOutputs, $previousResponseId);
             }

@@ -346,7 +346,9 @@ class VTUServicesController extends Controller
 
             // $originalAmount (not final_amount) is the value actually vended,
             // which is what SIM-stock eligibility must be measured against.
-            $handler = VTUServiceFactory::make($serviceType, $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType, $validated['network'] ?? null, $validated['data_plan'] ?? null, $routeKey, (float) $originalAmount);
+            $routingSub = $validated['network_type'] ?? $validated['plan_type'] ?? $serviceType;
+            $planId = $validated['data_plan'] ?? $validated['cable_plan'] ?? null;
+            $handler = VTUServiceFactory::make($serviceType, $routingSub, $validated['network'] ?? null, $planId, $routeKey, (float) $originalAmount);
 
             if (!$handler) {
                 return response()->json([
@@ -357,7 +359,39 @@ class VTUServicesController extends Controller
 
             try {
                 Log::info(["validated" => $validated]);
-                return $handler->process($service, $validated);
+                $result = $handler->process($service, $validated);
+
+                // Only an immediate, confirmed failure is eligible for a
+                // retry. Success and 202/pending responses may already have
+                // delivered or queued value and must never be sent twice.
+                $resultBody = $result->getData(true);
+                $shouldFailOver = $result->getStatusCode() >= 500
+                    && ($resultBody['success'] ?? false) === false;
+
+                if ($shouldFailOver && in_array($serviceType, ['data', 'airtime', 'cable'], true)) {
+                    $fallback = VTUServiceFactory::makeFallback(
+                        $serviceType,
+                        $routingSub,
+                        $validated['network'] ?? null,
+                        $planId,
+                        (float) $originalAmount,
+                    );
+
+                    if ($fallback && $fallback->providerId() !== $handler->providerId()) {
+                        $primaryReference = $validated['tx_ref'];
+                        $validated['tx_ref'] = Transaction::generateTransactionId();
+                        Log::warning('Primary VTU provider failed; trying configured fallback', [
+                            'service' => $serviceType,
+                            'primary_reference' => $primaryReference,
+                            'fallback_reference' => $validated['tx_ref'],
+                            'plan_id' => $planId,
+                        ]);
+
+                        return $fallback->process($service, $validated);
+                    }
+                }
+
+                return $result;
             } catch (\Throwable $e) {
                 return response()->json([
                     'status' => 'error',
