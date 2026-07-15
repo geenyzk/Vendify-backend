@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Models\DataPlan;
 use App\Models\User;
+use App\Support\ErrorMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -162,7 +163,7 @@ class ChildTunnelController extends Controller
             $response = $handler->process($service, $payload);
         } catch (\Throwable $e) {
             Log::error('Child tunnel vend failed', ['service' => $service, 'error' => $e->getMessage()]);
-            return $this->tunnelFail($e->getMessage());
+            return $this->tunnelFail(ErrorMessage::humanize($e));
         }
 
         $body = $response->getData(true);

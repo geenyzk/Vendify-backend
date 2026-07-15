@@ -7,9 +7,13 @@ use App\Http\Middleware\HandleRequest;
 use App\Http\Middleware\TrackLastSeen;
 use App\Http\Middleware\VerifyChildSignature;
 use App\Http\Middleware\VerifySimDeviceSignature;
+use App\Support\ErrorMessage;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -41,5 +45,26 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // Safety net: an API client must never receive raw SQL/PDO internals
+        // (schema names, the failing query, SQLSTATE codes). Log the real
+        // exception for debugging and return the standard envelope with a
+        // message a person can act on. Validation/auth/404/429 keep Laravel's
+        // own handling — only database faults are rewritten here.
+        $exceptions->render(function (QueryException $e, Request $request) {
+            if (!$request->is('api/*') && !$request->expectsJson()) {
+                return null;
+            }
+
+            Log::error('Database error on API request', [
+                'path' => $request->path(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => ErrorMessage::humanize($e),
+                'success' => false,
+                'errors' => null,
+                'type' => 'error',
+            ], ErrorMessage::statusFor($e));
+        });
     })->create();

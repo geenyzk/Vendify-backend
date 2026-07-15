@@ -18,6 +18,7 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\ErrorMessage;
 use App\Support\PerformanceCache;
 use Carbon\Carbon;
 use Exception;
@@ -216,7 +217,7 @@ class AdminController extends Controller
 
             return $this->success(['exit_code' => $exit, 'output' => $output], 'Migrations executed');
         } catch (\Throwable $e) {
-            return $this->fail(['error' => $e->getMessage()], 'Migration failed', 500);
+            return $this->failFromException($e, 'Migration failed');
         }
     }
 
@@ -402,7 +403,7 @@ class AdminController extends Controller
         } catch (Exception $e) {
             Log::error('Universal Get failed', ['error' => $e->getMessage()]);
 
-            return $this->fail([], $e->getMessage(), 500);
+            return $this->failFromException($e);
         }
     }
 
@@ -443,7 +444,7 @@ class AdminController extends Controller
 
             return $this->success($record->toArray());
         } catch (Exception $e) {
-            return $this->fail([], $e->getMessage(), 500);
+            return $this->failFromException($e);
         }
     }
 
@@ -566,7 +567,7 @@ class AdminController extends Controller
             DB::rollBack();
             Log::error('Bulk operation failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
 
-            return $self->fail([], 'Server error: '.$e->getMessage(), 500);
+            return $self->fail([], ErrorMessage::humanize($e), ErrorMessage::statusFor($e));
         }
     }
 
@@ -631,7 +632,7 @@ class AdminController extends Controller
             DB::rollBack();
             Log::error('Reorder failed', ['error' => $e->getMessage()]);
 
-            return $this->fail([], 'Server error: '.$e->getMessage(), 500);
+            return $this->fail([], ErrorMessage::humanize($e), ErrorMessage::statusFor($e));
         }
     }
 
@@ -684,7 +685,7 @@ class AdminController extends Controller
         } catch (Exception $e) {
             DB::rollBack();
 
-            return $this->fail([], $e->getMessage(), 500);
+            return $this->failFromException($e);
         }
     }
 
@@ -905,7 +906,7 @@ class AdminController extends Controller
 
             return $this->success(['user' => $user->refresh()], "User wallet {$validated['type']}ed successfully");
         } catch (Exception $e) {
-            return $this->fail([], $e->getMessage(), 500);
+            return $this->failFromException($e);
         }
     }
 
@@ -962,7 +963,7 @@ class AdminController extends Controller
 
             return $this->success($summary, 'Plans synced.');
         } catch (Exception $e) {
-            return $this->fail([], $e->getMessage(), 500);
+            return $this->failFromException($e);
         }
     }
 
@@ -1103,7 +1104,7 @@ class AdminController extends Controller
 
             return $this->success(['banks' => $banks]);
         } catch (Exception $e) {
-            return $this->fail([], $e->getMessage(), 500);
+            return $this->failFromException($e);
         }
     }
 

@@ -2,7 +2,10 @@
 
 namespace App;
 
+use App\Support\ErrorMessage;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 trait HttpResponse
 {
@@ -57,6 +60,27 @@ trait HttpResponse
             'errors'   => $errors,
             'type'    => $type,
         ], $code);
+    }
+
+    /**
+     * Fail from a caught exception without leaking internals.
+     *
+     * The raw exception (SQL, PDO details, class names) goes to the log where
+     * developers can find it; the client gets a message a person can act on —
+     * "Provider is required." rather than
+     * "SQLSTATE[23000]: ... Column 'provider_id' cannot be null (SQL: insert ...)".
+     *
+     * Use this in every `catch` that returns a response. Domain exceptions that
+     * already carry a user-facing message pass through unchanged.
+     */
+    public function failFromException(Throwable $e, string $context = 'API request failed'): JsonResponse
+    {
+        Log::error($context, [
+            'exception' => get_class($e),
+            'error' => $e->getMessage(),
+        ]);
+
+        return $this->fail([], ErrorMessage::humanize($e), ErrorMessage::statusFor($e));
     }
 
     public function redirect(string $url, string $message = "Redirecting", int $code = 200, string $type = "info"): JsonResponse

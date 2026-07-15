@@ -151,7 +151,7 @@ class TransactionController extends Controller
                 $transaction->save();
             });
         } catch (\Throwable $e) {
-            return $this->fail([], 'Refund failed: ' . $e->getMessage(), 500);
+            return $this->failFromException($e, 'Transaction refund failed');
         }
 
         return $this->success(new TransactionResource($transaction->fresh('user')), 'Transaction refunded and wallet credited');
