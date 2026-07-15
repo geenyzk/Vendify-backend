@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ServiceCostMargin extends Model
 {
+    use Auditable;
     protected $fillable = [
         'role_id',
         'service_type',

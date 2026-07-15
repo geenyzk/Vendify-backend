@@ -24,6 +24,7 @@ class RolesAndPermissionsSeeder extends Seeder
         'migrations',
         'transactions',
         'wallets',
+        'audit_logs',
         'support',
         'airtime_to_cash',
         'switch_account',

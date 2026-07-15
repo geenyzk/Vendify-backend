@@ -28,6 +28,16 @@ Schedule::command('transactions:prune')
         \Illuminate\Support\Facades\Log::error('transactions:prune scheduled run failed.');
     });
 
+// Ages out the audit trail per config/audit.php (AUDIT_RETENTION_DAYS). The
+// log is append-only and can't be deleted from the UI, so this is the only
+// thing that trims the table.
+Schedule::command('audit:prune')
+    ->daily()
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('audit:prune scheduled run failed.');
+    });
+
 // Refreshes local DataPlan rows from each vendor's live catalogue (e.g.
 // Ogdams) so a purchase never has to call the vendor's API to resolve a
 // plan ID — no-ops for vendor classes that don't implement syncPlans().

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\Classes\Payment\PaymentFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -9,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 
 class Provider extends Model
 {
+    use Auditable;
     //
     protected $fillable = ["id", "name", "code", "base_url", "username", "password", "identifier", "sub_category", "category", "api_key", "public_key", "secret_key", "encryption_key", "webhook_access", "charge_fee", "charge_fee_cap", "charge_type", "withdrawal_fee", "withdrawal_fee_type", "active",
         "auto_fund_enabled", "auto_fund_threshold", "auto_fund_amount", "account_number", "account_name", "bank_code", "bank_name", "funding_provider_id"];

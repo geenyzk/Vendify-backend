@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class ServiceRoute extends Model
 {
+    use Auditable;
     protected $fillable = ['service_type', 'route_key', 'provider_id'];
 
     protected $casts = [

@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Network;
 use Illuminate\Support\Facades\DB;
 
 class NetworkType extends Model
 {
+    use Auditable;
     protected $fillable = ['name', 'active', 'service_type', 'provider_id'];
     protected $with = ['provider'];
 

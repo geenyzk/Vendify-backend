@@ -6,6 +6,7 @@ use App\Http\Controllers\AiManagerController;
 use App\Http\Controllers\AirtimeToCashController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AppReleaseController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
@@ -265,6 +266,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // gated admin actions. The `ai_manager` permission opens the assistant;
         // any action it proposes is re-checked against that action's own
         // permission at approval time (see AiManagerService::approve).
+        // Audit trail — read-only by design. There is no write route: entries
+        // come only from App\Support\AuditLogger, and retention is handled by
+        // the scheduled audit:prune command, so the log can't be edited away.
+        Route::middleware('permission:audit_logs')->prefix('audit-logs')->group(function () {
+            Route::get('/', [AuditLogController::class, 'index']);
+            Route::get('/filters', [AuditLogController::class, 'filters']);
+        });
+
         Route::middleware('permission:ai_manager')->prefix('ai')->group(function () {
             Route::get('/usage', [AiManagerController::class, 'usage']);
             Route::get('/conversations', [AiManagerController::class, 'index']);

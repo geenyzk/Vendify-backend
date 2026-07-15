@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\HasProviderFallback;
 use Illuminate\Database\Eloquent\Model;
 
 class AirtimePlan extends Model
 {
+    use Auditable;
     use HasProviderFallback;
 
     protected $fillable = ["name", "category", "type", "min", "max", "active"];

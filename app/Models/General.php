@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class General extends Model
 {
+    use Auditable;
     protected $fillable = [
         'app_name', 'app_phone', 'app_address', 'app_email',
         'bvn', 'bankName', 'accountName', 'accountNumber', 'logo',

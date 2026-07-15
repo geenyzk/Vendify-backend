@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class Discount extends Model
 {
+    use Auditable;
     protected $hidden = ["created_at", "updated_at"];
 
     protected $fillable = [

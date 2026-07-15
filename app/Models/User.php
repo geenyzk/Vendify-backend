@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Carbon\Carbon;
 use App\Models\Transaction;
 use App\Notifications\VendifyResetPasswordNotification;
@@ -19,7 +20,15 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
+    use Auditable;
     use HasApiTokens, Notifiable, SoftDeletes, HasRole;
+
+    /**
+     * Churn from ordinary customer activity: balances move on every
+     * transaction and last_login_at on every sign-in. Admin wallet
+     * funding is audited explicitly, with its amount, instead.
+     */
+    protected array $auditExclude = ['wallet_balance', 'referral_balance', 'total_referral_earnings', 'last_login_at'];
 
     protected $fillable = [
         'username', 'fullname', 'email', 'phone', 'password', 'pin',

@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\NetworkType;
 
 class Network extends Model
 {
+    use Auditable;
     protected $fillable = [
         'name', 'active', 'airtime_api_id', 'data_api_id', 'airtime_recharge_api_id', 'data_recharge_api_id',
         'airtime_to_cash_destination_number', 'airtime_to_cash_min', 'airtime_to_cash_max', 'airtime_to_cash_active',

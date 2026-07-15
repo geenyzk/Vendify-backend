@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\HasServers;
 use App\Models\Concerns\HasProviderFallback;
 use Illuminate\Database\Eloquent\Model;
@@ -9,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 
 class CablePlan extends Model
 {
+    use Auditable;
     //
     use HasServers, HasProviderFallback;
 

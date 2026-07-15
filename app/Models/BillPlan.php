@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
 class BillPlan extends Model
 {
+    use Auditable;
     protected $fillable = ['disco', 'min', 'max', 'service_fee', 'active'];
 
     protected $appends = ['status', 'provider', 'use_provider_as_providerable'];
