@@ -92,7 +92,6 @@ class SandboxService extends VendorBase
             // VTUServicesController computed (e.g. the Bill Plan fee for
             // electricity) instead of always zeroing it.
             'service_fee' => (float) ($response['service_fee'] ?? 0),
-            'platform' => 'sandbox',
         ];
 
         $common = [

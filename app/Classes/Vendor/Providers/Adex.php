@@ -314,7 +314,6 @@ class Adex extends VendorBase
             // VTUServicesController computed (e.g. the Bill Plan fee for
             // electricity) instead of always zeroing it.
             'service_fee' => (float) ($response['service_fee'] ?? 0),
-            'platform' => 'api',
             // Every case below sets its own transaction_type, so this is
             // never actually used — left null (not a specific, misleading
             // guess) in case a future service case is ever added without one.

@@ -166,7 +166,6 @@ class SimVending extends VendorBase
             'completed_at' => null,
             'discount_amount' => 0.00,
             'service_fee' => 0.00,
-            'platform' => 'sim',
             'account_or_phone' => $response['phone'] ?? null,
             'amount' => $response['amount'] ?? 0.00,
             'quantity' => 1.00,

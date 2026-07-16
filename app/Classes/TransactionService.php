@@ -119,6 +119,10 @@ class TransactionService
                 'amount' => $finalAmount,
                 'discount_amount' => $discountAmount,
                 'promotion_id' => $promotionId,
+                // Origin channel of the sale (web/app/api/affiliate), resolved
+                // from the request. Set here, the single choke point for every
+                // vend, so it can't be overridden by a vendor's own default.
+                'platform' => \App\Support\TransactionPlatform::current(),
             ]);
             unset($tx_data['final_amount']);
 
@@ -285,7 +289,7 @@ class TransactionService
             'balance_before' => $balanceBefore,
             'balance_after' => $balanceAfter,
             'response_message' => $note ?? (ucfirst($type) . ' by admin'),
-            'platform' => 'web',
+            'platform' => \App\Support\TransactionPlatform::current(),
             "receiver" => $receiver ?? $locked->username,
         ]);
 

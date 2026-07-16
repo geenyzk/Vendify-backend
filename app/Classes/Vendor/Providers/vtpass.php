@@ -203,7 +203,6 @@ class Vtpass extends VendorBase
             // through whatever VTUServicesController computed (e.g. the
             // Bill Plan fee for electricity) instead of always zeroing it.
             'service_fee' => (float) ($response['service_fee'] ?? 0),
-            'platform' => 'api',
         ];
 
         // Was missing entirely — formatResponse() never set transaction_type

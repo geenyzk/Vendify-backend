@@ -160,7 +160,14 @@ class ChildTunnelController extends Controller
         Auth::setUser($user);
 
         try {
-            $response = $handler->process($service, $payload);
+            // These vends physically run on the parent but originate from a
+            // child platform — record them as affiliate traffic, not the
+            // parent's own web/api. The override wraps the whole vend so
+            // TransactionService::record() sees it.
+            $response = \App\Support\TransactionPlatform::withOverride(
+                \App\Support\TransactionPlatform::AFFILIATE,
+                fn () => $handler->process($service, $payload),
+            );
         } catch (\Throwable $e) {
             Log::error('Child tunnel vend failed', ['service' => $service, 'error' => $e->getMessage()]);
             return $this->tunnelFail(ErrorMessage::humanize($e));

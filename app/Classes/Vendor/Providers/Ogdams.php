@@ -222,7 +222,6 @@ class Ogdams extends VendorBase
             // happens — Ogdams doesn't echo back a separate discount/fee.
             'discount_amount' => 0.00,
             'service_fee' => (float) ($response['service_fee'] ?? 0),
-            'platform' => 'api',
             'account_or_phone' => $response['phone'] ?? null,
             'amount' => $response['amount'] ?? 0.00,
             'quantity' => 1.00,
