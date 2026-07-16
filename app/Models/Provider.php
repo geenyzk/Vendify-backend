@@ -39,6 +39,7 @@ class Provider extends Model
 
     function scopeGetPaymentProviders($query) {
         $query
+        ->where('active', true)
         ->whereIn("name", function($subQuery){
             $subQuery->select("name")
             ->from("service_controls")

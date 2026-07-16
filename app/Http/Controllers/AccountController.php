@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Classes\Payment\Payment;
 use App\HttpResponse;
 use App\Models\Bank;
+use App\Models\Provider;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -156,6 +157,9 @@ class AccountController extends Controller
             ->where('status', 'active')
             ->whereNotNull('bank_account')
             ->whereNotNull('bank_name')
+            ->whereIn('provider', Provider::query()
+                ->getPaymentProviders()
+                ->select('name'))
             ->latest('id')->first();
 
         $account = $find();
