@@ -6,7 +6,6 @@ use App\Models\DataPlan;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AiManager\AiManagerException;
-use App\Support\PerformanceCache;
 
 /**
  * Set or adjust a data plan's selling price for one customer role, writing the
@@ -134,7 +133,6 @@ class SetDataPlanPriceTool extends AiTool
         $pricing[$role] = $newConfig;
         $plan->pricing = $pricing;
         $plan->save();
-        PerformanceCache::clearCatalog();
 
         return [
             'updated' => true,

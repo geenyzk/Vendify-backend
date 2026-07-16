@@ -151,6 +151,8 @@ class ManagePlanTool extends AiTool
                 throw new AiManagerException('Plan not found.');
             }
 
+            $providerableSyncedBeforeSave = false;
+
             if (!empty($attributes)) {
                 $plan->forceFill($attributes);
 
@@ -158,12 +160,25 @@ class ManagePlanTool extends AiTool
                     $plan->is_draft = false;
                 }
 
+                // Match the generic admin editor: an imported DataPlan's
+                // saving guard must see the incoming pivot cost when an
+                // activation and providerable update are approved together.
+                if ($plan instanceof \App\Models\DataPlan
+                    && $plan->exists
+                    && (array_key_exists('providerable', $arguments)
+                        || array_key_exists('use_provider_as_providerable', $arguments))) {
+                    PlanCatalog::syncProviderable($plan, $arguments);
+                    $providerableSyncedBeforeSave = true;
+                }
+
                 $plan->save();
             } elseif (!$plan->exists) {
                 throw new AiManagerException('Create actions require valid plan fields.');
             }
 
-            PlanCatalog::syncProviderable($plan, $arguments);
+            if (! $providerableSyncedBeforeSave) {
+                PlanCatalog::syncProviderable($plan, $arguments);
+            }
 
             if (method_exists($plan, 'providers')) {
                 $plan->load('providers');

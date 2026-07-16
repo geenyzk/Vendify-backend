@@ -501,6 +501,7 @@ class AdminController extends Controller
 
                 if ($hasModel) {
                     // 2. Eloquent Handling (Preferred)
+                    $relationsSyncedBeforeSave = false;
                     if ($isUpdate) {
                         $model = $modelClass::find($item['id']);
                         if ($model) {
@@ -514,7 +515,22 @@ class AdminController extends Controller
                             if (in_array('is_draft', $tableColumns, true) && $model->is_draft) {
                                 $data['is_draft'] = false;
                             }
-                            $model->fill($data)->save();
+
+                            $model->fill($data);
+
+                            // Imported DataPlans are guarded by their providerable cost
+                            // in DataPlan::saving. Keep that guard, but write an incoming
+                            // providerable change first so the event validates the new cost
+                            // rather than the stale pivot value. This all happens inside the
+                            // surrounding transaction and does not require a recursive save.
+                            if ($model instanceof DataPlan
+                                && (array_key_exists('providerable', $item)
+                                    || array_key_exists('use_provider_as_providerable', $item))) {
+                                $self->syncModelRelations($model, $item);
+                                $relationsSyncedBeforeSave = true;
+                            }
+
+                            $model->save();
                         } else {
                             // Fallback create if ID sent but not found
                             $model = new $modelClass;
@@ -529,7 +545,9 @@ class AdminController extends Controller
 
                     // 3. Sync Relationships (The core refactored part)
                     if ($model) {
-                        $self->syncModelRelations($model, $item);
+                        if (! $relationsSyncedBeforeSave) {
+                            $self->syncModelRelations($model, $item);
+                        }
 
                         // Reload relations if needed for response
                         if (method_exists($model, 'networkTypes')) {
@@ -1135,6 +1153,11 @@ class AdminController extends Controller
 
             return $count;
         });
+
+        // The transaction uses query-builder updates, which deliberately
+        // bypass Eloquent events. Invalidate only after it has committed so
+        // customer and admin catalogues cannot retain the previous prices.
+        PerformanceCache::clearCatalog();
 
         return $this->success([
             'updated' => $updated,

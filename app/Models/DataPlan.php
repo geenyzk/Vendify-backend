@@ -104,33 +104,59 @@ class DataPlan extends Model
         return $this->active ? 'active' : 'inactive';
     }
 
-    public function getPriceAttribute()
+    public function getPriceAttribute(): ?float
     {
         $user = Auth::user();
         $type = $user?->role->name ?? 'user';   // nullsafe operator
         $column = "{$type}_price"; // legacy column name
 
-        // Prefer pricing JSON if present
-        if (is_array($this->pricing) && array_key_exists($type, $this->pricing)) {
-            $entry = $this->pricing[$type];
+        // Prefer the exact role entry. Roles added after a plan was priced
+        // should use the customer/user configuration where one exists rather
+        // than rendering an invented zero price.
+        if (is_array($this->pricing)) {
+            $hasExactRolePrice = array_key_exists($type, $this->pricing);
+            $hasUserPrice = array_key_exists('user', $this->pricing);
+            $entry = $hasExactRolePrice
+                ? $this->pricing[$type]
+                : ($hasUserPrice ? $this->pricing['user'] : null);
 
-            // New shape: ["type" => "fiat"|"percentage", "value" => number].
-            // "percentage" is a markup over cost price: cost + cost * value%.
-            if (is_array($entry)) {
-                $value = (float) ($entry['value'] ?? 0);
-                if (($entry['type'] ?? 'fiat') === 'percentage') {
-                    return round($this->resolveCostPrice() * (1 + $value / 100), 2);
+            if ($entry !== null) {
+                // New shape: ["type" => "fiat"|"percentage", "value" => number].
+                // "percentage" is a markup over cost price: cost + cost * value%.
+                if (is_array($entry)) {
+                    if (! array_key_exists('value', $entry) || ! is_numeric($entry['value'])) {
+                        return null;
+                    }
+
+                    $value = (float) $entry['value'];
+                    if (($entry['type'] ?? 'fiat') === 'percentage') {
+                        $cost = $this->resolveCostPrice();
+
+                        return $cost > 0 ? round($cost * (1 + $value / 100), 2) : null;
+                    }
+
+                    return $value;
                 }
 
-                return $value;
+                // Legacy JSON shape: a plain fiat number.
+                return is_numeric($entry) ? (float) $entry : null;
             }
-
-            // Legacy shape: a plain fiat number.
-            return $entry;
         }
 
-        // Fallback to legacy individual column if pricing JSON not available
-        return $this->{$column} ?? null;
+        // Fallback to the matching legacy role column, then the customer
+        // column. The latter keeps new roles usable with old plan records.
+        $legacyPrice = $this->getAttribute($column);
+        if ($legacyPrice !== null && is_numeric($legacyPrice)) {
+            return (float) $legacyPrice;
+        }
+
+        if ($type !== 'user') {
+            $userPrice = $this->getAttribute('user_price');
+
+            return $userPrice !== null && is_numeric($userPrice) ? (float) $userPrice : null;
+        }
+
+        return null;
     }
 
     /**
@@ -160,7 +186,10 @@ class DataPlan extends Model
 
     public function getNetworkAttribute($value)
     {
-        return strtolower($value);
+        // The public API has historically exposed lower-case network slugs
+        // (mtn, airtel, glo, 9mobile). Keep that stable for catalogue filters,
+        // icons and purchase requests while allowing canonical labels in DB.
+        return strtolower((string) $value);
     }
 
     /**
@@ -243,6 +272,8 @@ class DataPlan extends Model
 
     protected function getPriceNgnAttribute()
     {
-        return '₦'.number_format($this->price, 2);
+        $price = $this->price;
+
+        return $price === null ? null : '₦'.number_format($price, 2);
     }
 }

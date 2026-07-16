@@ -7,6 +7,7 @@ use App\Http\Controllers\AdminController;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\DiscoProviderId;
+use App\Support\PerformanceCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -693,6 +694,10 @@ class Adex extends VendorBase
                 : 'No data plan changes were needed.';
         } else {
             $summary['message'] = 'Plans synced successfully.';
+            // The providerable upserts above bypass Eloquent events. Clear
+            // once after a successful sync so cached catalog prices and plan
+            // availability reflect the final pivot state.
+            PerformanceCache::clearCatalog();
         }
 
         return $summary;

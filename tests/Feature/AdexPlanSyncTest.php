@@ -2,16 +2,20 @@
 
 use App\Classes\Vendor\Providers\Adex;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\CustomerCatalogController;
 use App\Models\DataPlan;
 use App\Models\Role;
 use App\Models\Vendor;
+use App\Support\PerformanceCache;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
+    Cache::flush();
     Schema::dropIfExists('providerables');
     Schema::dropIfExists('data_plans');
     Schema::dropIfExists('roles');
@@ -63,6 +67,11 @@ beforeEach(function () {
         $table->string('margin_type')->nullable();
         $table->string('server_id')->nullable();
         $table->string('external_plan_id')->nullable();
+        $table->unsignedBigInteger('fallback_provider_id')->nullable();
+        $table->decimal('fallback_cost_price', 12, 2)->nullable();
+        $table->decimal('provider_discount', 12, 2)->nullable();
+        $table->decimal('fallback_provider_discount', 12, 2)->nullable();
+        $table->string('fallback_server_id')->nullable();
     });
 
     Role::create(['name' => 'user', 'is_staff' => false]);
@@ -296,4 +305,121 @@ test('bulk pricing calculates selling price and only then activates an imported 
         ->and($pricedPlan->price)->toBe(550.0)
         ->and((float) DB::table('providerables')->where('providerable_id', $plan->id)->value('cost_price'))->toBe(500.0)
         ->and(DB::table('providerables')->where('providerable_id', $plan->id)->value('external_plan_id'))->toBe('21');
+});
+
+test('an imported plan can receive a cost price and activate in one generic admin save', function () {
+    $vendor = Vendor::create(['name' => 'QuicklySIM', 'sub_category' => 'adex', 'active' => true]);
+    $plan = DataPlan::create([
+        'network' => 'MTN', 'plan_type' => 'GIFTING', 'plan_name' => '1', 'plan_size' => 'GB',
+        'validity' => '30 DAYS', 'active' => false, 'is_draft' => true, 'pricing' => [],
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id, 'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class, 'external_plan_id' => 'external-1',
+        'cost_price' => 0, 'margin_value' => 0, 'margin_type' => 'fiat',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $request = Request::create('/admin/table/data_plans/bulk', 'PUT', ['items' => [[
+        'id' => $plan->id,
+        'active' => true,
+        'use_provider_as_providerable' => true,
+        'providerable' => ['provider_id' => $vendor->id, 'cost_price' => 450, 'margin_value' => 10, 'margin_type' => 'percentage'],
+    ]]]);
+    AdminController::universalBulkCreateOrUpdate($request, 'data_plans');
+
+    expect($plan->fresh()->active)->toBeTrue()
+        ->and($plan->fresh()->is_draft)->toBeFalse()
+        ->and((float) DB::table('providerables')->where('providerable_id', $plan->id)->value('cost_price'))->toBe(450.0)
+        ->and(DB::table('providerables')->where('providerable_id', $plan->id)->count())->toBe(1);
+});
+
+test('an imported plan with zero cost remains inactive and draft after a generic admin save', function () {
+    $vendor = Vendor::create(['name' => 'QuicklySIM', 'sub_category' => 'adex', 'active' => true]);
+    $plan = DataPlan::create([
+        'network' => 'mtn', 'plan_type' => 'GIFTING', 'plan_name' => '1', 'plan_size' => 'GB',
+        'validity' => '30 DAYS', 'active' => false, 'is_draft' => true, 'pricing' => [],
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id, 'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class, 'external_plan_id' => 'external-2',
+        'cost_price' => 25, 'margin_value' => 0, 'margin_type' => 'fiat',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $request = Request::create('/admin/table/data_plans/bulk', 'PUT', ['items' => [[
+        'id' => $plan->id, 'active' => true, 'use_provider_as_providerable' => true,
+        'providerable' => ['provider_id' => $vendor->id, 'cost_price' => 0],
+    ]]]);
+    AdminController::universalBulkCreateOrUpdate($request, 'data_plans');
+
+    expect($plan->fresh()->active)->toBeFalse()->and($plan->fresh()->is_draft)->toBeTrue();
+});
+
+test('catalogue cache is invalidated after an edit and after vendor price import', function () {
+    $vendor = Vendor::create(['name' => 'QuicklySIM', 'sub_category' => 'adex', 'active' => true]);
+    $plan = DataPlan::create([
+        'network' => 'mtn', 'plan_type' => 'GIFTING', 'plan_name' => '1', 'plan_size' => 'GB',
+        'validity' => '30 DAYS', 'active' => false, 'is_draft' => true, 'pricing' => [],
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id, 'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class, 'external_plan_id' => 'external-3',
+        'cost_price' => 0, 'margin_value' => 0, 'margin_type' => 'fiat',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    Cache::forever('catalog:v1:version', 100);
+    AdminController::universalBulkCreateOrUpdate(Request::create('/admin/table/data_plans/bulk', 'PUT', ['items' => [[
+        'id' => $plan->id, 'plan_name' => '1.5',
+    ]]]), 'data_plans');
+    $afterEdit = Cache::get('catalog:v1:version');
+    expect($afterEdit)->toBeGreaterThan(100);
+
+    (new AdminController)->importVendorPlanPrices(Request::create('/admin/vendor/'.$vendor->id.'/plan-imports', 'POST', [
+        'markup_percent' => 10, 'activate' => true,
+        'plans' => [['plan_id' => $plan->id, 'cost_price' => 500]],
+    ]), (string) $vendor->id);
+    expect(Cache::get('catalog:v1:version'))->toBeGreaterThan($afterEdit);
+});
+
+test('customer catalogue returns an active configured price immediately and hides draft plans', function () {
+    $visible = DataPlan::create([
+        'network' => 'MTN', 'plan_type' => 'GIFTING', 'plan_name' => '1', 'plan_size' => 'GB',
+        'validity' => '30 DAYS', 'active' => true, 'is_draft' => false,
+        'pricing' => ['user' => ['type' => 'fiat', 'value' => 350]],
+    ]);
+    DataPlan::create([
+        'network' => 'AIRTEL', 'plan_type' => 'GIFTING', 'plan_name' => '2', 'plan_size' => 'GB',
+        'validity' => '30 DAYS', 'active' => true, 'is_draft' => true,
+        'pricing' => ['user' => ['type' => 'fiat', 'value' => 900]],
+    ]);
+
+    $payload = (new CustomerCatalogController)->dataPlans(Request::create('/catalog/data-plans', 'GET'))->getData(true);
+    $plans = $payload['data'];
+
+    expect($plans)->toHaveCount(1)
+        ->and($plans[0]['id'])->toBe($visible->id)
+        ->and($plans[0]['network'])->toBe('mtn')
+        ->and($plans[0]['price'])->toBe(350.0);
+});
+
+test('percentage and missing role pricing resolve to a real price or null, never an invented zero', function () {
+    $vendor = Vendor::create(['name' => 'Pricing vendor', 'sub_category' => 'adex', 'active' => true]);
+    $plan = DataPlan::create([
+        'network' => 'mtn', 'plan_type' => 'GIFTING', 'plan_name' => '1', 'plan_size' => 'GB',
+        'validity' => '30 DAYS', 'active' => true, 'is_draft' => false,
+        'pricing' => ['user' => ['type' => 'percentage', 'value' => 10]],
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id, 'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class, 'cost_price' => 500,
+        'margin_value' => 0, 'margin_type' => 'fiat', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    expect($plan->fresh()->price)->toBe(550.0);
+
+    $plan->pricing = ['affiliate' => ['type' => 'fiat', 'value' => 600]];
+    $plan->save();
+    expect($plan->fresh()->price)->toBeNull()->and($plan->fresh()->price_ngn)->toBeNull();
 });

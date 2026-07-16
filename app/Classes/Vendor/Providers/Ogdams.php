@@ -6,6 +6,7 @@ use App\Classes\Vendor\VendorBase;
 use App\Http\Controllers\AdminController;
 use App\Models\DataPlan;
 use App\Models\Role;
+use App\Support\PerformanceCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -399,6 +400,12 @@ class Ogdams extends VendorBase
             $this->storeProviderableLink($dataPlan->id, $remote);
 
             $summary['created']++;
+        }
+
+        if ($summary['created'] > 0 || $summary['updated'] > 0) {
+            // Providerable links are written with the query builder, so the
+            // DataPlan saved observer cannot see the final cost/link update.
+            PerformanceCache::clearCatalog();
         }
 
         return $summary;
