@@ -8,7 +8,7 @@ use Tests\TestCase;
 
 class AuthenticatedSessionControllerTest extends TestCase
 {
-    public function test_auth_user_payload_keeps_banks_append_for_lightweight_payloads(): void
+    public function test_auth_user_payload_uses_only_pin_append_for_lightweight_payloads(): void
     {
         $controller = new AuthenticatedSessionController();
         $user = new User();
@@ -18,7 +18,6 @@ class AuthenticatedSessionControllerTest extends TestCase
 
         $result = $method->invoke($controller, $user, false);
 
-        $this->assertContains('banks', $result->getAppends());
-        $this->assertContains('has_pin', $result->getAppends());
+        $this->assertSame(['has_pin'], $result->getAppends());
     }
 }

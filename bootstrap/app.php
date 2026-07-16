@@ -4,6 +4,7 @@ use App\Http\Middleware\AiMonitor;
 use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\EnsureUserType;
 use App\Http\Middleware\HandleRequest;
+use App\Http\Middleware\ProfilePerformance;
 use App\Http\Middleware\TrackLastSeen;
 use App\Http\Middleware\VerifyChildSignature;
 use App\Http\Middleware\VerifySimDeviceSignature;
@@ -27,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
 
         $middleware->append([
+            ProfilePerformance::class,
             HandleRequest::class
         ]);
 
