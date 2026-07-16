@@ -7,6 +7,7 @@ use App\Models\WelcomeMessageView;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class WelcomeMessageController extends Controller
 {
@@ -16,7 +17,11 @@ class WelcomeMessageController extends Controller
      */
     public function show(): JsonResponse
     {
-        $message = WelcomeMessage::where('active', true)->first();
+        $message = Cache::remember(
+            'customer:welcome-message:active',
+            now()->addMinutes(10),
+            fn () => WelcomeMessage::where('active', true)->first()
+        );
 
         if (!$message) {
             return $this->success(['welcome_message' => null, 'seen' => false]);

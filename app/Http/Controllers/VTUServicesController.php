@@ -11,6 +11,7 @@ use App\Models\DataPlan;
 use App\Models\Discount;
 use App\Models\Transaction;
 use App\Services\PromotionService;
+use App\Support\PerformanceCache;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -478,7 +479,15 @@ class VTUServicesController extends Controller
     public function activeDiscount(Request $request, string $service): JsonResponse
     {
         $network = $request->query('network');
-        $discount = Discount::findApplicable($service, $network);
+        $cacheKey = PerformanceCache::catalogVersionedKey('active-discount', [
+            'service' => $service,
+            'network' => $network,
+        ]);
+        $discount = Cache::remember(
+            $cacheKey,
+            now()->addMinutes(5),
+            fn () => Discount::findApplicable($service, $network)
+        );
 
         return $this->success([
             'discount' => $discount ? [

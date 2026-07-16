@@ -25,9 +25,7 @@ class AuthenticatedSessionController extends Controller
         $user->load('role.permissions');
 
         // Avoid the legacy query-backed default appends on session requests.
-        $user->setAppends($includeDashboardData
-            ? ['has_pin', 'banks', 'stats', 'badges', 'joined_at']
-            : ['has_pin']);
+        $user->setAppends(['has_pin']);
         return $user;
     }
 
