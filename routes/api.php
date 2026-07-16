@@ -22,6 +22,7 @@ use App\Http\Controllers\ChildFundingController;
 use App\Http\Controllers\ChildRegistrationController;
 use App\Http\Controllers\ChildTunnelController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\CustomerDashboardController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\GeneralController;
@@ -188,6 +189,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/promotions/apply', [PromotionController::class, 'apply']);
 
     Route::prefix('customer')->group(function () {
+        Route::get('/dashboard', [CustomerDashboardController::class, 'show']);
         Route::get('/stats', [CustomerController::class, 'stats']);
         Route::get('/referral-stats', [CustomerController::class, 'referralStats']);
         Route::post('/{id}/convert-referral', [CustomerController::class, 'convertReferralToWallet']);

@@ -12,21 +12,25 @@ class ProfilePerformance
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! config('performance.login_profiling') || ! $request->is('api/login')) {
+        if (! config('performance.login_profiling')
+            || ! in_array($request->path(), config('performance.profile_paths', []), true)) {
             return $next($request);
         }
 
         $startedAt = hrtime(true);
         $queries = 0;
         $queryMilliseconds = 0.0;
+        $slowestQueryMilliseconds = 0.0;
 
-        DB::listen(function ($query) use (&$queries, &$queryMilliseconds) {
+        DB::listen(function ($query) use (&$queries, &$queryMilliseconds, &$slowestQueryMilliseconds) {
             $queries++;
             $queryMilliseconds += $query->time;
+            $slowestQueryMilliseconds = max($slowestQueryMilliseconds, (float) $query->time);
         });
 
         $response = $next($request);
         $pipelineMilliseconds = round((hrtime(true) - $startedAt) / 1_000_000, 2);
+        $payloadBytes = strlen((string) $response->getContent());
 
         $existing = $response->headers->get('Server-Timing');
         $timing = 'pipeline;dur=' . $pipelineMilliseconds
@@ -34,10 +38,13 @@ class ProfilePerformance
             . ';desc="' . $queries . ' queries"';
         $response->headers->set('Server-Timing', $existing ? $timing . ', ' . $existing : $timing);
 
-        Log::debug('Login middleware performance profile', [
+        Log::debug('User endpoint performance profile', [
+            'path' => $request->path(),
             'pipeline_ms' => $pipelineMilliseconds,
             'query_count' => $queries,
             'query_ms' => round($queryMilliseconds, 2),
+            'slowest_query_ms' => round($slowestQueryMilliseconds, 2),
+            'payload_bytes' => $payloadBytes,
         ]);
 
         return $response;
