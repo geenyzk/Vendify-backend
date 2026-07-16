@@ -6,6 +6,8 @@ use App\HttpResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use App\Models\User;
 
 class NotificationController extends Controller
 {
@@ -41,7 +43,13 @@ class NotificationController extends Controller
 
     public function unreadCount(): JsonResponse
     {
-        return $this->success(['count' => Auth::user()->unreadNotifications()->count()]);
+        $count = DB::table('notifications')
+            ->where('notifiable_type', User::class)
+            ->where('notifiable_id', Auth::id())
+            ->whereNull('read_at')
+            ->count();
+
+        return $this->success(['count' => $count]);
     }
 
     public function markRead(string $id): JsonResponse

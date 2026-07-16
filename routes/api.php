@@ -22,6 +22,7 @@ use App\Http\Controllers\ChildFundingController;
 use App\Http\Controllers\ChildRegistrationController;
 use App\Http\Controllers\ChildTunnelController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\CustomerCatalogController;
 use App\Http\Controllers\CustomerDashboardController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\EventController;
@@ -189,6 +190,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/promotions/apply', [PromotionController::class, 'apply']);
 
     Route::prefix('customer')->group(function () {
+        Route::get('/catalog/networks', [CustomerCatalogController::class, 'networks']);
+        Route::get('/catalog/data-plans', [CustomerCatalogController::class, 'dataPlans']);
         Route::get('/dashboard', [CustomerDashboardController::class, 'show']);
         Route::get('/stats', [CustomerController::class, 'stats']);
         Route::get('/referral-stats', [CustomerController::class, 'referralStats']);
