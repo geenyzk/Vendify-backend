@@ -65,7 +65,7 @@ class CustomerCatalogController extends Controller
                 $columns[] = $legacyPriceColumn;
             }
 
-            return DataPlan::query()
+            $plans = DataPlan::query()
                 ->select($columns)
                 ->where('active', true)
                 ->where(function ($query) {
