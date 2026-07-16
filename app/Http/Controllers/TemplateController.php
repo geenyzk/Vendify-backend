@@ -3,11 +3,25 @@
 namespace App\Http\Controllers;
 
 use App\Models\Template;
+use App\Support\TemplateVariables;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
 class TemplateController extends Controller
 {
+    /**
+     * The catalogue of supported {{variables}} — global ones plus each event's
+     * own — so the editor can offer them and warn about placeholders that would
+     * otherwise render literally. Same source the AI Manager tools read.
+     */
+    public function variables(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => TemplateVariables::catalog(),
+        ]);
+    }
+
     /**
      * List templates, optionally filtered by type/event/enabled.
      * e.g. GET /admin/templates?type=event&event=register to find the

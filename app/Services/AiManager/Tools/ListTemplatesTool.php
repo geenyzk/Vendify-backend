@@ -4,6 +4,7 @@ namespace App\Services\AiManager\Tools;
 
 use App\Models\Template;
 use App\Models\User;
+use App\Support\TemplateVariables;
 
 /**
  * Read-only view of the notification templates, so the assistant can find the
@@ -108,19 +109,32 @@ class ListTemplatesTool extends AiTool
             'returned' => $rows->count(),
             'events_available' => Template::EVENTS,
             'channels_available' => ['email', 'sms', 'in_app', 'push'],
-            'variables_note' => 'Variables are written as {{name}} in subject/content and are substituted at send time. Only the variables the sending code supplies will resolve — inventing new ones leaves the literal {{placeholder}} in the delivered message.',
-            'templates' => $rows->map(fn (Template $t) => [
-                'id' => $t->id,
-                'name' => $t->name,
-                'slug' => $t->slug,
-                'type' => $t->type,
-                'event' => $t->event,
-                'subject' => $t->subject,
-                'content' => $t->content,
-                'channels' => $t->channels ?? [],
-                'enabled' => (bool) $t->enabled,
-                'variables' => $t->variables,
-            ])->all(),
+            'variables_note' => 'Variables are written as {{name}} in subject/content and substituted at send time. Only variables in the catalog below resolve — anything else is delivered literally as "{{name}}". Use available_variables to pick valid ones; prefix a placeholder with "custom_" to declare a bespoke one on purpose.',
+            // The supported placeholders, so the model proposes edits using real
+            // variables instead of inventing ones that would render literally.
+            'available_variables' => TemplateVariables::catalog(),
+            'templates' => $rows->map(function (Template $t) {
+                $unknown = TemplateVariables::unknownIn(
+                    ($t->subject ?? '') . "\n" . ($t->content ?? ''),
+                    $t->event,
+                );
+
+                return [
+                    'id' => $t->id,
+                    'name' => $t->name,
+                    'slug' => $t->slug,
+                    'type' => $t->type,
+                    'event' => $t->event,
+                    'subject' => $t->subject,
+                    'content' => $t->content,
+                    'channels' => $t->channels ?? [],
+                    'enabled' => (bool) $t->enabled,
+                    'variables' => $t->variables,
+                    // Placeholders this template uses that nothing supplies —
+                    // they currently render literally and likely need fixing.
+                    'unknown_variables' => $unknown,
+                ];
+            })->all(),
         ];
     }
 }

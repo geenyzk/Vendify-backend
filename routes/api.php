@@ -224,6 +224,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::middleware('permission:settings')->group(function () {
             Route::resource('controls', ServiceControlController::class);
+            // Before the resource route, else "variables" is captured as
+            // templates/{template}.
+            Route::get('templates/variables', [TemplateController::class, 'variables']);
             Route::resource('templates', TemplateController::class);
             Route::get('/welcome-message', [WelcomeMessageController::class, 'adminShow']);
             Route::put('/welcome-message', [WelcomeMessageController::class, 'upsert']);

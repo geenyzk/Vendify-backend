@@ -5,6 +5,7 @@ namespace App\Services\AiManager\Tools;
 use App\Models\Template;
 use App\Models\User;
 use App\Services\AiManager\AiManagerException;
+use App\Support\TemplateVariables;
 
 /**
  * Create, update, or delete a notification template. Mutating: proposal-only
@@ -25,7 +26,7 @@ class ManageTemplateTool extends AiTool
 
     public function description(): string
     {
-        return 'Propose creating, updating, or deleting a notification template (the message customers receive on events like login, register, purchase, wallet_credit, wallet_debit, or a broadcast template). Call list_templates first to get the real id and see the existing {{variables}}. Only "content" is required to create; the slug is generated automatically. Creates a pending action an admin must approve.';
+        return 'Propose creating, updating, or deleting a notification template (the message customers receive on events like login, register, purchase, wallet_credit, wallet_debit, or a broadcast template). Call list_templates first to get the real id, the existing {{variables}}, and the available_variables catalog. Use only catalog variables in the body — anything else renders literally to the customer as "{{name}}" (prefix with "custom_" to declare a bespoke one on purpose). The result reports unknown_variables so you can warn the admin. Only "content" is required to create; the slug is generated automatically. Creates a pending action an admin must approve.';
     }
 
     public function isMutating(): bool
@@ -211,6 +212,11 @@ class ManageTemplateTool extends AiTool
 
     private function payload(Template $template): array
     {
+        $unknown = TemplateVariables::unknownIn(
+            ($template->subject ?? '') . "\n" . ($template->content ?? ''),
+            $template->event,
+        );
+
         return [
             'id' => $template->id,
             'name' => $template->name,
@@ -222,6 +228,10 @@ class ManageTemplateTool extends AiTool
             'channels' => $template->channels ?? [],
             'enabled' => (bool) $template->enabled,
             'variables' => $template->variables,
+            // Placeholders nothing supplies for this event — they will render
+            // literally. Surfaced (not blocked) so the model can warn the admin
+            // or switch to a supported variable / a custom_ prefix.
+            'unknown_variables' => $unknown,
         ];
     }
 
