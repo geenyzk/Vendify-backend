@@ -5,6 +5,8 @@ namespace App\Classes\Payment;
 use App\Classes\AdminNotifier;
 use App\Classes\Payment\Interface\PaymentInterface;
 use App\Models\Bank;
+use App\Models\ChildCreditEvent;
+use App\Models\ChildVirtualAccount;
 use App\Models\Provider;
 use App\Models\Transaction;
 use App\Models\User;
@@ -23,6 +25,29 @@ abstract class PaymentBase implements PaymentInterface
     }
 
     abstract public function generate(User $user): array|null;
+
+    /**
+     * Create a reserved account for an arbitrary customer identity rather than
+     * a parent User — the seam the parent uses to generate accounts for an
+     * affiliate child's customers. Only providers that support it override
+     * this; the default means "not supported".
+     *
+     * @param array<string, mixed> $customer
+     */
+    public function generateForCustomer(array $customer): ?array
+    {
+        return null;
+    }
+
+    /**
+     * The receiving virtual account number on an incoming funding webhook, if
+     * the provider's payload exposes it. Used to map a funding to a child
+     * virtual account. Default null — providers override.
+     */
+    public function virtualAccountNumber(Request $request): ?string
+    {
+        return null;
+    }
 
     public function generateAccount(User $user): void
     {

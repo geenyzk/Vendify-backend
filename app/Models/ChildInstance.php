@@ -66,4 +66,25 @@ class ChildInstance extends Model
     {
         return $this->hasMany(ChildDirective::class);
     }
+
+    public function virtualAccounts(): HasMany
+    {
+        return $this->hasMany(ChildVirtualAccount::class);
+    }
+
+    public function creditEvents(): HasMany
+    {
+        return $this->hasMany(ChildCreditEvent::class);
+    }
+
+    /**
+     * Whether the parent aggregates this child's customer funding — generating
+     * their virtual accounts and relaying credits. Driven by the affiliate
+     * "Aggregate funding to this platform" toggle, stored in config.controls
+     * (same place every other affiliate control lives).
+     */
+    public function fundingAggregationEnabled(): bool
+    {
+        return (bool) data_get($this->config, 'controls.funding_aggregation.enabled', false);
+    }
 }

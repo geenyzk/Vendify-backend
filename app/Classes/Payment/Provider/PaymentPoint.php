@@ -73,6 +73,73 @@ class PaymentPoint extends PaymentBase
         }
     }
 
+    /**
+     * Create a reserved virtual account for an arbitrary customer identity
+     * (not a parent User) — used when the parent generates accounts on behalf
+     * of an affiliate child's customer. Returns the normalised account details,
+     * or null on failure.
+     *
+     * @param array{email?:string,name?:string,username?:string,phone?:string} $customer
+     * @return array{account_number:string,bank_name:?string,account_name:?string,reference:?string}|null
+     */
+    public function generateForCustomer(array $customer): ?array
+    {
+        try {
+            $payload = [
+                'email'       => $customer['email'] ?? null,
+                'name'        => $customer['name'] ?? ($customer['username'] ?? null),
+                'phoneNumber' => $customer['phone'] ?? null,
+                'bankCode'    => ['20946'],
+                'businessId'  => $this->provider->username,
+            ];
+
+            $response = Http::withHeaders($this->getHeaders())
+                ->post($this->baseUrl() . "/createVirtualAccount", $payload);
+
+            Log::info('PaymentPoint: creating child virtual account', [
+                'email' => $payload['email'],
+                'ok' => $response->successful(),
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('PaymentPoint: child virtual account creation failed', ['body' => $response->body()]);
+                return null;
+            }
+
+            $bankAccount = $response->json('bankAccounts.0');
+            if (!$bankAccount || empty($bankAccount['accountNumber'])) {
+                return null;
+            }
+
+            return [
+                'account_number' => $bankAccount['accountNumber'],
+                'bank_name'      => $bankAccount['bankName'] ?? null,
+                'account_name'   => $bankAccount['accountName'] ?? null,
+                'reference'      => $bankAccount['Reserved_Account_Id'] ?? null,
+            ];
+        } catch (\Throwable $e) {
+            Log::error('PaymentPoint::generateForCustomer exception: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * The receiving virtual account number on an incoming funding webhook, so
+     * the parent can map it to a child virtual account. Best-effort across the
+     * payload shapes PaymentPoint has been observed to send.
+     */
+    public function virtualAccountNumber(Request $request): ?string
+    {
+        $p = $request->all();
+
+        return $p['account_number']
+            ?? data_get($p, 'data.account_number')
+            ?? data_get($p, 'customer.account_number')
+            ?? data_get($p, 'virtual_account.account_number')
+            ?? $p['receiver_account_number']
+            ?? null;
+    }
+
     protected function formatPayload(array|User $payload, ?User $user = null): array
     {
         $user = $payload instanceof User ? $payload : $user;
