@@ -9,6 +9,7 @@ use App\Models\Provider;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -157,9 +158,9 @@ class AccountController extends Controller
             ->where('status', 'active')
             ->whereNotNull('bank_account')
             ->whereNotNull('bank_name')
-            ->whereIn('provider', Provider::query()
+            ->whereIn(DB::raw("LOWER(REPLACE(provider, ' ', ''))"), Provider::query()
                 ->getPaymentProviders()
-                ->select('name'))
+                ->selectRaw("LOWER(REPLACE(name, ' ', ''))"))
             ->latest('id')->first();
 
         $account = $find();

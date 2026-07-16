@@ -98,7 +98,7 @@ function fundingProvider(string $name, bool $providerActive, bool $controlActive
 it('does not display a saved account belonging to a disabled provider', function () {
     $user = fundingAccountUser();
     fundingProvider('flutterwave', false, false);
-    fundingProvider('payment point', true, true);
+    fundingProvider('PaymentPoint', true, true);
 
     Bank::query()->create([
         'user_id' => $user->id,
@@ -127,8 +127,8 @@ it('does not display a saved account belonging to a disabled provider', function
 
 it('does not load inactive providers for account generation', function () {
     fundingProvider('flutterwave', false, true);
-    fundingProvider('payment point', true, true);
+    fundingProvider('PaymentPoint', true, true);
 
     expect(Provider::query()->getPaymentProviders()->pluck('name')->all())
-        ->toBe(['payment point']);
+        ->toBe(['PaymentPoint']);
 });
