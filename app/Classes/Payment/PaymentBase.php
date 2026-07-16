@@ -204,6 +204,18 @@ abstract class PaymentBase implements PaymentInterface
                 Log::warning("Webhook signature verification failed for provider [{$this->providerName}].", [
                     'provider_id' => $this->provider->id,
                 ]);
+                // Surface on the Audit Log: a rejected signature is the single
+                // most common reason a real payment "never reflects" — usually
+                // the provider's secret hash isn't set in webhook_access.
+                \App\Support\AuditLogger::record(
+                    'webhook_rejected',
+                    description: "Rejected {$this->providerName} webhook: signature verification failed (check the provider's webhook secret / webhook_access).",
+                    context: [
+                        'provider' => $this->providerName,
+                        'provider_id' => $this->provider->id,
+                        'ip' => $request->ip(),
+                    ],
+                );
                 return false;
             }
 
@@ -252,12 +264,47 @@ abstract class PaymentBase implements PaymentInterface
                         'user_email' => $callback['user_email'] ?? null,
                         'status' => $callback['status'],
                     ]);
+                    \App\Support\AuditLogger::record(
+                        'webhook_unknown_user',
+                        description: sprintf(
+                            'Dropped %s funding of NGN %s: no account matches %s',
+                            $this->providerName,
+                            number_format((float) ($callback['amount'] ?? 0), 2),
+                            $callback['user_email'] ?? 'unknown email',
+                        ),
+                        context: [
+                            'provider' => $this->providerName,
+                            'transaction_reference' => $reference,
+                            'user_email' => $callback['user_email'] ?? null,
+                            'amount' => (float) ($callback['amount'] ?? 0),
+                        ],
+                    );
                     return;
                 }
 
                 if ($callback['status'] === 'success') {
                     $user->wallet_balance += $callback['amount'];
                     $user->save();
+
+                    // Positive confirmation that a real funding credited a real
+                    // wallet — the happy path, visible in the Audit Log next to
+                    // the failures above.
+                    \App\Support\AuditLogger::record(
+                        'wallet_funded',
+                        subject: $user,
+                        changes: ['wallet_balance' => [
+                            'old' => round($user->wallet_balance - (float) $callback['amount'], 2),
+                            'new' => (float) $user->wallet_balance,
+                        ]],
+                        description: sprintf(
+                            'Wallet funded NGN %s via %s for %s',
+                            number_format((float) $callback['amount'], 2),
+                            $this->providerName,
+                            $user->email,
+                        ),
+                        context: ['provider' => $this->providerName, 'transaction_reference' => $reference],
+                        actor: $user,
+                    );
                 }
 
                 $callback['user_id'] = $user->id;

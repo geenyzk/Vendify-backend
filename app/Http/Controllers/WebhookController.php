@@ -6,6 +6,7 @@ use App\Classes\ChildSync\ChildAuthenticator;
 use App\Classes\ChildSync\ChildSyncFactory;
 use App\Classes\Payment\Payment;
 use App\Classes\Vendor\VendorFactory;
+use App\Support\AuditLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
