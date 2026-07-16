@@ -18,9 +18,9 @@ class UserController extends Controller
 
     use HttpResponse;
 
-    public function index()
+    public function index(Request $request)
     {
-        $users = User::query()
+        $query = User::query()
             ->select([
                 'id',
                 'fullname',
@@ -37,12 +37,58 @@ class UserController extends Controller
                 'created_at',
             ])
             ->with('role:id,name,slug,is_staff')
-            ->withCount('transactions')
-            ->latest()
-            ->get();
-        $users->each->setAppends([]);
+            ->withCount('transactions');
 
-        return $this->success(["users" => $users]);
+        if ($search = trim((string) $request->query('search', ''))) {
+            $query->where(function ($builder) use ($search) {
+                $builder->where('fullname', 'like', "%{$search}%")
+                    ->orWhere('username', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('status') && $request->query('status') !== 'all') {
+            $query->where('status', $request->query('status'));
+        }
+        if ($request->filled('kyc') && $request->query('kyc') !== 'all') {
+            match ($request->query('kyc')) {
+                'verified' => $query->where(fn ($q) => $q->whereNotNull('email_verified_at')->orWhere('is_verified', true)),
+                'pending' => $query->whereNull('email_verified_at')->where('is_verified', false),
+                'unverified' => $query->whereNull('email_verified_at')->where(fn ($q) => $q->whereNull('is_verified')->orWhere('is_verified', false)),
+                default => null,
+            };
+        }
+        if ($request->integer('days') > 0) {
+            $query->where('created_at', '>=', now()->subDays($request->integer('days')));
+        }
+
+        $perPage = min(100, max(10, $request->integer('per_page', 10)));
+        $users = $query->latest()->paginate($perPage);
+        $users->getCollection()->each->setAppends([]);
+
+        $summary = User::query()->selectRaw(
+            "COUNT(*) as total, " .
+            "SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active, " .
+            "SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) as suspended, " .
+            "SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as new_customers",
+            [now()->subDays(30)],
+        )->first();
+
+        return $this->success([
+            'users' => $users->items(),
+            'meta' => [
+                'current_page' => $users->currentPage(),
+                'last_page' => $users->lastPage(),
+                'per_page' => $users->perPage(),
+                'total' => $users->total(),
+            ],
+            'summary' => [
+                'total' => (int) ($summary->total ?? 0),
+                'active' => (int) ($summary->active ?? 0),
+                'suspended' => (int) ($summary->suspended ?? 0),
+                'new_customers' => (int) ($summary->new_customers ?? 0),
+            ],
+        ]);
 
     }
 
