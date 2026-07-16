@@ -49,6 +49,60 @@ abstract class PaymentBase implements PaymentInterface
         return null;
     }
 
+    /**
+     * If this funding belongs to an affiliate child's customer, record a credit
+     * event the child will pull and apply, and report true so the caller skips
+     * the parent-wallet path. Idempotent on the funding reference — a webhook
+     * retry can never enqueue (or pay out) the same funding twice.
+     *
+     * @param array<string, mixed> $callback
+     */
+    protected function relayChildFunding(Request $request, array $callback, string $reference): bool
+    {
+        // Only a confirmed, successful funding credits anyone.
+        if (($callback['status'] ?? null) !== 'success') {
+            return false;
+        }
+
+        $account = ChildVirtualAccount::resolveFromCallback(
+            $callback,
+            $this->virtualAccountNumber($request),
+        );
+
+        if (!$account) {
+            return false;
+        }
+
+        $amount = (float) ($callback['amount'] ?? 0);
+        $fee = (float) ($callback['service_fee'] ?? 0);
+
+        // firstOrCreate keyed on the unique reference: concurrent/retried
+        // webhooks converge on one row, so the child is told to credit once.
+        ChildCreditEvent::firstOrCreate(
+            ['reference' => $reference],
+            [
+                'child_instance_id' => $account->child_instance_id,
+                'child_virtual_account_id' => $account->id,
+                'external_customer_id' => $account->external_customer_id,
+                'amount' => $amount,
+                'gross_amount' => $amount + $fee,
+                'fee' => $fee,
+                'provider' => $this->providerName,
+                'status' => ChildCreditEvent::STATUS_PENDING,
+                'meta' => ['account_number' => $account->account_number],
+            ],
+        );
+
+        Log::info('Child funding relayed to affiliate credit outbox.', [
+            'reference' => $reference,
+            'child_instance_id' => $account->child_instance_id,
+            'external_customer_id' => $account->external_customer_id,
+            'amount' => $amount,
+        ]);
+
+        return true;
+    }
+
     public function generateAccount(User $user): void
     {
         try {
@@ -136,7 +190,15 @@ abstract class PaymentBase implements PaymentInterface
 
             $reference = $callback['transaction_reference'];
 
-            DB::transaction(function () use ($callback, $reference) {
+            DB::transaction(function () use ($callback, $reference, $request) {
+                // Affiliate-aggregated funding: the money landed in this
+                // (parent) provider but the account belongs to a child's
+                // customer. Relay a credit to the child instead of crediting a
+                // parent user, and stop — no parent wallet is involved.
+                if ($this->relayChildFunding($request, $callback, $reference)) {
+                    return;
+                }
+
                 // Row-lock so two near-simultaneous deliveries of the same
                 // webhook (a provider retry racing the original) can't both
                 // read "not yet processed" and both credit the wallet.

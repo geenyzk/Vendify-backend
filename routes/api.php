@@ -18,6 +18,7 @@ use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\ChildCustomerContactController;
 use App\Http\Controllers\ChildCustomerMigrationController;
 use App\Http\Controllers\ChildDirectiveController;
+use App\Http\Controllers\ChildFundingController;
 use App\Http\Controllers\ChildRegistrationController;
 use App\Http\Controllers\ChildTunnelController;
 use App\Http\Controllers\CustomerController;
@@ -79,6 +80,13 @@ Route::get('/webhooks/ogdams', OgdamsWebhookController::class);
 Route::prefix('child')->middleware('verify.child.hmac')->group(function () {
     Route::get('/{slug}/directives', [ChildDirectiveController::class, 'index']);
     Route::post('/{slug}/directives/{id}/ack', [ChildDirectiveController::class, 'ack']);
+
+    // Parent-managed funding: the child requests a virtual account for a
+    // customer, then pulls/acks the credit events the parent raises when those
+    // accounts are funded (see ChildFundingController).
+    Route::post('/{slug}/virtual-accounts', [ChildFundingController::class, 'requestAccount']);
+    Route::get('/{slug}/credit-events', [ChildFundingController::class, 'pullCreditEvents']);
+    Route::post('/{slug}/credit-events/{id}/ack', [ChildFundingController::class, 'ackCreditEvent']);
 });
 
 // Not HMAC-protected — the child has no shared_secret yet at this point.

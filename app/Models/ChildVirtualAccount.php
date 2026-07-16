@@ -38,12 +38,12 @@ class ChildVirtualAccount extends Model
      *
      * @param array<string, mixed> $callback
      */
-    public static function resolveFromCallback(array $callback): ?self
+    public static function resolveFromCallback(array $callback, ?string $accountNumber = null): ?self
     {
-        // account_number is the unambiguous key; the PaymentPoint callback is
-        // extended to surface the credited virtual account so we can use it.
-        if (!empty($callback['account_number'])) {
-            $match = static::where('account_number', $callback['account_number'])->first();
+        // account_number is the unambiguous key; the provider extracts it from
+        // the raw webhook (PaymentPoint::virtualAccountNumber).
+        if (!empty($accountNumber)) {
+            $match = static::where('account_number', $accountNumber)->first();
             if ($match) {
                 return $match;
             }
