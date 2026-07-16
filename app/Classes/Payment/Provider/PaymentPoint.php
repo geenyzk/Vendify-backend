@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Log;
 
 class PaymentPoint extends PaymentBase
 {
+    private const VIRTUAL_ACCOUNT_BANK_CODES = ['20946', '20897'];
+
     // PaymentPoint provider name must match the providers.name value
     // in the database ("payment point"). creditedAmount() relies on
     // this matching to find the configured provider row.
@@ -89,7 +91,7 @@ class PaymentPoint extends PaymentBase
                 'email'       => $customer['email'] ?? null,
                 'name'        => $customer['name'] ?? ($customer['username'] ?? null),
                 'phoneNumber' => $customer['phone'] ?? null,
-                'bankCode'    => ['20946'],
+                'bankCode'    => self::VIRTUAL_ACCOUNT_BANK_CODES,
                 'businessId'  => $this->provider->username,
             ];
 
@@ -136,6 +138,7 @@ class PaymentPoint extends PaymentBase
             ?? data_get($p, 'data.account_number')
             ?? data_get($p, 'customer.account_number')
             ?? data_get($p, 'virtual_account.account_number')
+            ?? data_get($p, 'receiver.account_number')
             ?? $p['receiver_account_number']
             ?? null;
     }
@@ -147,7 +150,7 @@ class PaymentPoint extends PaymentBase
             'email'       => $user->email,
             'name'        => $user->username,
             'phoneNumber' => $user->phone,
-            'bankCode'    => ['20946'],
+            'bankCode'    => self::VIRTUAL_ACCOUNT_BANK_CODES,
             'businessId'  => $this->provider->username,
         ];
     }
@@ -191,37 +194,31 @@ class PaymentPoint extends PaymentBase
             return [];
         }
 
-        $data = $payload['data'] ?? [];
         $customer = $payload['customer'] ?? [];
         $creditedAmount = $this->creditedAmount($payload['amount_paid'] ?? 0);
 
         return [
             'user_email' => $customer['email'] ?? null,
             'provider' => $this->providerName,
-            'transaction_reference' => $data['tx_ref'] ?? null,
+            'transaction_reference' => $payload['transaction_id'] ?? data_get($payload, 'data.tx_ref'),
             'payment_reference' => null,
-            'response_message' => $data['description'] ?? 'Transaction successful',
+            'response_message' => $payload['description'] ?? data_get($payload, 'data.description', 'Transaction successful'),
             'completed_at' => now(),
             'funding_method' => 'bank_transfer',
-            'service_fee' => $data['app_fee'] ?? 0.00,
+            'service_fee' => $payload['settlement_fee'] ?? data_get($payload, 'data.app_fee', 0.00),
             'platform' => 'web',
             'transaction_type' => 'wallet_funding',
-            'account_or_phone' => $customer['phone_number'] ?? null,
+            'account_or_phone' => $customer['phone'] ?? ($customer['phone_number'] ?? null),
             'amount' => $creditedAmount,
             'status' => 'success',
-            'receiver' => $customer['phone_number'] ?? null,
+            'receiver' => data_get($payload, 'receiver.account_number')
+                ?? ($customer['phone'] ?? ($customer['phone_number'] ?? null)),
         ];
     }
 
-    // No confirmed PaymentPoint webhook signature documentation was
-    // available at implementation time. Best-effort scheme: expects a
-    // `x-paymentpoint-signature` header containing an HMAC-SHA256 hex
-    // digest of the raw request body, keyed by the provider's configured
-    // webhook secret (webhook_access column). MUST be verified against
-    // PaymentPoint's real dashboard/docs before relying on this — until
-    // then, populating webhook_access is what activates verification at
-    // all; leaving it empty makes every PaymentPoint webhook rejected
-    // (fails closed, not open).
+    // PaymentPoint signs the raw JSON body with HMAC-SHA256 using the
+    // dashboard security key and sends it in Paymentpoint-Signature.
+    // Leaving webhook_access empty deliberately fails closed.
     protected function verifyWebhookSignature(Request $request): bool
     {
         $secret = $this->provider->webhook_access;
@@ -232,7 +229,7 @@ class PaymentPoint extends PaymentBase
             return false;
         }
 
-        $received = $request->header('x-paymentpoint-signature');
+        $received = $request->header('Paymentpoint-Signature');
         if (empty($received)) {
             return false;
         }
