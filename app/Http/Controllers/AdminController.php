@@ -490,6 +490,17 @@ class AdminController extends Controller
                     continue;
                 }
 
+                // Gateway management uses the user-facing `connection`
+                // switch, while providers persist that state as `active`.
+                // `connection` is an accessor, so it would otherwise be
+                // discarded by prepareModelData and the toggle would appear
+                // to save while leaving the gateway unchanged.
+                if (in_array($table, ['providers', 'payment-gateways', 'payment_gateways'], true)
+                    && array_key_exists('connection', $item)
+                    && !array_key_exists('active', $item)) {
+                    $item['active'] = filter_var($item['connection'], FILTER_VALIDATE_BOOLEAN);
+                }
+
                 // 1. Prepare Data (Normalize & Clean)
                 $data = $self->prepareModelData($item, $tableColumns);
                 if (empty($data)) {
@@ -556,6 +567,13 @@ class AdminController extends Controller
                         // Ensure providers (providerable pivot) is included in response so frontend can derive switch state
                         if (method_exists($model, 'providers')) {
                             $model->load('providers');
+                        }
+                        if ($model instanceof \App\Models\Provider) {
+                            // A toggle changes the usable gateway set. Avoid
+                            // serving the previous computed connection result
+                            // for the cache TTL after a successful update.
+                            Cache::forget("payment_provider_connection_{$model->id}");
+                            Cache::forget("payment_provider_balance_{$model->id}");
                         }
                         $results[] = $model;
                     }

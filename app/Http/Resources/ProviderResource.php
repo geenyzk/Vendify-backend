@@ -14,11 +14,10 @@ class ProviderResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        // Note: every PaymentFactory provider's connect() is currently an
-        // unimplemented stub that returns "" — calling it here would turn a
-        // real `connection` boolean into a falsy empty string, making every
-        // connected payment gateway look disconnected. Report the raw DB
-        // flag until connect() actually does a live check.
+        // Connection here means the admin's enabled/disabled gateway state.
+        // Do not call a live provider API while rendering a list of gateways;
+        // that makes the screen slow and can make a healthy saved connection
+        // look disconnected when a provider is temporarily unavailable.
         // Each gateway integration reads a different combination of these
         // (Flutterwave: api_key only. Monnify: api_key + secret_key +
         // username. PaymentPoint: password + api_key) — expose them
@@ -35,7 +34,7 @@ class ProviderResource extends JsonResource
             'password' => $this->password,
             'api_key' => $this->api_key,
             'secret_key' => $this->secret_key,
-            "connection" => $this->connection,
+            'connection' => (bool) $this->active,
             'identifier' => $this->identifier,
             'webhook' => $this->webhook,
             'charge_fee' => $this->charge_fee,
