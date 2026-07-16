@@ -117,10 +117,7 @@ class DataPlan extends Model
             // New shape: ["type" => "fiat"|"percentage", "value" => number].
             // "percentage" is a markup over cost price: cost + cost * value%.
             if (is_array($entry)) {
-                if (!array_key_exists('value', $entry) || !is_numeric($entry['value'])) {
-                    return null;
-                }
-                $value = (float) $entry['value'];
+                $value = (float) ($entry['value'] ?? 0);
                 if (($entry['type'] ?? 'fiat') === 'percentage') {
                     return round($this->resolveCostPrice() * (1 + $value / 100), 2);
                 }

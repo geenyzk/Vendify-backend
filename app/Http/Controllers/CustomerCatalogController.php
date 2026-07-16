@@ -43,9 +43,7 @@ class CustomerCatalogController extends Controller
                         'active' => (bool) $type->active,
                         'pivot' => ['active' => (bool) $type->pivot->active],
                     ])->values(),
-                ])
-                ->filter(fn (array $plan) => is_numeric($plan['price']) && (float) $plan['price'] > 0)
-                ->values()->all();
+                ])->values()->all();
             Cache::put($key, $networks, now()->addMinutes(10));
         }
 

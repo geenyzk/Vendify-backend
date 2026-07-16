@@ -205,19 +205,10 @@ class VTUServicesController extends Controller
         // the real (role-aware) price server-side and ignore whatever the
         // client sent.
         if ($service === 'data' && !empty($validated['data_plan'])) {
-            $dataPlan = DataPlan::query()->whereKey($validated['data_plan'])
-                ->where('active', true)
-                ->where(fn ($query) => $query->whereNull('is_draft')->orWhere('is_draft', false))
-                ->first();
-            $price = $dataPlan?->price;
-            if (!$dataPlan || !is_numeric($price) || (float) $price <= 0) {
-                return response()->json(['status' => 'error', 'message' => 'This data plan is currently unavailable.'], 422);
+            $dataPlan = DataPlan::find($validated['data_plan']);
+            if ($dataPlan) {
+                $validated['amount'] = (float) $dataPlan->price;
             }
-            if (!empty($validated['network']) && strtolower($validated['network']) !== strtolower($dataPlan->network)) {
-                return response()->json(['status' => 'error', 'message' => 'The selected plan does not belong to this network.'], 422);
-            }
-            $validated['plan_type'] = $dataPlan->plan_type;
-            $validated['amount'] = (float) $price;
         }
         if ($service === 'cable' && !empty($validated['cable_plan'])) {
             $cablePlan = CablePlan::find($validated['cable_plan']);
