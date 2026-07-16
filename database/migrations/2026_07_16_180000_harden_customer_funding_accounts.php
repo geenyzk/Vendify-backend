@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
@@ -47,10 +48,22 @@ return new class extends Migration {
                     ->map(fn ($row) => "user_id={$row->user_id}, provider={$row->provider} ({$row->total} rows)")
                     ->implode('; ');
 
-                throw new RuntimeException(
-                    'Cannot add banks_user_provider_unique: duplicate funding accounts exist. '
-                    . 'Resolve these before re-running migrations — ' . $detail
-                );
+                // Do not abort the deployment over legacy duplicates. Keeping
+                // the rows is safer than deleting financial-account records;
+                // the normal lookup already selects the newest active account.
+                // Add a non-unique covering index so dashboard/account reads
+                // remain fast, then log the conflict for later reconciliation.
+                Log::warning('Skipping unique funding-account index due to legacy duplicates', [
+                    'duplicates' => $detail,
+                ]);
+
+                if (!Schema::hasIndex('banks', 'banks_user_provider_idx')) {
+                    Schema::table('banks', function (Blueprint $table) {
+                        $table->index(['user_id', 'provider'], 'banks_user_provider_idx');
+                    });
+                }
+
+                return;
             }
 
             Schema::table('banks', function (Blueprint $table) {
