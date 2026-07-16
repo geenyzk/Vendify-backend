@@ -1238,6 +1238,19 @@ class AdminController extends Controller
             'status' => 'pending',
         ]);
 
+        // Affiliate control changes (funding aggregation, tunnel-all reroutes,
+        // redirects, settings) are all queued as directives — audit them with
+        // the admin who made the change. Credentials in the payload (reroute
+        // username/password) are redacted by AuditLogger.
+        AuditLogger::record(
+            'affiliate_directive_queued',
+            subject: $instance,
+            changes: ['type' => $validated['type'], 'payload' => $validated['payload'] ?? []],
+            description: sprintf("Queued '%s' directive for affiliate %s", $validated['type'], $instance->name),
+            context: ['directive_id' => $directive->id, 'type' => $validated['type']],
+            subjectLabel: $instance->name,
+        );
+
         return $this->success($directive, 'Directive queued');
     }
 

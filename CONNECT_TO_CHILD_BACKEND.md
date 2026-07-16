@@ -127,6 +127,61 @@ Tunneled vends are idempotent per `request-id` (child_tunnel_requests
 ledger) — a retried stuck transaction never charges the funding account
 twice.
 
+## Parent-managed funding (funding aggregation)
+
+When the affiliate's **"Aggregate funding to this platform"** toggle (Controls
+page) is on, the parent issues the child's customer bank accounts and receives
+all of their funding; the child never touches a payment provider. The parent
+then tells the child which customer to credit, keeping the child's local wallet
+in sync.
+
+All three endpoints use the same HMAC scheme as the directive channel and
+require the toggle to be on (otherwise `403`).
+
+**1. Request a virtual account for a customer** (on-demand, idempotent per
+customer):
+
+```text
+POST /api/child/{slug}/virtual-accounts
+{ "external_customer_id": "<child customer id>", "email": "...", "name": "...", "phone": "..." }
+-> { "external_customer_id", "provider", "account_number", "bank_name", "account_name" }
+```
+
+Call this the first time a customer wants a funding account; store what comes
+back and show it to the customer. Calling again for the same
+`external_customer_id` returns the existing account (no new provider account is
+created).
+
+**2. Pull credit events** (the child's sync cron polls these, same cadence as
+directives):
+
+```text
+GET /api/child/{slug}/credit-events
+-> [ { "id", "external_customer_id", "amount", "gross_amount", "fee", "provider", "reference", "created_at" }, ... ]
+```
+
+`amount` is what to credit the customer (already net of the payment provider's
+fee). For each event, credit the local customer identified by
+`external_customer_id` by `amount`, keyed on the unique `reference` so a
+re-delivered event is never applied twice.
+
+**3. Ack each credit event** once applied:
+
+```text
+POST /api/child/{slug}/credit-events/{id}/ack
+{ "result": "credited" | "failed", "note": "optional detail" }
+```
+
+The parent holds the money (it is the affiliate owner); the child's customer
+wallet is a mirror it keeps in sync from these events. The `reference` is the
+funding transaction reference, and the parent enqueues each funding exactly once
+even across payment-provider webhook retries — so the credit is safe to apply
+idempotently on the child.
+
+The `set_funding_mode` directive (`{ "aggregate": true|false, "parent_url": "..." }`)
+is queued when the toggle is flipped, so a child that wants to eact immediately
+(rather than re-reading its own config) can switch its funding UI to the parent.
+
 ## 6. Test the sync flow
 
 From the child app, you can test the connection without sending real data:

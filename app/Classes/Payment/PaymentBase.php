@@ -78,7 +78,7 @@ abstract class PaymentBase implements PaymentInterface
 
         // firstOrCreate keyed on the unique reference: concurrent/retried
         // webhooks converge on one row, so the child is told to credit once.
-        ChildCreditEvent::firstOrCreate(
+        $event = ChildCreditEvent::firstOrCreate(
             ['reference' => $reference],
             [
                 'child_instance_id' => $account->child_instance_id,
@@ -99,6 +99,31 @@ abstract class PaymentBase implements PaymentInterface
             'external_customer_id' => $account->external_customer_id,
             'amount' => $amount,
         ]);
+
+        // Audit only a genuinely new funding — a webhook retry that hit the
+        // existing row must not log (or imply) a second credit. Actor is the
+        // system: this runs from the provider's webhook, no admin present.
+        if ($event->wasRecentlyCreated) {
+            \App\Support\AuditLogger::record(
+                'child_funding_received',
+                subject: $event,
+                description: sprintf(
+                    'Received NGN %s funding for affiliate customer %s (to credit NGN %s)',
+                    number_format($amount + $fee, 2),
+                    $account->external_customer_id,
+                    number_format($amount, 2),
+                ),
+                context: [
+                    'child_instance_id' => $account->child_instance_id,
+                    'external_customer_id' => $account->external_customer_id,
+                    'reference' => $reference,
+                    'amount' => $amount,
+                    'fee' => $fee,
+                    'provider' => $this->providerName,
+                ],
+                subjectLabel: $reference,
+            );
+        }
 
         return true;
     }

@@ -6,6 +6,7 @@ use App\Classes\Payment\Payment;
 use App\Models\ChildCreditEvent;
 use App\Models\ChildInstance;
 use App\Models\ChildVirtualAccount;
+use App\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -43,16 +44,30 @@ class ChildFundingController extends Controller
             'email' => 'required|email|max:191',
             'name' => 'required|string|max:191',
             'phone' => 'nullable|string|max:32',
+            // The child sends regenerate=true on login/register so the customer
+            // always gets a fresh, parent-owned account. Optional reason is
+            // recorded on the audit entry ("login" | "register" | ...).
+            'regenerate' => 'nullable|boolean',
+            'reason' => 'nullable|string|max:40',
         ]);
 
-        // Idempotent: one account per (child, customer). Return the stored one
-        // instead of burning another reserved account at the provider.
         $existing = ChildVirtualAccount::where('child_instance_id', $instance->id)
             ->where('external_customer_id', $data['external_customer_id'])
             ->first();
 
-        if ($existing) {
+        if ($existing && !($data['regenerate'] ?? false)) {
+            // Idempotent: one account per (child, customer). Return the stored
+            // one instead of burning another reserved account at the provider.
             return $this->success($this->accountPayload($existing), 'Existing account returned');
+        }
+
+        // Regenerate: drop the current account(s) for this customer so the new
+        // one replaces them. NOTE: a payment into a replaced account will no
+        // longer auto-map — the child should surface only the latest account.
+        if ($existing) {
+            ChildVirtualAccount::where('child_instance_id', $instance->id)
+                ->where('external_customer_id', $data['external_customer_id'])
+                ->delete();
         }
 
         $account = Payment::generateChildAccount([
@@ -87,6 +102,27 @@ class ChildFundingController extends Controller
             'email' => $data['email'],
             'phone' => $data['phone'] ?? null,
         ]);
+
+        $regenerated = (bool) ($existing);
+        AuditLogger::record(
+            $regenerated ? 'child_virtual_account_regenerated' : 'child_virtual_account_issued',
+            subject: $record,
+            description: sprintf(
+                '%s virtual account %s for %s customer %s%s',
+                $regenerated ? 'Regenerated' : 'Issued',
+                $record->account_number,
+                $instance->name,
+                $data['external_customer_id'],
+                !empty($data['reason']) ? " (on {$data['reason']})" : '',
+            ),
+            context: [
+                'child_instance_id' => $instance->id,
+                'external_customer_id' => $data['external_customer_id'],
+                'provider' => $account['provider'],
+                'reason' => $data['reason'] ?? null,
+            ],
+            subjectLabel: $record->account_number,
+        );
 
         return $this->success($this->accountPayload($record), 'Account created', 201);
     }
