@@ -15,6 +15,7 @@ class CustomerDashboardController extends Controller
         $now = now();
         $creditSql = "transaction_type IN ('wallet_funding','wallet_transfer_in') OR (transaction_type IN ('manual_funding','wallet_withdrawal') AND plan_type = 'credit')";
 
+        $todayStart = $now->copy()->startOfDay();
         $monthly = Transaction::where('user_id', $user->id)
             ->where('created_at', '>=', $now->copy()->startOfMonth())
             ->selectRaw("SUM(CASE WHEN status = 'success' AND ($creditSql) THEN amount ELSE 0 END) AS deposits")
@@ -22,13 +23,8 @@ class CustomerDashboardController extends Controller
             ->selectRaw("SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successful")
             ->selectRaw("SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending")
             ->selectRaw("SUM(CASE WHEN status = 'fail' THEN 1 ELSE 0 END) AS failed")
-            ->first();
-
-        $today = Transaction::where('user_id', $user->id)
-            ->where('created_at', '>=', $now->copy()->startOfDay())
-            ->where('status', 'success')
-            ->selectRaw("SUM(CASE WHEN NOT ($creditSql) THEN amount ELSE 0 END) AS spend")
-            ->selectRaw("SUM(CASE WHEN transaction_type = 'data_subscription' THEN quantity ELSE 0 END) AS data_gb")
+            ->selectRaw("SUM(CASE WHEN created_at >= ? AND status = 'success' AND NOT ($creditSql) THEN amount ELSE 0 END) AS today_spend", [$todayStart])
+            ->selectRaw("SUM(CASE WHEN created_at >= ? AND status = 'success' AND transaction_type = 'data_subscription' THEN quantity ELSE 0 END) AS today_data_gb", [$todayStart])
             ->first();
 
         $chart = Transaction::where('user_id', $user->id)
@@ -55,8 +51,8 @@ class CustomerDashboardController extends Controller
                 'monthly_successful' => (int) ($monthly->successful ?? 0),
                 'monthly_pending' => (int) ($monthly->pending ?? 0),
                 'monthly_failed' => (int) ($monthly->failed ?? 0),
-                'today_spend' => (float) ($today->spend ?? 0),
-                'today_data_gb' => (float) ($today->data_gb ?? 0),
+                'today_spend' => (float) ($monthly->today_spend ?? 0),
+                'today_data_gb' => (float) ($monthly->today_data_gb ?? 0),
                 'tx_amount_30d' => $chart,
             ],
         ]);

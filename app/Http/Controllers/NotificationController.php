@@ -25,7 +25,7 @@ class NotificationController extends Controller
         $notifications = Auth::user()
             ->notifications()
             ->latest()
-            ->paginate($perPage);
+            ->paginate($perPage, ['id', 'type', 'notifiable_type', 'notifiable_id', 'data', 'read_at', 'created_at']);
 
         return response()->json([
             'message' => 'successful',
