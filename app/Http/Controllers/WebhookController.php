@@ -33,6 +33,17 @@ class WebhookController extends Controller
     public function handle(Request $request, string $type, string $identifier)
 
     {
+        // Every inbound webhook is logged the moment it arrives, before any
+        // parsing/verification can throw — so "the provider says they sent it
+        // but nothing happened" can always be traced to a concrete request.
+        Log::info('Webhook received', [
+            'type' => $type,
+            'identifier' => $identifier,
+            'ip' => $request->ip(),
+            'has_verif_hash' => $request->hasHeader('verif-hash'),
+            'has_signature' => $request->hasHeader('x-monnify-signature') || $request->hasHeader('signature'),
+            'content_length' => strlen((string) $request->getContent()),
+        ]);
 
         try {
             switch ($type) {
@@ -51,8 +62,31 @@ class WebhookController extends Controller
                     return VendorFactory::webhook($request, $identifier) ;
             }
         } catch (\Throwable $th) {
-            //throw $th;
-            $this->fail([], "Unauthorized", 401);
+            // This catch used to be silent: `//throw $th` with an unreturned
+            // fail(), so EVERY webhook exception vanished with no log and no
+            // response — the direct cause of "I paid but it never reflected and
+            // there's nothing in the logs". Now it records the real error and
+            // surfaces it on the Audit Log so a failed credit is always visible.
+            Log::error('Webhook handler threw', [
+                'type' => $type,
+                'identifier' => $identifier,
+                'error' => $th->getMessage(),
+                'where' => $th->getFile() . ':' . $th->getLine(),
+                'trace' => $th->getTraceAsString(),
+            ]);
+
+            AuditLogger::record(
+                'webhook_error',
+                description: "Webhook ({$type}/{$identifier}) failed: " . $th->getMessage(),
+                context: [
+                    'type' => $type,
+                    'identifier' => $identifier,
+                    'error' => $th->getMessage(),
+                    'where' => $th->getFile() . ':' . $th->getLine(),
+                ],
+            );
+
+            return $this->fail([], 'Webhook processing error', 500);
         }
     }
 
