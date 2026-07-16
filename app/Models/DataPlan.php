@@ -107,18 +107,25 @@ class DataPlan extends Model
     public function getPriceAttribute(): ?float
     {
         $user = Auth::user();
-        $type = $user?->role->name ?? 'user';   // nullsafe operator
-        $column = "{$type}_price"; // legacy column name
+        $role = $user?->role;
+        // New plans created by the admin form are keyed by role name, while
+        // older records and legacy price columns commonly use role.slug or
+        // user_type. Resolve all stable identifiers before falling back to
+        // the base customer price so a renamed/display-cased role does not
+        // make an otherwise sellable plan look unpriced.
+        $roleKeys = array_values(array_unique(array_filter([
+            $role?->name,
+            $role?->slug,
+            $user?->user_type,
+            'user',
+        ], fn ($key) => is_string($key) && $key !== '')));
 
-        // Prefer the exact role entry. Roles added after a plan was priced
-        // should use the customer/user configuration where one exists rather
-        // than rendering an invented zero price.
+        // Prefer a role-specific JSON entry, accepting the display name,
+        // slug, or legacy user_type. Roles added after a plan was priced use
+        // the customer/user configuration where one exists rather than an
+        // invented zero price.
         if (is_array($this->pricing)) {
-            $hasExactRolePrice = array_key_exists($type, $this->pricing);
-            $hasUserPrice = array_key_exists('user', $this->pricing);
-            $entry = $hasExactRolePrice
-                ? $this->pricing[$type]
-                : ($hasUserPrice ? $this->pricing['user'] : null);
+            $entry = $this->pricingEntryFor($roleKeys);
 
             if ($entry !== null) {
                 // New shape: ["type" => "fiat"|"percentage", "value" => number].
@@ -143,17 +150,35 @@ class DataPlan extends Model
             }
         }
 
-        // Fallback to the matching legacy role column, then the customer
-        // column. The latter keeps new roles usable with old plan records.
-        $legacyPrice = $this->getAttribute($column);
-        if ($legacyPrice !== null && is_numeric($legacyPrice)) {
-            return (float) $legacyPrice;
+        // Fallback to legacy per-role columns in the same order. A role name
+        // can contain spaces, so only slug-like keys are valid column names.
+        foreach ($roleKeys as $key) {
+            $column = preg_replace('/[^A-Za-z0-9_]/', '_', $key) . '_price';
+            $legacyPrice = $this->getAttribute($column);
+            if ($legacyPrice !== null && is_numeric($legacyPrice)) {
+                return (float) $legacyPrice;
+            }
         }
 
-        if ($type !== 'user') {
-            $userPrice = $this->getAttribute('user_price');
+        return null;
+    }
 
-            return $userPrice !== null && is_numeric($userPrice) ? (float) $userPrice : null;
+    /** @param array<int, string> $roleKeys */
+    private function pricingEntryFor(array $roleKeys): mixed
+    {
+        foreach ($roleKeys as $key) {
+            if (array_key_exists($key, $this->pricing)) {
+                return $this->pricing[$key];
+            }
+        }
+
+        // Older imports can differ only by case (e.g. Agent vs agent).
+        foreach ($roleKeys as $key) {
+            foreach ($this->pricing as $configuredRole => $entry) {
+                if (is_string($configuredRole) && strcasecmp($configuredRole, $key) === 0) {
+                    return $entry;
+                }
+            }
         }
 
         return null;
