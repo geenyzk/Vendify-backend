@@ -3,7 +3,6 @@
 namespace App\Classes\Payment\Provider;
 
 use App\Classes\Payment\PaymentBase;
-use App\Models\General;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request as HttpRequest;
@@ -42,6 +41,8 @@ class FlutterWave extends PaymentBase
         try {
             $payloadResponse = $this->formatPayload($payload);
             $response = Http::withHeaders($this->getHeaders())
+                ->connectTimeout(5)
+                ->timeout(15)
                 ->post($this->baseUrl() . "/virtual-account-numbers", $payloadResponse);
 
             Log::info("Generating virtual account for {$payload->email}...", [
@@ -88,16 +89,18 @@ class FlutterWave extends PaymentBase
             $nameParts = explode(' ', $sessionUser->fullname);
             $firstName = $nameParts[0] ?? '';
             $lastName = $nameParts[1] ?? '';
-            $gen = General::first();
-        return [
+        $request = [
             "email" => $sessionUser->email,
             "tx_ref" => $txRef,
             "phonenumber" => $sessionUser->phone,
             "is_permanent" => true,
             "firstname" => $firstName,
             "lastname" => $lastName,
-            "bvn" => $sessionUser->bvn ?? $gen?->bvn
         ];
+        if (!empty($sessionUser->bvn)) {
+            $request['bvn'] = $sessionUser->bvn;
+        }
+        return $request;
     }
 
     function formatResponse(array $data, ?User $user = null): array
@@ -110,12 +113,14 @@ class FlutterWave extends PaymentBase
             'account_type' => 'virtual',
             'bank_account' => $data['account_number'],
             'bank_name' => $data['bank_name'],
+            'account_name' => $data['account_name'] ?? trim($user->fullname),
             'provider' => $this->providerName,
             'status' => 'active',
             'amount' => $data['amount'] ?? 0.00,
             'ref' => $data['flw_ref'] ?? null,
             'tx_ref' => $data['tx_ref'],
-            'expired_at' => now()->addYears(1)
+            'currency' => 'NGN',
+            'expired_at' => null,
         ];
     }
     /**

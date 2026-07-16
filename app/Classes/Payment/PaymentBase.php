@@ -138,6 +138,9 @@ abstract class PaymentBase implements PaymentInterface
             // check before ever touching the network.
             $alreadyProvisioned = Bank::where('user_id', $user->id)
                 ->where('provider', $this->providerName)
+                ->where('status', 'active')
+                ->whereNotNull('bank_account')
+                ->whereNotNull('bank_name')
                 ->exists();
             if ($alreadyProvisioned) {
                 return;
@@ -150,13 +153,10 @@ abstract class PaymentBase implements PaymentInterface
                 return;
             }
 
-            $existing = Bank::where('user_id', $user->id)
-                ->where('bank_name', $response['bank_name'])
-                ->first();
-            if (!$existing) {
-                Bank::create($response);
-
-            }
+            Bank::updateOrCreate(
+                ['user_id' => $user->id, 'provider' => $this->providerName],
+                $response,
+            );
         } catch (\Throwable $th) {
             // Used to be a bare empty catch — a failure here (bad
             // credentials, provider API down, unexpected response shape)

@@ -166,6 +166,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/account/password', [AccountController::class, 'updatePassword']);
     Route::put('/account/pin', [AccountController::class, 'updatePin']);
     Route::post('/account/virtual-accounts', [AccountController::class, 'generateVirtualAccounts']);
+    Route::get('/wallet/funding-account', [AccountController::class, 'fundingAccount']);
 
     Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);

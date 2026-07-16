@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Classes\Payment\Payment;
 use App\HttpResponse;
+use App\Models\Bank;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -113,5 +114,40 @@ class AccountController extends Controller
         Payment::generateAccount($user);
 
         return $this->success(['user' => $user->fresh()->load('role.permissions')]);
+    }
+
+    public function fundingAccount(Request $request)
+    {
+        $user = $request->user();
+        $find = fn () => Bank::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->whereNotNull('bank_account')
+            ->whereNotNull('bank_name')
+            ->latest('id')->first();
+
+        $account = $find();
+        if (!$account) {
+            Payment::generateAccount($user);
+            $account = $find();
+        }
+
+        if (!$account) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'We could not create your funding account. Check that your profile identity details are complete, then retry.',
+                'retryable' => true,
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'ready',
+            'account' => [
+                'account_number' => $account->bank_account,
+                'bank_name' => $account->bank_name,
+                'account_name' => $account->account_name,
+                'currency' => $account->currency ?: 'NGN',
+            ],
+        ]);
     }
 }

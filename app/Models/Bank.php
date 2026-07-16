@@ -16,11 +16,14 @@ class Bank extends Model
         'account_type',
         'bank_account',
         'bank_name',
+        'account_name',
         'provider',
         'status',
         'amount',
         'ref',
         'tx_ref',
+        'currency',
+        'failure_reason',
         'expired_at',
     ];
 
