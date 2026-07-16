@@ -33,6 +33,12 @@ class Bank extends Model
 
     function getChargeAttribute(){
         $provider = Provider::whereName($this->provider)->first(['charge_fee', 'charge_type']);
+        // Bank rows can outlive a provider configuration (or be created while
+        // provisioning is still in progress). Do not let serialization of a
+        // user payload crash on a missing provider.
+        if (!$provider) {
+            return null;
+        }
         return $provider->charge_type == 'fiat' ?"NGN" . $provider->charge_fee :$provider->charge_fee ."%";
     }
 }

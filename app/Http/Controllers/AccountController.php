@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Classes\Payment\Payment;
 use App\HttpResponse;
 use App\Models\Bank;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -76,24 +78,54 @@ class AccountController extends Controller
     {
         $user = $request->user();
 
-        $rules = [
+        // The web client uses camelCase form state, while the API contract is
+        // snake_case. Normalize aliases here so a valid current PIN is not
+        // reported as "required" simply because it arrived as currentPin.
+        $request->merge([
+            'pin_confirmation' => $request->input('pin_confirmation', $request->input('pinConfirmation')),
+            'current_pin' => $request->input('current_pin', $request->input('currentPin')),
+        ]);
+
+        $validated = $request->validate([
             'pin' => ['required', 'digits:4'],
             'pin_confirmation' => ['required', 'same:pin'],
-        ];
+        ]);
+
         if ($user->pin) {
-            $rules['current_pin'] = ['required', 'digits:4'];
-        }
+            // Creating a PIN is auto-submitted as soon as the fourth
+            // confirmation digit is entered. A double tap/key repeat can send
+            // an identical retry after the first request has already saved
+            // the PIN. Treat that retry as success; it changes nothing and
+            // avoids incorrectly asking a brand-new user for a current PIN.
+            if (!$request->filled('current_pin') && Hash::check($validated['pin'], $user->pin)) {
+                return $this->pinUpdatedResponse($user);
+            }
 
-        $validated = $request->validate($rules);
+            $currentPin = $request->validate([
+                'current_pin' => ['required', 'digits:4'],
+            ])['current_pin'];
 
-        if ($user->pin && !Hash::check($validated['current_pin'], $user->pin)) {
-            return $this->fail(['current_pin' => ['Current PIN is incorrect.']], 'Current PIN is incorrect.', 422);
+            if (!Hash::check($currentPin, $user->pin)) {
+                return $this->fail(['current_pin' => ['Current PIN is incorrect.']], 'Current PIN is incorrect.', 422);
+            }
         }
 
         $user->update(['pin' => $validated['pin']]);
 
+        return $this->pinUpdatedResponse($user);
+    }
+
+    private function pinUpdatedResponse(User $user): JsonResponse
+    {
+        // PIN setup is also used immediately after registration, before any
+        // funding provider may have been configured. Return the lightweight
+        // auth payload; serializing the default User appends would evaluate
+        // Bank accessors and can dereference a missing provider's charge_type.
+        $freshUser = $user->fresh()->load('role.permissions');
+        $freshUser->setAppends(['has_pin']);
+
         return $this->success(
-            ['user' => $user->fresh()->load('role.permissions')],
+            ['user' => $freshUser],
             'Transaction PIN updated successfully.'
         );
     }
