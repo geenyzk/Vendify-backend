@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -59,16 +60,18 @@ class LoginRequest extends FormRequest
             ]);
         }
 
-        if (!Auth::attempt([
-            'email' => $user->email,
-            'password' => $this->input('password'),
-        ], $this->boolean('remember'))) {
+        // The identifier lookup already loaded the user. Verify its hash and
+        // establish the session directly instead of querying the user again
+        // through Auth::attempt().
+        if (!Hash::check($this->input('password'), $user->password)) {
             RateLimiter::hit($this->throttleKey(), self::DECAY_SECONDS);
 
             throw ValidationException::withMessages([
                 'login' => trans('auth.failed'),
             ]);
         }
+
+        Auth::login($user, $this->boolean('remember'));
 
         RateLimiter::clear($this->throttleKey());
     }

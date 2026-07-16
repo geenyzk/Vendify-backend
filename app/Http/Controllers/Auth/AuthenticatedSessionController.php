@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Support\AuditLogger;
-use App\Classes\Payment\Payment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\HttpResponse;
@@ -11,6 +10,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use Illuminate\Validation\ValidationException;
@@ -24,15 +24,10 @@ class AuthenticatedSessionController extends Controller
     {
         $user->load('role.permissions');
 
-        $appends = $user->getAppends();
-        $appends = array_values(array_unique(array_merge($appends, ['has_pin', 'banks'])));
-
-        if (!$includeDashboardData) {
-            $user->setAppends($appends);
-            return $user;
-        }
-
-        $user->setAppends($appends);
+        // Avoid the legacy query-backed default appends on session requests.
+        $user->setAppends($includeDashboardData
+            ? ['has_pin', 'banks', 'stats', 'badges', 'joined_at']
+            : ['has_pin']);
         return $user;
     }
 
@@ -61,20 +56,35 @@ class AuthenticatedSessionController extends Controller
      */
     public function store(LoginRequest $request)
     {
+        $profiling = (bool) config('performance.login_profiling', false);
+        $startedAt = hrtime(true);
+        $queries = 0;
+        $queryMilliseconds = 0.0;
+        $marks = [];
+
+        if ($profiling) {
+            DB::listen(function ($query) use (&$queries, &$queryMilliseconds) {
+                $queries++;
+                $queryMilliseconds += $query->time;
+            });
+        }
+
+        $mark = static function (string $name, int $from) use (&$marks): int {
+            $now = hrtime(true);
+            $marks[$name] = round(($now - $from) / 1_000_000, 2);
+            return $now;
+        };
 
         try {
+            $step = hrtime(true);
             $request->authenticate();
+            $step = $mark('authentication', $step);
             $user = Auth::user();
             $token = $user->createToken($user->username)->plainTextToken;
+            $step = $mark('token_creation', $step);
 
-            try {
-                Payment::generateAccount($user);
-            } catch (\Throwable $e) {
-                Log::warning('Virtual account generation failed during login', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            // Registration creates accounts and POST /account/virtual-accounts
+            // retries them. Login must not wait on third-party gateways.
 
             try {
                 $user->loginStamp();
@@ -84,6 +94,7 @@ class AuthenticatedSessionController extends Controller
                     'error' => $e->getMessage(),
                 ]);
             }
+            $step = $mark('login_stamp', $step);
 
             // Only staff sign-ins are audited. Customers log in constantly and
             // would bury the admin trail in noise; who accessed the control
@@ -97,10 +108,33 @@ class AuthenticatedSessionController extends Controller
                 );
             }
 
-            return $this->success([
+            $payload = [
                 'user' => $this->authUserPayload($user),
                 'token' => $token,
-            ]);
+            ];
+            $mark('serialization_prep', $step);
+            $response = $this->success($payload);
+
+            if ($profiling) {
+                $totalMilliseconds = round((hrtime(true) - $startedAt) / 1_000_000, 2);
+                Log::debug('Login performance profile', [
+                    'total_ms' => $totalMilliseconds,
+                    'query_count' => $queries,
+                    'query_ms' => round($queryMilliseconds, 2),
+                    'segments_ms' => $marks,
+                ]);
+                $response->headers->set('Server-Timing', implode(', ', [
+                    'app;dur=' . $totalMilliseconds,
+                    'db;dur=' . round($queryMilliseconds, 2) . ';desc="' . $queries . ' queries"',
+                    ...array_map(
+                        fn ($name, $duration) => str_replace('_', '-', $name) . ';dur=' . $duration,
+                        array_keys($marks),
+                        array_values($marks),
+                    ),
+                ]));
+            }
+
+            return $response;
         } catch (ValidationException $e) {
             error_log($e);
             return $this->fail($e->errors(), "Validation Error", 422);
