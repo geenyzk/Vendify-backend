@@ -10,9 +10,11 @@ use App\Models\User;
 use App\Services\Auth\SessionSecurityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use Illuminate\Validation\ValidationException;
 
@@ -78,6 +80,7 @@ class AuthenticatedSessionController extends Controller
             $step = hrtime(true);
             $user = $request->authenticate();
             $step = $mark('authentication', $step);
+            $this->ensureSessionSecuritySchema();
             $sessionSecurity = app(SessionSecurityService::class);
             $isMobile = $request->input('client_type') === 'mobile'
                 || $request->header('X-Client-Platform') === 'app';
@@ -153,6 +156,54 @@ class AuthenticatedSessionController extends Controller
             ]);
 
             return $this->fail([], 'Unable to sign in right now. Please try again.', 500);
+        }
+    }
+
+    /**
+     * Shared-hosting deployments currently upload over FTP and cannot run an
+     * Artisan release command. Keep login fail-closed, but allow the first
+     * successfully authenticated request after this security release to apply
+     * only the two required, non-destructive session migrations.
+     */
+    private function ensureSessionSecuritySchema(): void
+    {
+        if (Schema::hasTable('auth_sessions') && Schema::hasTable('auth_refresh_tokens')) {
+            return;
+        }
+
+        $lockPath = storage_path('framework/session-security-migration.lock');
+        $lock = fopen($lockPath, 'c');
+
+        if ($lock === false) {
+            throw new \RuntimeException('Unable to acquire the session security migration lock.');
+        }
+
+        try {
+            if (!flock($lock, LOCK_EX)) {
+                throw new \RuntimeException('Unable to lock the session security migration.');
+            }
+
+            clearstatcache();
+            if (!Schema::hasTable('auth_sessions') || !Schema::hasTable('auth_refresh_tokens')) {
+                Log::warning('Applying missing session security schema during authenticated login.');
+
+                $exitCode = Artisan::call('migrate', [
+                    '--path' => 'database/migrations/2026_07_17_120000_create_auth_sessions_table.php',
+                    '--force' => true,
+                ]);
+
+                if ($exitCode !== 0 || !Schema::hasTable('auth_sessions') || !Schema::hasTable('auth_refresh_tokens')) {
+                    throw new \RuntimeException('The session security database migration did not complete.');
+                }
+
+                Artisan::call('migrate', [
+                    '--path' => 'database/migrations/2026_07_17_120100_normalize_user_security_statuses.php',
+                    '--force' => true,
+                ]);
+            }
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
         }
     }
 

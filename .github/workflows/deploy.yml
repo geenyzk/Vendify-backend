@@ -58,3 +58,12 @@ jobs:
             **/.git*
             **/.env
             **/.env.*
+
+      - name: Run test database migrations
+        env:
+          DEPLOY_SECRET: ${{ secrets.TEST_DEPLOY_SECRET }}
+        run: |
+          test -n "$DEPLOY_SECRET" || { echo "TEST_DEPLOY_SECRET is not configured in GitHub Actions"; exit 1; }
+          curl --fail --show-error --silent --retry 3 --get \
+            --data-urlencode "token=$DEPLOY_SECRET" \
+            https://test.spurs-developers.com.ng/deploy/migrate
