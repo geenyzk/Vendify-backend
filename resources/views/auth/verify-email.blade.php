@@ -14,7 +14,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #111827;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -24,8 +24,9 @@
 
         .container {
             background: white;
-            border-radius: 8px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
             padding: 40px;
             max-width: 400px;
             width: 100%;
@@ -36,14 +37,25 @@
             margin-bottom: 30px;
         }
 
+        .brand-mark {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 18px;
+            padding: 4px;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            background: #fff;
+            object-fit: contain;
+        }
+
         .header h1 {
-            color: #333;
+            color: #111827;
             font-size: 28px;
             margin-bottom: 10px;
         }
 
         .header p {
-            color: #666;
+            color: #64748b;
             font-size: 14px;
         }
 
@@ -54,7 +66,7 @@
         label {
             display: block;
             margin-bottom: 8px;
-            color: #333;
+            color: #334155;
             font-weight: 500;
             font-size: 14px;
         }
@@ -63,7 +75,7 @@
             width: 100%;
             padding: 12px;
             border: 1px solid #ddd;
-            border-radius: 4px;
+            border-radius: 12px;
             font-size: 16px;
             font-weight: 600;
             letter-spacing: 2px;
@@ -73,8 +85,8 @@
 
         input[type="text"]:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #ff7a1a;
+            box-shadow: 0 0 0 4px rgba(255, 122, 26, 0.14);
         }
 
         input[type="text"]::placeholder {
@@ -88,10 +100,10 @@
         button {
             width: 100%;
             padding: 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #111827;
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 12px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
@@ -100,7 +112,7 @@
 
         button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 8px 20px rgba(17, 24, 39, 0.2), 0 0 0 2px rgba(255, 122, 26, 0.16);
         }
 
         button:active {
@@ -119,7 +131,7 @@
         }
 
         .resend-link a {
-            color: #667eea;
+            color: #111827;
             text-decoration: none;
             font-size: 14px;
             font-weight: 500;
@@ -127,7 +139,7 @@
         }
 
         .resend-link a:hover {
-            color: #764ba2;
+            color: #ff7a1a;
             text-decoration: underline;
         }
 
@@ -140,11 +152,12 @@
         }
 
         .success-message {
-            color: #28a745;
+            color: #0a9f61;
             font-size: 14px;
             margin-top: 10px;
             text-align: center;
             display: none;
+            animation: confirmation-pulse 0.55s ease-out;
         }
 
         .loading {
@@ -155,7 +168,7 @@
 
         .spinner {
             border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
+            border-top: 3px solid #ff7a1a;
             border-radius: 50%;
             width: 20px;
             height: 20px;
@@ -172,12 +185,27 @@
                 transform: rotate(360deg);
             }
         }
+
+        @keyframes confirmation-pulse {
+            0% { transform: scale(0.98); opacity: 0.5; }
+            70% { transform: scale(1.01); opacity: 1; }
+            100% { transform: scale(1); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
         <div class="header">
+            <img class="brand-mark" src="{{ asset('images/vendify-logo.png') }}" alt="Vendify">
             <h1>Verify Your Email</h1>
             <p>Enter the 6-digit code sent to your email address</p>
         </div>

@@ -3,9 +3,9 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="description" content="A polished, professional interface for your VTU platform.">
+        <meta name="description" content="Vendify makes airtime, data, bill payments and wallet services feel instant and secure.">
 
-        <title>VTU Platform</title>
+        <title>Vendify</title>
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600,700" rel="stylesheet" />
@@ -22,9 +22,9 @@
         <div class="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-4 sm:px-6 lg:px-8">
             <header class="mb-8 flex items-center justify-between rounded-full border border-slate-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur sm:px-6">
                 <a href="{{ url('/') }}" class="flex items-center gap-3">
-                    <span class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">VT</span>
+                    <span class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white p-0.5"><img src="{{ asset('images/vendify-logo.png') }}" alt="Vendify" class="h-full w-full object-contain"></span>
                     <span class="flex flex-col">
-                        <span class="text-sm font-semibold uppercase tracking-[0.2em] text-slate-900">VTU Platform</span>
+                        <span class="text-sm font-semibold uppercase tracking-[0.2em] text-slate-900">Vendify</span>
                         <span class="text-sm text-slate-500">Secure digital services</span>
                     </span>
                 </a>
@@ -32,7 +32,7 @@
                 @if (Route::has('login'))
                     <nav class="flex items-center gap-2 sm:gap-3">
                         @auth
-                            <a href="{{ url('/dashboard') }}" class="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700">
+                            <a href="{{ url('/dashboard') }}" class="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 hover:ring-2 hover:ring-orange-200">
                                 Dashboard
                             </a>
                         @else
@@ -41,7 +41,7 @@
                             </a>
 
                             @if (Route::has('register'))
-                                <a href="{{ route('register') }}" class="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700">
+                                <a href="{{ route('register') }}" class="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 hover:ring-2 hover:ring-orange-200">
                                     Create account
                                 </a>
                             @endif
@@ -53,7 +53,8 @@
             <main class="flex-1">
                 <section class="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
                     <div class="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm sm:p-10 lg:p-12">
-                        <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
+                        <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-medium text-slate-700">
+                            <span class="h-1.5 w-1.5 rounded-full" style="background:#ff7a1a;box-shadow:0 0 8px rgba(255,122,26,.28)"></span>
                             Trusted operations • Fast onboarding
                         </span>
                         <h1 class="mt-5 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
@@ -196,7 +197,7 @@
             </main>
 
             <footer class="mt-8 flex flex-col gap-3 border-t border-slate-200 pt-6 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-                <p>© {{ date('Y') }} VTU Platform. Focused on clarity and reliability.</p>
+                <p>© {{ date('Y') }} Vendify. Focused on clarity and reliability.</p>
                 @if (Route::has('login'))
                     <div class="flex flex-wrap gap-4">
                         <a href="{{ route('login') }}" class="transition hover:text-slate-900">Support</a>
