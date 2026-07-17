@@ -207,12 +207,21 @@ class VTUServicesController extends Controller
         if ($service === 'data' && !empty($validated['data_plan'])) {
             $dataPlan = DataPlan::find($validated['data_plan']);
             if ($dataPlan) {
+                // price is role-aware and is null when this plan has no price
+                // for the buyer's role. (float) null would be 0 — vending real
+                // data for ₦0 while the vendor still charges us. Refuse instead.
+                if ($dataPlan->price === null || (float) $dataPlan->price <= 0) {
+                    return $this->fail([], 'This data plan is not available for your account right now. Please contact support.', 422);
+                }
                 $validated['amount'] = (float) $dataPlan->price;
             }
         }
         if ($service === 'cable' && !empty($validated['cable_plan'])) {
             $cablePlan = CablePlan::find($validated['cable_plan']);
             if ($cablePlan) {
+                if ($cablePlan->price === null || (float) $cablePlan->price <= 0) {
+                    return $this->fail([], 'This cable plan is not available for your account right now. Please contact support.', 422);
+                }
                 $validated['amount'] = (float) $cablePlan->price;
             }
         }

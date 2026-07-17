@@ -129,7 +129,10 @@ class RegisteredUserController extends Controller
             }
 
             try {
-                $user->assignRole('user');
+                // Assign the configured default customer role (is_default),
+                // NOT a hardcoded 'user' role that doesn't exist — the latter
+                // left customers role-less and their plan prices showing ₦0.00.
+                $user->assignDefault();
             } catch (\Throwable $e) {
                 Log::warning('Role assignment failed during registration', [
                     'user_id' => $user->id,

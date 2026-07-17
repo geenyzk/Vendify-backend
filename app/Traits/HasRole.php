@@ -32,6 +32,27 @@ trait HasRole
     }
 
     /**
+     * Assign the default customer role — the one flagged is_default.
+     *
+     * This is what a newly registered customer must get. Registration used to
+     * call assignRole('user'), but no role is named/slugged 'user', so that
+     * silently no-op'd and left every new customer role-less (role_id null).
+     * A role-less customer has no role-specific plan pricing, so their data
+     * plan prices resolve to nothing and show as ₦0.00 — the "new plans are
+     * 0 naira" bug. Assigning the real default role fixes it at the source.
+     */
+    public function assignDefault(): self
+    {
+        $role = Role::where('is_default', true)->orderBy('id')->first();
+
+        if ($role) {
+            $this->update(['role_id' => $role->id]);
+        }
+
+        return $this;
+    }
+
+    /**
      * Check if user has a specific role.
      */
     public function hasRole($roleNameOrSlug): bool
