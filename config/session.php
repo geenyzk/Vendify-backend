@@ -2,6 +2,14 @@
 
 use Illuminate\Support\Str;
 
+$appHost = parse_url((string) env('APP_URL', ''), PHP_URL_HOST);
+$frontendOrigins = (string) env('FRONTEND_URL', '');
+$isVendifyDeployment = (is_string($appHost) && ($appHost === 'vendify.com.ng' || str_ends_with($appHost, '.vendify.com.ng')))
+    || str_contains($frontendOrigins, 'vendify.com.ng');
+$defaultDomain = $isVendifyDeployment
+    ? '.vendify.com.ng'
+    : null;
+
 return [
 
     /*
@@ -156,7 +164,7 @@ return [
     |
     */
 
-    'domain' => env('SESSION_DOMAIN'),
+    'domain' => env('SESSION_DOMAIN', $defaultDomain),
 
     /*
     |--------------------------------------------------------------------------

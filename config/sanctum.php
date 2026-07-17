@@ -14,13 +14,17 @@ return [
     | and production domains which access your API via a frontend SPA.
     |
     */
-    'stateful' => array_merge(explode(',', env('SANCTUM_STATEFUL_DOMAINS', 'localhost:5173,127.0.0.1:5173')), array_filter([
-        // Both helpers are designed for string concatenation and return
-        // ",host" — trim the comma so the entries actually match when
-        // merged as array items.
-        ltrim(Sanctum::currentApplicationUrlWithPort(), ','),
-        ltrim(Sanctum::currentRequestHost(), ','),
-    ])),
+    'stateful' => array_merge(
+        explode(',', env('SANCTUM_STATEFUL_DOMAINS', 'localhost:5173,127.0.0.1:5173')),
+        ['vendify.com.ng', 'www.vendify.com.ng', 'api.vendify.com.ng'],
+        array_filter([
+            // Both helpers are designed for string concatenation and return
+            // ",host" — trim the comma so the entries actually match when
+            // merged as array items.
+            ltrim(Sanctum::currentApplicationUrlWithPort(), ','),
+            ltrim(Sanctum::currentRequestHost(), ','),
+        ])
+    ),
 
     /*
     |--------------------------------------------------------------------------
