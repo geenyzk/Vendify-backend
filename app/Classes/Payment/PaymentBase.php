@@ -312,10 +312,41 @@ abstract class PaymentBase implements PaymentInterface
 
                 Log::info('Webhook received.', ['transaction_reference' => $reference, 'status' => $callback['status']]);
 
-                Transaction::updateOrCreate(
+                $transaction = Transaction::updateOrCreate(
                     ['transaction_reference' => $reference],
                     $callback
                 );
+
+                if ($callback['status'] === 'success') {
+                    // Notify only after the wallet credit and transaction
+                    // commit. The existing successful-reference check makes
+                    // webhook retries a no-op, so this cannot duplicate it.
+                    DB::afterCommit(function () use ($user, $transaction, $callback) {
+                        try {
+                            $user->notify(new \App\Notifications\AppNotification(
+                                'wallet_funded',
+                                'Wallet funded',
+                                sprintf(
+                                    '₦%s has been added to your wallet via %s.',
+                                    number_format((float) $callback['amount'], 2),
+                                    $transaction->provider ?: 'bank transfer',
+                                ),
+                                [
+                                    'transaction_reference' => $transaction->transaction_reference,
+                                    'amount' => (float) $callback['amount'],
+                                ],
+                            ));
+                        } catch (\Throwable $e) {
+                            // A notification must never undo or make a
+                            // confirmed payment webhook look unsuccessful.
+                            Log::warning('Wallet funding notification failed.', [
+                                'transaction_reference' => $transaction->transaction_reference,
+                                'user_id' => $user->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    });
+                }
             });
 
             return true;
