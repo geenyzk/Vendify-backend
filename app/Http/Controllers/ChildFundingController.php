@@ -53,30 +53,35 @@ class ChildFundingController extends Controller
 
         $existing = ChildVirtualAccount::where('child_instance_id', $instance->id)
             ->where('external_customer_id', $data['external_customer_id'])
-            ->first();
+            ->get();
 
-        if ($existing && !($data['regenerate'] ?? false)) {
-            // Idempotent: one account per (child, customer). Return the stored
-            // one instead of burning another reserved account at the provider.
-            return $this->success($this->accountPayload($existing), 'Existing account returned');
+        if ($existing->isNotEmpty() && !($data['regenerate'] ?? false)) {
+            // Idempotent: one set of accounts per (child, customer). Return the
+            // stored ones instead of burning fresh reserved accounts.
+            return $this->success(
+                ['accounts' => $existing->map(fn ($a) => $this->accountPayload($a))->all()],
+                'Existing accounts returned',
+            );
         }
 
         // Regenerate: drop the current account(s) for this customer so the new
-        // one replaces them. NOTE: a payment into a replaced account will no
-        // longer auto-map — the child should surface only the latest account.
-        if ($existing) {
+        // ones replace them. NOTE: a payment into a replaced account will no
+        // longer auto-map — the child should surface only the latest set.
+        if ($existing->isNotEmpty()) {
             ChildVirtualAccount::where('child_instance_id', $instance->id)
                 ->where('external_customer_id', $data['external_customer_id'])
                 ->delete();
         }
 
-        $account = Payment::generateChildAccount([
+        // Every bank the parent can offer (e.g. PalmPay + 9PSB), so the child
+        // can fill each of its hard-coded bank slots from parent-owned accounts.
+        $accounts = Payment::generateChildAccounts([
             'email' => $data['email'],
             'name' => $data['name'],
             'phone' => $data['phone'] ?? null,
         ]);
 
-        if (!$account) {
+        if (empty($accounts)) {
             Log::error('Child virtual account generation returned nothing', [
                 'child_instance_id' => $instance->id,
                 'external_customer_id' => $data['external_customer_id'],
@@ -90,27 +95,31 @@ class ChildFundingController extends Controller
             ->where('external_id', $data['external_customer_id'])
             ->value('id');
 
-        $record = ChildVirtualAccount::create([
-            'child_instance_id' => $instance->id,
-            'external_customer_id' => $data['external_customer_id'],
-            'child_customer_id' => $childCustomerId,
-            'provider' => $account['provider'],
-            'account_number' => $account['account_number'],
-            'bank_name' => $account['bank_name'] ?? null,
-            'account_name' => $account['account_name'] ?? null,
-            'reference' => $account['reference'] ?? null,
-            'email' => $data['email'],
-            'phone' => $data['phone'] ?? null,
-        ]);
+        $records = [];
+        foreach ($accounts as $account) {
+            $records[] = ChildVirtualAccount::create([
+                'child_instance_id' => $instance->id,
+                'external_customer_id' => $data['external_customer_id'],
+                'child_customer_id' => $childCustomerId,
+                'provider' => $account['provider'],
+                'account_number' => $account['account_number'],
+                'bank_name' => $account['bank_name'] ?? null,
+                'account_name' => $account['account_name'] ?? null,
+                'reference' => $account['reference'] ?? null,
+                'email' => $data['email'],
+                'phone' => $data['phone'] ?? null,
+            ]);
+        }
 
-        $regenerated = (bool) ($existing);
+        $regenerated = $existing->isNotEmpty();
         AuditLogger::record(
             $regenerated ? 'child_virtual_account_regenerated' : 'child_virtual_account_issued',
-            subject: $record,
+            subject: $records[0],
             description: sprintf(
-                '%s virtual account %s for %s customer %s%s',
+                '%s %d virtual account(s) (%s) for %s customer %s%s',
                 $regenerated ? 'Regenerated' : 'Issued',
-                $record->account_number,
+                count($records),
+                collect($records)->pluck('bank_name')->filter()->implode(', ') ?: 'unnamed banks',
                 $instance->name,
                 $data['external_customer_id'],
                 !empty($data['reason']) ? " (on {$data['reason']})" : '',
@@ -118,13 +127,21 @@ class ChildFundingController extends Controller
             context: [
                 'child_instance_id' => $instance->id,
                 'external_customer_id' => $data['external_customer_id'],
-                'provider' => $account['provider'],
+                'accounts' => collect($records)->map(fn ($r) => [
+                    'provider' => $r->provider,
+                    'bank_name' => $r->bank_name,
+                    'account_number' => $r->account_number,
+                ])->all(),
                 'reason' => $data['reason'] ?? null,
             ],
-            subjectLabel: $record->account_number,
+            subjectLabel: $records[0]->account_number,
         );
 
-        return $this->success($this->accountPayload($record), 'Account created', 201);
+        return $this->success(
+            ['accounts' => collect($records)->map(fn ($r) => $this->accountPayload($r))->all()],
+            'Accounts created',
+            201,
+        );
     }
 
     /** Pending credit events for this child; marks them delivered. */

@@ -33,28 +33,24 @@ class ChildVirtualAccount extends Model
 
     /**
      * Find the virtual account an incoming funding callback belongs to.
-     * Prefers the account number (unambiguous); falls back to the email the
-     * account was created with when the payload doesn't echo the number.
+     *
+     * Matches ONLY on the destination account number — the account the money
+     * was actually paid into, which belongs to exactly one holder. Email is
+     * deliberately NOT used: a parent user and a child customer can share an
+     * email, and this runs (PaymentBase::webhook) BEFORE the parent-user
+     * lookup, so an email fallback would hijack an ordinary parent deposit into
+     * the child credit outbox and never credit the parent's wallet. When the
+     * provider can't supply the account number (returns null), this returns
+     * null and the funding is treated as a normal parent deposit.
      *
      * @param array<string, mixed> $callback
      */
     public static function resolveFromCallback(array $callback, ?string $accountNumber = null): ?self
     {
-        // account_number is the unambiguous key; the provider extracts it from
-        // the raw webhook (PaymentPoint::virtualAccountNumber).
-        if (!empty($accountNumber)) {
-            $match = static::where('account_number', $accountNumber)->first();
-            if ($match) {
-                return $match;
-            }
+        if (empty($accountNumber)) {
+            return null;
         }
 
-        // Fallback: the email the account was created with. Only used when the
-        // payload carries no account number, and it still can't collide with a
-        // parent user because the webhook only reaches here after no parent
-        // User owns the email (see PaymentBase::webhook).
-        $email = $callback['user_email'] ?? null;
-
-        return !empty($email) ? static::where('email', $email)->first() : null;
+        return static::where('account_number', $accountNumber)->first();
     }
 }

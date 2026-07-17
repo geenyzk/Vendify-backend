@@ -82,7 +82,12 @@ class PaymentPoint extends PaymentBase
      * or null on failure.
      *
      * @param array{email?:string,name?:string,username?:string,phone?:string} $customer
-     * @return array{account_number:string,bank_name:?string,account_name:?string,reference:?string}|null
+     * Returns EVERY bank account PaymentPoint issued (it returns one per bank
+     * code in VIRTUAL_ACCOUNT_BANK_CODES — e.g. PalmPay and 9PSB), so the child
+     * can offer each of its hard-coded bank options funded by the parent. This
+     * used to keep only bankAccounts.0 and silently drop the rest.
+     *
+     * @return array<int, array{account_number:string,bank_name:?string,account_name:?string,reference:?string}>|null
      */
     public function generateForCustomer(array $customer): ?array
     {
@@ -108,17 +113,18 @@ class PaymentPoint extends PaymentBase
                 return null;
             }
 
-            $bankAccount = $response->json('bankAccounts.0');
-            if (!$bankAccount || empty($bankAccount['accountNumber'])) {
-                return null;
-            }
+            $accounts = collect((array) $response->json('bankAccounts'))
+                ->filter(fn ($b) => is_array($b) && !empty($b['accountNumber']))
+                ->map(fn ($b) => [
+                    'account_number' => $b['accountNumber'],
+                    'bank_name'      => $b['bankName'] ?? null,
+                    'account_name'   => $b['accountName'] ?? null,
+                    'reference'      => $b['Reserved_Account_Id'] ?? null,
+                ])
+                ->values()
+                ->all();
 
-            return [
-                'account_number' => $bankAccount['accountNumber'],
-                'bank_name'      => $bankAccount['bankName'] ?? null,
-                'account_name'   => $bankAccount['accountName'] ?? null,
-                'reference'      => $bankAccount['Reserved_Account_Id'] ?? null,
-            ];
+            return $accounts !== [] ? $accounts : null;
         } catch (\Throwable $e) {
             Log::error('PaymentPoint::generateForCustomer exception: ' . $e->getMessage());
             return null;
