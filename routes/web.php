@@ -11,6 +11,28 @@ Route::get("/", function(){
     return view("welcome");
 });
 
+// A browser on vendify.com.ng cannot read a host-only XSRF cookie created by
+// api.vendify.com.ng. Return the token for the same server-side session so the
+// SPA can send it in the standard X-CSRF-TOKEN header.
+Route::get('/sanctum/csrf-token', function () {
+    $origin = (string) request()->header('Origin');
+    $allowedOrigins = [
+        'https://vendify.com.ng',
+        'https://www.vendify.com.ng',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+    ];
+
+    $response = response()->json(['token' => csrf_token()]);
+    if (in_array($origin, $allowedOrigins, true)) {
+        $response->headers->set('Access-Control-Allow-Origin', $origin);
+        $response->headers->set('Access-Control-Allow-Credentials', 'true');
+        $response->headers->set('Vary', 'Origin');
+    }
+
+    return $response;
+});
+
 Route::get('/cache', function () {
     return cache()->flush();
 });
@@ -141,4 +163,3 @@ Route::get('/setup', function () {
         'output' => $output,
     ]);
 })->withoutMiddleware('web');
-
