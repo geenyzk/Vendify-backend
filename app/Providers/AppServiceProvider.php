@@ -24,6 +24,7 @@ use App\Repository\Admin\UserRepository;
 
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
@@ -73,7 +74,10 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            $settings = Setting::first();
+            // Login and every API request boot the application. Avoid a
+            // settings-table query on each request while still picking up
+            // admin mail changes promptly.
+            $settings = Cache::remember('runtime_mail_settings', now()->addMinute(), fn () => Setting::first());
             if (!$settings) {
                 return;
             }
@@ -118,6 +122,9 @@ class AppServiceProvider extends ServiceProvider
             $model::saved(fn () => PerformanceCache::clearBranding());
             $model::deleted(fn () => PerformanceCache::clearBranding());
         }
+
+        Setting::saved(fn () => Cache::forget('runtime_mail_settings'));
+        Setting::deleted(fn () => Cache::forget('runtime_mail_settings'));
 
         foreach ([Network::class, NetworkType::class, DataPlan::class, AirtimePlan::class, CablePlan::class, BillPlan::class, DiscoProviderId::class, Discount::class] as $model) {
             $model::saved(fn () => PerformanceCache::clearCatalog());
