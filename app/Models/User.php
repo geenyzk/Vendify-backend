@@ -99,6 +99,20 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->status === self::STATUS_ACTIVE;
     }
 
+    /**
+     * Pricing tier for the legacy per-tier discount columns on ExamPlan,
+     * AirtimePinPlan and DataPinPlan — their price accessor reads
+     * "{tier}_discount" (user_discount, agent_discount, api_discount,
+     * bonanza_discount). This method was called by those accessors but never
+     * defined, so serialising any of those plans for a logged-in user threw
+     * "Call to undefined method pricingTier()". It mirrors
+     * UserController::userTypeForRole and matches the stored user_type values.
+     */
+    public function pricingTier(): string
+    {
+        return $this->user_type ?: 'user';
+    }
+
     public function getReferralsAttribute()
     {
         return User::whereReferredBy($this->id)->get();
