@@ -3,8 +3,10 @@
 use App\Http\Middleware\AiMonitor;
 use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\EnsureUserType;
+use App\Http\Middleware\EnforceSecureSession;
 use App\Http\Middleware\HandleRequest;
 use App\Http\Middleware\ProfilePerformance;
+use App\Http\Middleware\RequireRecentAuthentication;
 use App\Http\Middleware\TrackLastSeen;
 use App\Http\Middleware\VerifyChildSignature;
 use App\Http\Middleware\VerifySimDeviceSignature;
@@ -42,6 +44,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'user_type' => EnsureUserType::class,
             'permission' => EnsurePermission::class,
+            'secure.session' => EnforceSecureSession::class,
+            'recent.auth' => RequireRecentAuthentication::class,
             'verify.child.hmac' => VerifyChildSignature::class,
             'verify.sim.hmac' => VerifySimDeviceSignature::class,
         ]);

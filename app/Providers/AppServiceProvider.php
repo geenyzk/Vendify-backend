@@ -26,6 +26,9 @@ use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -48,6 +51,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->applyDatabaseMailConfig();
         $this->registerPerformanceCacheInvalidation();
+        $this->registerSecurityRateLimiters();
 
         // The default ResetPassword notification builds its link from the
         // named `password.reset` web route, which resolves to the Laravel
@@ -59,6 +63,20 @@ class AppServiceProvider extends ServiceProvider
 
             return "{$frontendUrl}/reset-password?token={$token}&email=" . urlencode($notifiable->getEmailForPasswordReset());
         });
+    }
+
+    protected function registerSecurityRateLimiters(): void
+    {
+        RateLimiter::for('auth.refresh', fn (Request $request) => [
+            Limit::perMinute(12)->by('refresh|' . $request->ip()),
+        ]);
+        RateLimiter::for('session.extend', fn (Request $request) => [
+            Limit::perMinute(6)->by('extend|' . ($request->user()?->id ?: $request->ip())),
+        ]);
+        RateLimiter::for('sensitive-auth', fn (Request $request) => [
+            Limit::perMinute(5)->by('sensitive|' . ($request->user()?->id ?: $request->ip())),
+            Limit::perMinute(20)->by('sensitive-ip|' . $request->ip()),
+        ]);
     }
 
     // Admin-configured mail settings (Settings > Email tab) override

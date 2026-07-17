@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use App\Models\User;
+use App\Support\AuditLogger;
 
 class LoginRequest extends FormRequest
 {
@@ -35,6 +36,8 @@ class LoginRequest extends FormRequest
         return [
             'login' => ['required', 'string'],
             'password' => ['required', 'string'],
+            'remember' => ['sometimes', 'boolean'],
+            'client_type' => ['sometimes', 'in:web,mobile'],
         ];
     }
 
@@ -43,7 +46,7 @@ class LoginRequest extends FormRequest
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function authenticate()
+    public function authenticate(): User
     {
         $this->ensureIsNotRateLimited();
         $login  = $this->input('login');
@@ -55,6 +58,7 @@ class LoginRequest extends FormRequest
 
         if (!$user) {
             RateLimiter::hit($this->throttleKey(), self::DECAY_SECONDS);
+            AuditLogger::record('login_failed', description: 'A sign-in attempt failed.');
             throw ValidationException::withMessages([
                 'login' => trans('auth.failed'),
             ]);
@@ -63,17 +67,29 @@ class LoginRequest extends FormRequest
         // The identifier lookup already loaded the user. Verify its hash and
         // establish the session directly instead of querying the user again
         // through Auth::attempt().
-        if (!Hash::check($this->input('password'), $user->password)) {
+        if (!Hash::check($this->input('password'), $user->password)
+            || $user->is_active === false
+            || !$user->isActive()) {
             RateLimiter::hit($this->throttleKey(), self::DECAY_SECONDS);
+            AuditLogger::record(
+                'login_failed',
+                subject: $user,
+                description: 'A sign-in attempt failed.',
+            );
 
             throw ValidationException::withMessages([
                 'login' => trans('auth.failed'),
             ]);
         }
 
-        Auth::login($user, $this->boolean('remember'));
+        $isMobile = $this->input('client_type') === 'mobile'
+            || $this->header('X-Client-Platform') === 'app';
+        if (!$isMobile) {
+            Auth::login($user, $this->boolean('remember'));
+        }
 
         RateLimiter::clear($this->throttleKey());
+        return $user;
     }
 
     /**

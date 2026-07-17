@@ -9,6 +9,8 @@ use App\Classes\TransactionService;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Auth\SessionSecurityService;
+use App\Support\AuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -101,8 +103,30 @@ class RegisteredUserController extends Controller
                 }
             }
 
-            Auth::login($user);
-            $token = $user->createToken($user->username)->plainTextToken;
+            $sessionSecurity = app(SessionSecurityService::class);
+            $isMobile = $request->input('client_type') === 'mobile'
+                || $request->header('X-Client-Platform') === 'app';
+            if ($isMobile) {
+                $credentials = $sessionSecurity->createMobileCredentials($user, $request);
+                if ($request->hasSession()) {
+                    Auth::guard('web')->logout();
+                    $request->session()->invalidate();
+                    $request->session()->regenerateToken();
+                }
+                $session = null;
+            } else {
+                Auth::login($user);
+                $request->session()->regenerate();
+                $session = $sessionSecurity->createWebSession($user, $request, $request->boolean('remember'));
+                $credentials = [];
+            }
+            AuditLogger::record(
+                'login',
+                subject: $user,
+                actor: $user,
+                description: 'Newly registered user signed in.',
+                context: ['channel' => $isMobile ? 'mobile' : 'web', 'auth_session_id' => $session?->id ?? $credentials['session']['id']],
+            );
 
             // Provisioning the virtual account calls a remote provider API, so
             // defer it until after the response is flushed to the client. The
@@ -183,7 +207,8 @@ class RegisteredUserController extends Controller
             return $this->success(
                 [
                     'user' => $user->fresh()->load('role.permissions'),
-                    'token' => $token,
+                    'session' => $session ? $sessionSecurity->payload($session, $session->id) : $credentials['session'],
+                    ...$credentials,
                     'message' => 'Registration successful! Please verify your email.',
                     'email_verified_at' => $user->email_verified_at,
                     'verification_email_sent' => true,

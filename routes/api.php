@@ -12,6 +12,7 @@ use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\SessionSecurityController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\BroadcastController;
@@ -67,6 +68,8 @@ Route::get('/app/download/{id}', [AppReleaseController::class, 'download'])->whe
 
 Route::post('/login', [AuthenticatedSessionController::class, 'store']);
 Route::post('/register', [RegisteredUserController::class, 'store']);
+Route::post('/auth/refresh', [SessionSecurityController::class, 'refresh'])
+    ->middleware('throttle:auth.refresh');
 Route::post('/forgot-password', [PasswordResetLinkController::class, 'apiStore'])
     ->middleware('throttle:6,1');
 Route::post('/reset-password', [NewPasswordController::class, 'apiStore'])
@@ -121,7 +124,7 @@ Route::post('/topup', [ChildTunnelController::class, 'topup']);
 
 // Universal Table API reads: any logged-in user (the customer dashboard's
 // service-availability widget reads /table/networks as a non-admin).
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::get('/table/{table}', [AdminController::class, 'universalGet']);
     Route::get('/table/{table}/{id}', [AdminController::class, 'universalShow']);
 });
@@ -129,7 +132,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 // Universal Table API writes: admin only. This used to be wide open with no
 // auth at all — every write (create/update/delete/bulk/reorder) against any
 // table was reachable by anyone, unauthenticated.
-Route::middleware(['auth:sanctum', 'user_type:admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'secure.session', 'user_type:admin'])->group(function () {
     Route::post('/insert', [AdminController::class, 'universalInsert']);
     // Literal sub-routes (/reorder, /bulk) MUST be registered before the
     // "/{id}" wildcard — otherwise "PUT /table/{table}/bulk" matches the
@@ -154,17 +157,30 @@ Route::middleware(['auth:sanctum', 'user_type:admin'])->group(function () {
     Route::delete('/app/releases/{id}', [AppReleaseController::class, 'destroy'])->whereNumber('id');
 });
 
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::get('/user', [AuthenticatedSessionController::class, 'index']);
     // SPA clients should POST to /logout to properly invalidate the session.
     // We allow GET too so browser visits don't break existing behavior.
     Route::match(['get', 'post'], '/logout', [AuthenticatedSessionController::class, 'destroy']);
+    Route::post('/impersonation/stop', [UserController::class, 'stopImpersonating']);
+    Route::get('/session', [SessionSecurityController::class, 'status']);
+    Route::post('/session/extend', [SessionSecurityController::class, 'extend'])
+        ->middleware('throttle:session.extend');
+    Route::get('/security/sessions', [SessionSecurityController::class, 'index']);
+    Route::delete('/security/sessions/{authSession}', [SessionSecurityController::class, 'destroy']);
+    Route::post('/security/sessions/logout-others', [SessionSecurityController::class, 'destroyOthers']);
+    Route::post('/security/sessions/logout-all', [SessionSecurityController::class, 'destroyAll'])
+        ->middleware(['recent.auth', 'throttle:sensitive-auth']);
+    Route::post('/security/re-authenticate', [SessionSecurityController::class, 'reauthenticate'])
+        ->middleware('throttle:sensitive-auth');
+    Route::post('/security/unlock', [SessionSecurityController::class, 'unlock'])
+        ->middleware('throttle:sensitive-auth');
 
     // Self-service account settings — shared by the admin and customer
     // "Settings" pages alike, scoped to whoever is logged in (no role gate).
     Route::put('/account/profile', [AccountController::class, 'updateProfile']);
-    Route::put('/account/password', [AccountController::class, 'updatePassword']);
-    Route::put('/account/pin', [AccountController::class, 'updatePin']);
+    Route::put('/account/password', [AccountController::class, 'updatePassword'])->middleware('recent.auth');
+    Route::put('/account/pin', [AccountController::class, 'updatePin'])->middleware('recent.auth');
     Route::post('/account/virtual-accounts', [AccountController::class, 'generateVirtualAccounts']);
     Route::get('/wallet/funding-account', [AccountController::class, 'fundingAccount']);
 
@@ -220,13 +236,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::prefix('admin')->middleware('user_type:admin')->group(function () {
         Route::resource('users', UserController::class)
-            ->withoutMiddleware(['auth:sanctum', 'user_type:admin'])
             ->only(['store']);
 
         Route::middleware('permission:customers')->group(function () {
             Route::resource('users', UserController::class)
                 ->only(['index', 'store', 'show', 'update', 'destroy']);
-            Route::post('/users/{id}/impersonate', [UserController::class, 'impersonate']);
+            Route::post('/users/{id}/impersonate', [UserController::class, 'impersonate'])->middleware('recent.auth');
             Route::resource('roles', RoleController::class);
             Route::get('/roles/{id}/users', [RoleController::class, 'users']);
             Route::get('/permissions', [PermissionController::class, 'index']);
@@ -408,11 +423,11 @@ Route::prefix('vtu')->group(function () {
     Route::get('/validate/iuc', [VTUServicesController::class, 'validateIUC']);
     Route::get('/validate/meter', [VTUServicesController::class, 'validateMeter']);
 
-    Route::post('/airtime/funding', [VTUServicesController::class, 'airtimeFunding'])->middleware('auth:sanctum');
-    Route::post('/airtime/topup', [VTUServicesController::class, 'airtimeTopup'])->middleware('auth:sanctum');
-    Route::post('/data/purchase', [VTUServicesController::class, 'dataPurchase'])->middleware('auth:sanctum');
-    Route::post('/cable', [VTUServicesController::class, 'cableSubscription'])->middleware('auth:sanctum');
-    Route::post('/electricity', [VTUServicesController::class, 'electricityPayment'])->middleware('auth:sanctum');
+    Route::post('/airtime/funding', [VTUServicesController::class, 'airtimeFunding'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/airtime/topup', [VTUServicesController::class, 'airtimeTopup'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/data/purchase', [VTUServicesController::class, 'dataPurchase'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/cable', [VTUServicesController::class, 'cableSubscription'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/electricity', [VTUServicesController::class, 'electricityPayment'])->middleware(['auth:sanctum', 'secure.session']);
 });
 
 /**
@@ -420,32 +435,32 @@ Route::prefix('vtu')->group(function () {
  */
 Route::prefix('payscribe')->group(function () {
     // Airtime
-    Route::post('/airtime', [PayscribeController::class, 'purchaseAirtime'])->middleware('auth:sanctum');
+    Route::post('/airtime', [PayscribeController::class, 'purchaseAirtime'])->middleware(['auth:sanctum', 'secure.session']);
 
     // Data
     Route::get('/data/{network}', [PayscribeController::class, 'dataLookup']);
-    Route::post('/data', [PayscribeController::class, 'purchaseData'])->middleware('auth:sanctum');
+    Route::post('/data', [PayscribeController::class, 'purchaseData'])->middleware(['auth:sanctum', 'secure.session']);
 
     // ePins
     Route::get('/epins', [PayscribeController::class, 'availableEPins']);
-    Route::post('/epins', [PayscribeController::class, 'purchasePin'])->middleware('auth:sanctum');
+    Route::post('/epins', [PayscribeController::class, 'purchasePin'])->middleware(['auth:sanctum', 'secure.session']);
     Route::post('/epins/jamb', [PayscribeController::class, 'jambUserLookup']);
     Route::get('/epins/{trans_id}', [PayscribeController::class, 'retrieveEPin']);
 
     // Cable
     Route::get('/cable/bouquets/{service}', [PayscribeController::class, 'fetchBouquets']);
     Route::post('/cable/validate', [PayscribeController::class, 'validateSmartCard']);
-    Route::post('/cable/pay', [PayscribeController::class, 'payCableTv'])->middleware('auth:sanctum');
-    Route::post('/cable/topup', [PayscribeController::class, 'topUpTv'])->middleware('auth:sanctum');
+    Route::post('/cable/pay', [PayscribeController::class, 'payCableTv'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/cable/topup', [PayscribeController::class, 'topUpTv'])->middleware(['auth:sanctum', 'secure.session']);
 
     // Internet
     Route::post('/internet/list', [PayscribeController::class, 'listInternetServices']);
     Route::get('/internet/spectranet/plans', [PayscribeController::class, 'getSpectranetPinPlans']);
-    Route::post('/internet/spectranet/vend', [PayscribeController::class, 'purchaseSpectranetPins'])->middleware('auth:sanctum');
+    Route::post('/internet/spectranet/vend', [PayscribeController::class, 'purchaseSpectranetPins'])->middleware(['auth:sanctum', 'secure.session']);
 
     // Electricity
     Route::post('/electricity/validate', [PayscribeController::class, 'validateElectricity']);
-    Route::post('/electricity/pay', [PayscribeController::class, 'electricityPayment'])->middleware('auth:sanctum');
+    Route::post('/electricity/pay', [PayscribeController::class, 'electricityPayment'])->middleware(['auth:sanctum', 'secure.session']);
 
     // Requery
     Route::get('/requery/{id}', [PayscribeController::class, 'requeryTransaction']);

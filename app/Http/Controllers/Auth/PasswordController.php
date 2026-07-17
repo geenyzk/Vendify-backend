@@ -7,6 +7,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
+use App\Services\Auth\SessionSecurityService;
+use App\Support\AuditLogger;
 
 class PasswordController extends Controller
 {
@@ -23,6 +25,9 @@ class PasswordController extends Controller
         $request->user()->update([
             'password' => Hash::make($validated['password']),
         ]);
+
+        app(SessionSecurityService::class)->revokeAllForUser($request->user(), 'password_changed');
+        AuditLogger::record('password_changed', subject: $request->user(), actor: $request->user(), description: 'Password changed; all active sessions were revoked.');
 
         return back()->with('status', 'password-updated');
     }

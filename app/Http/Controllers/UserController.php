@@ -6,7 +6,10 @@ use App\Class\Payment\Payment;
 use App\HttpResponse;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Auth\SessionSecurityService;
+use App\Support\AuditLogger;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -200,7 +203,7 @@ class UserController extends Controller
                 'email' => ['sometimes', 'required', 'string', 'lowercase', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
                 'phone' => ['sometimes', 'required', 'string', 'max:255', Rule::unique('users')->ignore($user->id)],
                 'role_id' => ['sometimes', 'exists:roles,id'],
-                'status' => ['sometimes', Rule::in(['active', 'suspended', 'inactive'])],
+                'status' => ['sometimes', Rule::in(['active', 'suspended', 'banned', 'inactive'])],
                 'password' => ['sometimes', 'nullable', Rules\Password::defaults()],
             ]);
         } catch (ValidationException $e) {
@@ -219,16 +222,27 @@ class UserController extends Controller
             $validated['user_type'] = $this->userTypeForRole(Role::find($validated['role_id']));
         }
 
+        if (isset($validated['status'])) {
+            $validated['is_active'] = $validated['status'] === User::STATUS_ACTIVE;
+        }
+
+        $passwordChanged = array_key_exists('password', $validated);
         $user->update($validated);
+
+        if ($passwordChanged || (isset($validated['status']) && $validated['status'] !== User::STATUS_ACTIVE)) {
+            app(SessionSecurityService::class)->revokeAllForUser(
+                $user,
+                $passwordChanged ? 'password_changed_by_admin' : 'account_suspended',
+            );
+        }
 
         return $this->success(["user" => $user->fresh(['role'])], "User updated successfully.");
     }
 
     /**
-     * Issue a login token for a customer so an admin can see the app exactly
-     * as that customer does. The token name records who initiated it, so
-     * impersonation sessions stay distinguishable from real logins in
-     * personal_access_tokens.
+     * Switch the current server-side session to a customer. The original
+     * staff identity is kept only in the encrypted/HttpOnly Laravel session;
+     * no reusable admin or customer bearer token is exposed to JavaScript.
      */
     public function impersonate(Request $request, string $id)
     {
@@ -245,13 +259,61 @@ class UserController extends Controller
             return $this->fail(null, "Staff accounts cannot be impersonated.", 403);
         }
 
-        $token = $target->createToken("impersonated-by:{$admin->id}");
+        $security = app(SessionSecurityService::class);
+        $current = $security->currentSession($request);
+        if ($current) {
+            $security->revoke($current, 'impersonation_started');
+        }
+        Auth::guard('web')->login($target);
+        $request->session()->regenerate();
+        $request->session()->put('impersonator_user_id', $admin->id);
+        $session = $security->createWebSession($target, $request, false);
+        $session->forceFill(['channel' => 'impersonation'])->save();
         Log::info("Admin {$admin->id} ({$admin->username}) started impersonating user {$target->id} ({$target->username}).");
+        AuditLogger::record(
+            'impersonation_started',
+            subject: $target,
+            actor: $admin,
+            description: "{$admin->email} started impersonating {$target->email}.",
+            context: ['auth_session_id' => $session->id],
+        );
 
         return $this->success([
             "user" => $target,
-            "token" => $token->plainTextToken,
+            "session" => $security->payload($session, $session->id),
         ], "Impersonation session started.");
+    }
+
+    public function stopImpersonating(Request $request)
+    {
+        $adminId = $request->session()->get('impersonator_user_id');
+        if (!$adminId) {
+            return $this->fail(null, 'No impersonation session is active.', 422);
+        }
+
+        $target = $request->user();
+        $admin = User::with('role')->findOrFail($adminId);
+        abort_unless($admin->role?->is_staff || $admin->user_type === 'admin', 403);
+
+        $security = app(SessionSecurityService::class);
+        if ($current = $security->currentSession($request)) {
+            $security->revoke($current, 'impersonation_ended');
+        }
+        Auth::guard('web')->login($admin);
+        $request->session()->regenerate();
+        $request->session()->forget('impersonator_user_id');
+        $session = $security->createWebSession($admin, $request, false);
+        AuditLogger::record(
+            'impersonation_ended',
+            subject: $target,
+            actor: $admin,
+            description: "{$admin->email} stopped impersonating {$target->email}.",
+        );
+
+        return $this->success([
+            'user' => $admin,
+            'session' => $security->payload($session, $session->id),
+        ], 'Impersonation session ended.');
     }
 
     /**
@@ -266,6 +328,7 @@ class UserController extends Controller
         }
 
         $user->delete();
+        app(SessionSecurityService::class)->revokeAllForUser($user, 'account_deleted');
 
         return $this->success(null, "User deleted successfully.");
     }

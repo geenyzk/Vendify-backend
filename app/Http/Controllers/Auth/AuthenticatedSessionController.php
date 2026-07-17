@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\HttpResponse;
 use App\Models\User;
+use App\Services\Auth\SessionSecurityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -75,10 +76,24 @@ class AuthenticatedSessionController extends Controller
 
         try {
             $step = hrtime(true);
-            $request->authenticate();
+            $user = $request->authenticate();
             $step = $mark('authentication', $step);
-            $user = Auth::user();
-            $token = $user->createToken($user->username)->plainTextToken;
+            $sessionSecurity = app(SessionSecurityService::class);
+            $isMobile = $request->input('client_type') === 'mobile'
+                || $request->header('X-Client-Platform') === 'app';
+            if ($isMobile) {
+                $credentials = $sessionSecurity->createMobileCredentials($user, $request);
+                if ($request->hasSession()) {
+                    Auth::guard('web')->logout();
+                    $request->session()->invalidate();
+                    $request->session()->regenerateToken();
+                }
+                $session = null;
+            } else {
+                $request->session()->regenerate();
+                $session = $sessionSecurity->createWebSession($user, $request, $request->boolean('remember'));
+                $credentials = [];
+            }
             $step = $mark('token_creation', $step);
 
             // Registration creates accounts and POST /account/virtual-accounts
@@ -94,21 +109,18 @@ class AuthenticatedSessionController extends Controller
             }
             $step = $mark('login_stamp', $step);
 
-            // Only staff sign-ins are audited. Customers log in constantly and
-            // would bury the admin trail in noise; who accessed the control
-            // panel is the part that actually matters for an audit.
-            if ($user->user_type === 'admin' || ($user->role?->is_staff ?? false)) {
-                AuditLogger::record(
-                    'login',
-                    subject: $user,
-                    description: sprintf('%s signed in', $user->fullname ?? $user->email),
-                    actor: $user,
-                );
-            }
+            AuditLogger::record(
+                'login',
+                subject: $user,
+                description: sprintf('%s signed in', $user->fullname ?? $user->email),
+                actor: $user,
+                context: ['channel' => $isMobile ? 'mobile' : 'web', 'auth_session_id' => $session?->id ?? $credentials['session']['id']],
+            );
 
             $payload = [
                 'user' => $this->authUserPayload($user),
-                'token' => $token,
+                'session' => $session ? $sessionSecurity->payload($session, $session->id) : $credentials['session'],
+                ...$credentials,
             ];
             $mark('serialization_prep', $step);
             $response = $this->success($payload);
@@ -134,7 +146,6 @@ class AuthenticatedSessionController extends Controller
 
             return $response;
         } catch (ValidationException $e) {
-            error_log($e);
             return $this->fail($e->errors(), "Validation Error", 422);
         } catch (\Throwable $e) {
             Log::error('Login failed after credential validation', [
@@ -167,11 +178,14 @@ class AuthenticatedSessionController extends Controller
      */
     public function index(Request $request)
     {
+        $security = app(SessionSecurityService::class);
+        $session = $security->currentSession($request);
         return $this->success([
             "user" => $this->authUserPayload(
                 $request->user(),
                 $request->boolean('include_dashboard')
             ),
+            'session' => $session ? $security->payload($session, $session->id) : null,
         ]);
     }
 
@@ -183,14 +197,26 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request)
     {
+        $security = app(SessionSecurityService::class);
+        $session = $security->currentSession($request);
+        if ($session) {
+            $security->revoke($session, 'logout');
+        }
         $accessToken = $request->user()?->currentAccessToken();
         if ($accessToken && method_exists($accessToken, 'delete')) {
             $accessToken->delete();
         }
 
-        Auth::guard('web')->logout();
+        AuditLogger::record(
+            'logout',
+            subject: $request->user(),
+            actor: $request->user(),
+            description: 'User signed out.',
+            context: ['auth_session_id' => $session?->id],
+        );
 
         if ($request->hasSession()) {
+            Auth::guard('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
         }

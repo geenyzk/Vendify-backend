@@ -12,6 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('templates', function (Blueprint $table) {
+            // Fresh installs should match the model immediately. The later
+            // repair migration remains necessary for databases that already
+            // ran the original version without these columns.
+            $table->id();
             $table->string('name', 191)->comment('Human friendly name for admin UI');
             $table->string('slug', 191)->unique()->comment('Unique slug derived from name');
 
@@ -30,6 +34,7 @@ return new class extends Migration
             $table->boolean('enabled')->default(true)->index();
 
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

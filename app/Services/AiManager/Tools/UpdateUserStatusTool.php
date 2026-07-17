@@ -4,6 +4,7 @@ namespace App\Services\AiManager\Tools;
 
 use App\Models\User;
 use App\Services\AiManager\AiManagerException;
+use App\Services\Auth\SessionSecurityService;
 
 /**
  * Change a customer's account status (active / suspended / banned). Suspended
@@ -81,6 +82,10 @@ class UpdateUserStatusTool extends AiTool
         $user->status = $arguments['status'];
         $user->is_active = $arguments['status'] === User::STATUS_ACTIVE;
         $user->save();
+
+        if ($arguments['status'] !== User::STATUS_ACTIVE) {
+            app(SessionSecurityService::class)->revokeAllForUser($user, 'account_suspended');
+        }
 
         return [
             'updated' => true,

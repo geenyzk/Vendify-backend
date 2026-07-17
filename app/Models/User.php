@@ -17,6 +17,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use App\Services\Auth\SessionSecurityService;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -65,6 +66,26 @@ class User extends Authenticatable implements MustVerifyEmail
                 $user->referral_code = self::generateUniqueReferralCode();
             }
         });
+
+        static::updated(function (User $user) {
+            $passwordChanged = $user->wasChanged('password');
+            $accountBlocked = ($user->wasChanged('status') && $user->status !== self::STATUS_ACTIVE)
+                || ($user->wasChanged('is_active') && $user->is_active === false);
+            if (!$passwordChanged && !$accountBlocked) {
+                return;
+            }
+
+            try {
+                app(SessionSecurityService::class)->revokeAllForUser(
+                    $user,
+                    $passwordChanged ? 'password_changed' : 'account_suspended',
+                );
+            } catch (\Throwable) {
+                // During an in-progress deployment the auth session tables may
+                // not exist yet; the request-time status check remains the
+                // final enforcement layer once migrations complete.
+            }
+        });
     }
 
     public function sendEmailVerificationNotification(): void
@@ -96,7 +117,10 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function isActive(): bool
     {
-        return $this->status === self::STATUS_ACTIVE;
+        // Legacy rows and test fixtures created before status enforcement may
+        // have no status value. Only explicit non-active states are blocked;
+        // the normalization migration converts old ban/suspend spellings.
+        return $this->status === null || $this->status === '' || $this->status === self::STATUS_ACTIVE;
     }
 
     /**
@@ -137,6 +161,11 @@ class User extends Authenticatable implements MustVerifyEmail
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class, 'user_id');
+    }
+
+    public function authSessions(): HasMany
+    {
+        return $this->hasMany(AuthSession::class);
     }
 
     /**

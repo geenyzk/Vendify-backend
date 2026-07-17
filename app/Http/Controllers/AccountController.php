@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Classes\Payment\Payment;
+use App\Classes\SerivceControl\ServiceControlService;
 use App\HttpResponse;
 use App\Models\Bank;
 use App\Models\Provider;
 use App\Models\User;
+use App\Services\Auth\SessionSecurityService;
+use App\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -68,6 +71,14 @@ class AccountController extends Controller
 
         $user->update(['password' => Hash::make($validated['password'])]);
 
+        app(SessionSecurityService::class)->revokeAllForUser($user, 'password_changed');
+        AuditLogger::record(
+            'password_changed',
+            subject: $user,
+            actor: $user,
+            description: 'Password changed; all active sessions were revoked.',
+        );
+
         return $this->success(null, 'Password updated successfully.');
     }
 
@@ -107,12 +118,19 @@ class AccountController extends Controller
                 'current_pin' => ['required', 'digits:4'],
             ])['current_pin'];
 
-            if (!Hash::check($currentPin, $user->pin)) {
+            if (!ServiceControlService::verifyTransactionPin($user->id, $currentPin)) {
                 return $this->fail(['current_pin' => ['Current PIN is incorrect.']], 'Current PIN is incorrect.', 422);
             }
         }
 
         $user->update(['pin' => $validated['pin']]);
+
+        AuditLogger::record(
+            'transaction_pin_changed',
+            subject: $user,
+            actor: $user,
+            description: 'Transaction PIN was changed after recent authentication.',
+        );
 
         return $this->pinUpdatedResponse($user);
     }

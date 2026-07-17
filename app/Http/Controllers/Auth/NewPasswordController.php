@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\HttpResponse;
 use App\Models\User;
+use App\Services\Auth\SessionSecurityService;
+use App\Support\AuditLogger;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -51,6 +53,9 @@ class NewPasswordController extends Controller
                     'remember_token' => Str::random(60),
                 ])->save();
 
+                app(SessionSecurityService::class)->revokeAllForUser($user, 'password_reset');
+                AuditLogger::record('password_reset', subject: $user, actor: $user, description: 'Password reset; all active sessions were revoked.');
+
                 event(new PasswordReset($user));
             }
         );
@@ -83,6 +88,9 @@ class NewPasswordController extends Controller
                     'password' => Hash::make($request->password),
                     'remember_token' => Str::random(60),
                 ])->save();
+
+                app(SessionSecurityService::class)->revokeAllForUser($user, 'password_reset');
+                AuditLogger::record('password_reset', subject: $user, actor: $user, description: 'Password reset; all active sessions were revoked.');
 
                 event(new PasswordReset($user));
             }
