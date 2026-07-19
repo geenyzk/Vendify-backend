@@ -27,9 +27,27 @@ class CustomerDashboardController extends Controller
             ->selectRaw("SUM(CASE WHEN created_at >= ? AND status = 'success' AND transaction_type = 'data_subscription' THEN quantity ELSE 0 END) AS today_data_gb", [$todayStart])
             ->first();
 
+        $previousMonthPurchases = Transaction::where('user_id', $user->id)
+            ->where('status', 'success')
+            ->whereBetween('created_at', [
+                $now->copy()->subMonthNoOverflow()->startOfMonth(),
+                $now->copy()->subMonthNoOverflow()->endOfMonth(),
+            ])
+            ->whereRaw("NOT ($creditSql)")
+            ->sum('amount');
+
+        $topPurchase = Transaction::where('user_id', $user->id)
+            ->where('status', 'success')
+            ->where('created_at', '>=', $now->copy()->startOfMonth())
+            ->whereRaw("NOT ($creditSql)")
+            ->selectRaw('transaction_type, SUM(amount) AS total_amount, COUNT(*) AS transaction_count')
+            ->groupBy('transaction_type')
+            ->orderByDesc('total_amount')
+            ->first();
+
         $chart = Transaction::where('user_id', $user->id)
             ->where('status', 'success')
-            ->where('created_at', '>=', $now->copy()->subDays(30)->startOfDay())
+            ->where('created_at', '>=', $now->copy()->subDays(90)->startOfDay())
             ->selectRaw('DATE(created_at) AS date, SUM(amount) AS total_amount')
             ->groupBy(DB::raw('DATE(created_at)'))->orderBy('date')->get();
 
@@ -48,12 +66,18 @@ class CustomerDashboardController extends Controller
             'summary' => [
                 'monthly_deposits' => (float) ($monthly->deposits ?? 0),
                 'monthly_purchases' => (float) ($monthly->purchases ?? 0),
+                'previous_month_purchases' => (float) $previousMonthPurchases,
                 'monthly_successful' => (int) ($monthly->successful ?? 0),
                 'monthly_pending' => (int) ($monthly->pending ?? 0),
                 'monthly_failed' => (int) ($monthly->failed ?? 0),
                 'today_spend' => (float) ($monthly->today_spend ?? 0),
                 'today_data_gb' => (float) ($monthly->today_data_gb ?? 0),
                 'tx_amount_30d' => $chart,
+                'top_purchase' => $topPurchase ? [
+                    'transaction_type' => $topPurchase->transaction_type,
+                    'total_amount' => (float) $topPurchase->total_amount,
+                    'transaction_count' => (int) $topPurchase->transaction_count,
+                ] : null,
             ],
         ]);
     }
