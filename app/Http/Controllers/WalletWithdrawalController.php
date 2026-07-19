@@ -30,10 +30,18 @@ class WalletWithdrawalController extends Controller
      */
     public function banks(): JsonResponse
     {
+        $settings = Setting::first();
+        $min = (float) ($settings?->wallet_withdrawal_min ?? 500);
+        $max = (float) ($settings?->wallet_withdrawal_max ?? 500000);
         $gateway = PaymentFactory::makeTransferCapable();
 
         if (!$gateway) {
-            return $this->success(['available' => false, 'banks' => []]);
+            return $this->success([
+                'available' => false,
+                'banks' => [],
+                'minimum' => $min,
+                'maximum' => $max,
+            ]);
         }
 
         $feeConfig = $gateway->withdrawalFeeConfig();
@@ -41,6 +49,8 @@ class WalletWithdrawalController extends Controller
         return $this->success([
             'available' => true,
             'banks' => $gateway->getBanks(),
+            'minimum' => $min,
+            'maximum' => $max,
             'withdrawal_fee' => $feeConfig['fee'],
             'withdrawal_fee_type' => $feeConfig['type'],
         ]);
