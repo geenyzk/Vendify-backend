@@ -92,7 +92,8 @@ npx playwright install chromium
 ```
 
 Create a dedicated admin browser session without putting credentials in `.env`
-or AI tool arguments:
+or AI tool arguments. Sign in in the window that opens; the state is saved
+automatically when the admin panel loads:
 
 ```bash
 node browser/save-auth-state.mjs https://your-vendify-domain.example storage/app/private/vendify-browser-auth.json

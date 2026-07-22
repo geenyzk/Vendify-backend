@@ -1,7 +1,6 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
-import readline from 'node:readline/promises';
 
 const baseUrl = process.argv[2];
 const output = process.argv[3];
@@ -21,11 +20,9 @@ await context.route('**/*', route => {
 });
 const page = await context.newPage();
 await page.goto(new URL('/login', baseUrl).toString());
-const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
-await prompt.question('Log in to Vendify in the opened browser, then press Enter here to save the session. ');
-if (!new URL(page.url()).pathname.startsWith('/admin')) throw new Error('The browser is not on a Vendify admin page.');
+console.log('Log in to Vendify in the opened browser. The session will be saved automatically after the admin panel loads.');
+await page.waitForURL(url => url.origin === new URL(baseUrl).origin && url.pathname.startsWith('/admin'), { timeout: 10 * 60 * 1000 });
 fs.mkdirSync(path.dirname(output), { recursive: true, mode: 0o750 });
 await context.storageState({ path: output });
-await prompt.close();
 await browser.close();
 console.log(`Saved encrypted-session material to ${output}. Protect this file like a password.`);
