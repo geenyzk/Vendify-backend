@@ -1,4 +1,5 @@
 import http from 'node:http';
+import fs from 'node:fs';
 
 const parsedPort = Number.parseInt(process.env.PORT ?? '3000', 10);
 const port = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535
@@ -7,11 +8,46 @@ const port = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 655
 const host = process.env.HOST || '127.0.0.1';
 
 let playwrightAvailable = false;
+let chromiumInstalled = false;
+let chromiumLaunchable = false;
+let launchError = null;
+let missingLibraries = [];
 try {
-  await import('playwright');
+  const { chromium } = await import('playwright');
   playwrightAvailable = true;
+  chromiumInstalled = fs.existsSync(chromium.executablePath());
+
+  if (chromiumInstalled) {
+    let browser;
+    try {
+      browser = await chromium.launch({ headless: true });
+      const page = await browser.newPage();
+      await page.goto('about:blank');
+      await page.close();
+      chromiumLaunchable = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      missingLibraries = [...new Set(message.match(/[A-Za-z0-9_.+-]+\.so(?:\.\d+)*/g) ?? [])];
+      launchError = missingLibraries.length > 0
+        ? `Chromium launch failed; missing system libraries: ${missingLibraries.join(', ')}`
+        : redactLaunchError(message);
+    } finally {
+      await browser?.close().catch(() => {});
+    }
+  } else {
+    launchError = 'Playwright Chromium executable is not installed.';
+  }
 } catch {
-  // Health reports the missing package without exposing loader paths/errors.
+  // Health reports package availability without exposing loader paths/errors.
+  launchError = 'Playwright package is unavailable.';
+}
+
+function redactLaunchError(message) {
+  const firstLine = message.split(/\r?\n/, 1)[0] || 'Chromium launch failed.';
+  return firstLine
+    .replace(/[A-Za-z]:\\[^\s]+/g, '[path]')
+    .replace(/(?:\/[A-Za-z0-9._-]+){2,}/g, '[path]')
+    .slice(0, 500);
 }
 
 function sendJson(response, status, payload) {
@@ -34,8 +70,9 @@ const server = http.createServer((request, response) => {
     const isHealth = pathname === '/health' || pathname.endsWith('/health');
 
     if (request.method === 'GET' && isHealth) {
-      sendJson(response, playwrightAvailable ? 200 : 503, {
-        status: playwrightAvailable ? 'ok' : 'degraded',
+      const healthy = playwrightAvailable && chromiumInstalled && chromiumLaunchable;
+      sendJson(response, healthy ? 200 : 503, {
+        status: healthy ? 'ok' : 'degraded',
         service: 'vendify-restricted-browser-runtime',
         node: {
           available: true,
@@ -43,6 +80,10 @@ const server = http.createServer((request, response) => {
         },
         playwright: {
           package_available: playwrightAvailable,
+          chromium_installed: chromiumInstalled,
+          chromium_launchable: chromiumLaunchable,
+          ...(launchError ? { launch_error: launchError } : {}),
+          ...(missingLibraries.length > 0 ? { missing_libraries: missingLibraries } : {}),
         },
         browser_execution_exposed: false,
       });
