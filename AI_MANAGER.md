@@ -103,8 +103,16 @@ Run this from the production Laravel project root so the relative state path
 resolves inside that deployment:
 
 ```bash
-node browser/save-auth-state.mjs https://vendify.com.ng storage/app/private/vendify-browser-auth.json https://vendify.com.ng
+node browser/save-auth-state.mjs https://vendify.com.ng storage/app/private/vendify-browser-auth.json https://api.vendify.com.ng chrome
 php artisan vendify-browser:health
+```
+
+The optional sixth argument selects the isolated profile mode. The default is
+`ephemeral` (a fresh temporary Chrome profile). If form login behaves
+differently there, retry with the dedicated, git-ignored persistent profile:
+
+```bash
+node browser/save-auth-state.mjs https://vendify.com.ng storage/app/private/vendify-browser-auth.json https://api.vendify.com.ng chrome persistent
 ```
 
 Then configure the `VENDIFY_BROWSER_*` values from `.env.example` and enable the

@@ -1,6 +1,8 @@
 /.phpunit.cache
 /node_modules
 /browser/node_modules
+/browser/.auth-profile
+/browser/auth-diagnostics.log
 /public/build
 /public/hot
 /public/storage
