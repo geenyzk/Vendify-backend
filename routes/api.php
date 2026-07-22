@@ -308,6 +308,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
 
         Route::middleware('permission:ai_manager')->prefix('ai')->group(function () {
             Route::get('/usage', [AiManagerController::class, 'usage']);
+            Route::get('/tools', [AiManagerController::class, 'tools']);
             Route::get('/conversations', [AiManagerController::class, 'index']);
             Route::post('/conversations', [AiManagerController::class, 'store']);
             Route::get('/conversations/{id}', [AiManagerController::class, 'show']);

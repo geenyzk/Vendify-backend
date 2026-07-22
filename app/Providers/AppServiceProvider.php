@@ -19,6 +19,8 @@ use App\Models\Setting;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\MailSettingsService;
+use App\Services\AiManager\VendifyDataPlanBrowser;
+use App\Services\AiManager\Tools\ToolRegistry;
 use App\Support\PerformanceCache;
 use App\Repository\Admin\UserRepository;
 
@@ -41,6 +43,12 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app
             ->bind(UserRepositoryInterface::class, UserRepository::class);
+
+        // Explicit bindings make browser/tool availability deterministic in
+        // HTTP, queue and Octane lifecycles. scoped() rebuilds the registry for
+        // each request/job so a restarted process reads the active config.
+        $this->app->singleton(VendifyDataPlanBrowser::class);
+        $this->app->scoped(ToolRegistry::class, fn () => new ToolRegistry());
 
     }
 

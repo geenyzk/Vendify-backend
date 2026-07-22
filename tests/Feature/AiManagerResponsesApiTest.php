@@ -109,6 +109,25 @@ class AiManagerResponsesApiTest extends TestCase
         $this->assertSame(['integer', 'null'], $schema['parameters']['properties']['limit']['type']);
     }
 
+    public function test_new_conversation_exposes_restricted_browser_inspection_tool_to_model(): void
+    {
+        config()->set('services.vendify_browser.enabled', true);
+        config()->set('services.openai.auto_title', false);
+
+        $client = new FakeOpenAiClient([[
+            'response_id' => 'resp_browser_manifest',
+            'content' => 'Browser inspection is available.',
+            'tool_calls' => [],
+        ]]);
+        $service = new AiManagerService($client, new ToolRegistry());
+        $conversation = $service->startConversation($this->admin(), 'Fresh browser conversation');
+
+        $service->sendMessage($conversation, $this->admin(), 'Inspect the Vendify Data Plans page.');
+
+        $toolNames = collect($client->calls[0]['tools'])->pluck('name')->all();
+        $this->assertContains('inspect_vendify_data_plans', $toolNames);
+    }
+
     public function test_openai_client_normalizes_function_calls(): void
     {
         Http::fake([

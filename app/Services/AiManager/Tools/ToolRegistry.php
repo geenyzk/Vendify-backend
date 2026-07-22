@@ -39,9 +39,10 @@ class ToolRegistry
         $this->register(new GetRoleCostMarginsTool());
         $this->register(new ListNetworksTool());
         $this->register(new ListTemplatesTool());
-        if (config('services.vendify_browser.enabled')) {
-            $this->register(new InspectVendifyDataPlansTool());
-        }
+        // Always catalogue browser tools so diagnostics can explain why they
+        // are disabled. forUser() is the only path that exposes tools to the
+        // model and applies both the feature flag and actor permission.
+        $this->register(new InspectVendifyDataPlansTool());
 
         // Mutating tools — proposal-only, gated by their real permission slug.
         $this->register(new RefundTransactionTool());
@@ -69,9 +70,7 @@ class ToolRegistry
         $this->register(new UpdateUserStatusTool());
         $this->register(new ManageNetworkTool());
         $this->register(new ManageTemplateTool());
-        if (config('services.vendify_browser.enabled')) {
-            $this->register(new AutomateVendifyDataPlanTool());
-        }
+        $this->register(new AutomateVendifyDataPlanTool());
     }
 
     public function register(AiTool $tool): void
@@ -82,6 +81,22 @@ class ToolRegistry
     public function get(string $name): ?AiTool
     {
         return $this->tools[$name] ?? null;
+    }
+
+    /** @return array<string, AiTool> */
+    public function all(): array
+    {
+        return $this->tools;
+    }
+
+    public function enabled(AiTool $tool): bool
+    {
+        return ! $this->isBrowserTool($tool) || (bool) config('services.vendify_browser.enabled');
+    }
+
+    public function disabledReason(AiTool $tool): ?string
+    {
+        return $this->enabled($tool) ? null : 'VENDIFY_BROWSER_ENABLED is false in the active Laravel configuration.';
     }
 
     /**
@@ -100,6 +115,10 @@ class ToolRegistry
 
     public function userMayUse(User $user, AiTool $tool): bool
     {
+        if (! $this->enabled($tool)) {
+            return false;
+        }
+
         $permission = $tool->permission();
 
         if ($permission === null) {
@@ -107,6 +126,12 @@ class ToolRegistry
         }
 
         return (bool) ($user->role?->hasPermission($permission) ?? false);
+    }
+
+    private function isBrowserTool(AiTool $tool): bool
+    {
+        return $tool instanceof InspectVendifyDataPlansTool
+            || $tool instanceof AutomateVendifyDataPlanTool;
     }
 
     /**

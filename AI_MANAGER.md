@@ -107,6 +107,20 @@ node browser/save-auth-state.mjs https://vendify.com.ng storage/app/private/vend
 php artisan vendify-browser:health
 ```
 
+Tool registration can be inspected independently of a conversation:
+
+```bash
+php artisan ai-manager:tools
+php artisan ai-manager:tools --user=owner@example.com
+```
+
+The same read-only report is available to an authenticated AI Manager admin at
+`GET /api/admin/ai/tools`. Browser tools are always present in the registry for
+diagnostics, but are exposed to the model only when
+`VENDIFY_BROWSER_ENABLED=true` in active Laravel configuration and the actor
+has any permission required by that tool. The model manifest is rebuilt on
+every turn and is not stored on the conversation.
+
 The optional sixth argument selects the isolated profile mode. The default is
 `ephemeral` (a fresh temporary Chrome profile). If form login behaves
 differently there, retry with the dedicated, git-ignored persistent profile:

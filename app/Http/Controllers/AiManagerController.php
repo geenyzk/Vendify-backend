@@ -9,6 +9,7 @@ use App\Models\AiConversation;
 use App\Models\AiMessage;
 use App\Services\AiManager\AiManagerException;
 use App\Services\AiManager\AiManagerService;
+use App\Services\AiManager\AiManagerToolDiagnostics;
 use App\Services\AiManager\Tools\ToolRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -76,6 +77,12 @@ class AiManagerController extends Controller
     public function usage(): JsonResponse
     {
         return $this->success($this->dailyUsage());
+    }
+
+    /** Read-only registration, permission and browser-health diagnostics. */
+    public function tools(Request $request, AiManagerToolDiagnostics $diagnostics): JsonResponse
+    {
+        return $this->success($diagnostics->report($request->user(), true));
     }
 
     /** @return array{used:int, limit:int, remaining:int, unlimited:bool, resets_at:string} */
