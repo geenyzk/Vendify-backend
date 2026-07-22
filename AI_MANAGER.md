@@ -99,6 +99,14 @@ automatically when the admin panel loads:
 node browser/save-auth-state.mjs https://your-vendify-domain.example storage/app/private/vendify-browser-auth.json
 ```
 
+Run this from the production Laravel project root so the relative state path
+resolves inside that deployment:
+
+```bash
+node browser/save-auth-state.mjs https://vendify.com.ng storage/app/private/vendify-browser-auth.json https://vendify.com.ng
+php artisan vendify-browser:health
+```
+
 Then configure the `VENDIFY_BROWSER_*` values from `.env.example` and enable the
 feature. `VENDIFY_BROWSER_ALLOWED_ORIGINS` must contain only the Vendify UI/API
 origins. The runner blocks other origins, non-Data-Plan document routes,

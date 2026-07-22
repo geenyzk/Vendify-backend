@@ -91,6 +91,15 @@ try {
   await page.goto(target, { waitUntil: 'networkidle' });
   if (new URL(page.url()).pathname === '/login') fail('Vendify admin session has expired. Refresh the configured storage state.');
 
+  if (command.action === 'health') {
+    const current = new URL(page.url());
+    const authenticated = current.origin === new URL(baseUrl).origin
+      && current.pathname.startsWith('/admin/products/airtime-data');
+    if (!authenticated) fail(`Browser is not authenticated; ended at ${current.origin}${current.pathname}.`);
+    console.log(JSON.stringify({ ok: true, authenticated: true, page_url: page.url(), artifacts }));
+    process.exit(0);
+  }
+
   if (command.action === 'inspect' && !command.planId) {
     await screenshot(page, 'data-plans');
     const table = await page.locator('table').first().innerText().catch(() => '');
