@@ -66,4 +66,14 @@ return [
         'auto_title' => (bool) env('AI_AUTO_TITLE', true),
     ],
 
+    'vendify_browser' => [
+        'enabled' => env('VENDIFY_BROWSER_ENABLED', false),
+        'base_url' => env('VENDIFY_BROWSER_BASE_URL'),
+        'allowed_origins' => array_values(array_filter(array_map('trim', explode(',', env('VENDIFY_BROWSER_ALLOWED_ORIGINS', ''))))),
+        'storage_state' => env('VENDIFY_BROWSER_STORAGE_STATE'),
+        'node_binary' => env('VENDIFY_BROWSER_NODE_BINARY', 'node'),
+        'timeout' => (int) env('VENDIFY_BROWSER_TIMEOUT', 90),
+        'headless' => env('VENDIFY_BROWSER_HEADLESS', true),
+    ],
+
 ];

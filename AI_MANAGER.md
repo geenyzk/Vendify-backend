@@ -73,3 +73,32 @@ manual admin UI.
 - API: `app/Http/Controllers/AiManagerController.php`, routes under `/admin/ai/*`
 - Models: `AiConversation`, `AiMessage`, `AiActionProposal`
 - Frontend: `vtu_2/src/features/admin/pages/ai-manager/`
+
+## Restricted Vendify Data Plans browser
+
+The optional browser executor is intentionally limited to the first-party
+`/admin/products/airtime-data` Data Plans list and its create/edit forms.
+Reads run inline; creates and edits use the normal AI action proposal and only
+run after an admin approves the preview. Every approved run captures before,
+preview and after screenshots, reopens the saved row, verifies supplied values,
+and writes the run id and evidence paths to the audit trail.
+
+Install the isolated runtime and browser once:
+
+```bash
+cd browser
+npm install
+npx playwright install chromium
+```
+
+Create a dedicated admin browser session without putting credentials in `.env`
+or AI tool arguments:
+
+```bash
+node browser/save-auth-state.mjs https://your-vendify-domain.example storage/app/private/vendify-browser-auth.json
+```
+
+Then configure the `VENDIFY_BROWSER_*` values from `.env.example` and enable the
+feature. `VENDIFY_BROWSER_ALLOWED_ORIGINS` must contain only the Vendify UI/API
+origins. The runner blocks other origins, non-Data-Plan document routes,
+downloads, deletion, arbitrary JavaScript and arbitrary shell commands.

@@ -1,0 +1,8 @@
+{
+  "name": "vendify-restricted-browser",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.54.1"
+  }
+}

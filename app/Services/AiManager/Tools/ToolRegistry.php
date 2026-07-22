@@ -39,6 +39,9 @@ class ToolRegistry
         $this->register(new GetRoleCostMarginsTool());
         $this->register(new ListNetworksTool());
         $this->register(new ListTemplatesTool());
+        if (config('services.vendify_browser.enabled')) {
+            $this->register(new InspectVendifyDataPlansTool());
+        }
 
         // Mutating tools — proposal-only, gated by their real permission slug.
         $this->register(new RefundTransactionTool());
@@ -66,6 +69,9 @@ class ToolRegistry
         $this->register(new UpdateUserStatusTool());
         $this->register(new ManageNetworkTool());
         $this->register(new ManageTemplateTool());
+        if (config('services.vendify_browser.enabled')) {
+            $this->register(new AutomateVendifyDataPlanTool());
+        }
     }
 
     public function register(AiTool $tool): void
