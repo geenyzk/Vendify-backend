@@ -27,9 +27,13 @@ function sendJson(response, status, payload) {
 
 const server = http.createServer((request, response) => {
   try {
-    const url = new URL(request.url ?? '/', 'http://localhost');
+    const pathname = new URL(
+      request.url ?? '/',
+      `http://${request.headers.host || 'localhost'}`,
+    ).pathname;
+    const isHealth = pathname === '/health' || pathname.endsWith('/health');
 
-    if (request.method === 'GET' && url.pathname === '/health') {
+    if (request.method === 'GET' && isHealth) {
       sendJson(response, playwrightAvailable ? 200 : 503, {
         status: playwrightAvailable ? 'ok' : 'degraded',
         service: 'vendify-restricted-browser-runtime',
@@ -45,7 +49,9 @@ const server = http.createServer((request, response) => {
       return;
     }
 
-    sendJson(response, 404, { status: 'not_found' });
+    // Include only the parsed path temporarily to diagnose cPanel mount-prefix
+    // behavior. Query parameters and headers are intentionally excluded.
+    sendJson(response, 404, { status: 'not_found', pathname });
   } catch {
     sendJson(response, 500, { status: 'error' });
   }
