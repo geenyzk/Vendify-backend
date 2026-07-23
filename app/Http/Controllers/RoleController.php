@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Role;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class RoleController extends Controller
 {
@@ -13,7 +13,14 @@ class RoleController extends Controller
      */
     public function index(): JsonResponse
     {
-        $roles = Role::with('serviceCostMargins', 'users', 'permissions')->get();
+        // Role selectors are used across most admin forms. Returning every
+        // full User model for every role made those lightweight lookups grow
+        // with the entire customer table. The UI only needs the assignment
+        // count; the dedicated /roles/{id}/users endpoint serves actual users.
+        $roles = Role::query()
+            ->with(['serviceCostMargins', 'permissions'])
+            ->withCount('users')
+            ->get();
 
         return response()->json([
             'success' => true,
@@ -26,7 +33,10 @@ class RoleController extends Controller
      */
     public function show($id): JsonResponse
     {
-        $role = Role::with('serviceCostMargins', 'users', 'permissions')->findOrFail($id);
+        $role = Role::query()
+            ->with(['serviceCostMargins', 'permissions'])
+            ->withCount('users')
+            ->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -54,7 +64,7 @@ class RoleController extends Controller
         $role = Role::create(collect($validated)->except('permission_ids')->all());
 
         // If this role is set as default, unset default on others.
-        if (!empty($validated['is_default'])) {
+        if (! empty($validated['is_default'])) {
             Role::where('id', '!=', $role->id)->update(['is_default' => false]);
         }
 
@@ -79,8 +89,8 @@ class RoleController extends Controller
         $role = Role::findOrFail($id);
 
         $validated = $request->validate([
-            'name' => 'string|unique:roles,name,' . $id,
-            'slug' => 'string|unique:roles,slug,' . $id,
+            'name' => 'string|unique:roles,name,'.$id,
+            'slug' => 'string|unique:roles,slug,'.$id,
             'description' => 'nullable|string',
             'is_default' => 'boolean',
             'is_active' => 'boolean',
@@ -96,7 +106,7 @@ class RoleController extends Controller
             $role->permissions()->sync($validated['permission_ids']);
         }
 
-        if (array_key_exists('is_default', $validated) && !empty($validated['is_default'])) {
+        if (array_key_exists('is_default', $validated) && ! empty($validated['is_default'])) {
             Role::where('id', '!=', $role->id)->update(['is_default' => false]);
         }
 

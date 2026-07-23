@@ -201,6 +201,19 @@ class DataPlan extends Model
             return (float) $pivotCost;
         }
 
+        // The providers() join can miss a providerable row whose provider_id
+        // no longer exists (a deleted provider) — the raw fallback below
+        // catches that. But when a caller explicitly eager-loaded the
+        // relation (e.g. the admin data-plan list, which batches it in one
+        // query across every row), an empty result is already authoritative:
+        // re-querying per row here is exactly the N+1 that eager load was
+        // meant to avoid, for an edge case eager loading already resolved.
+        // Callers that never eager-load (e.g. the purchase flow's
+        // DataPlan::find()) are unaffected and keep the raw-query fallback.
+        if ($this->relationLoaded('providers')) {
+            return 0.0;
+        }
+
         $row = DB::table('providerables')
             ->where('providerable_id', $this->id)
             ->where('providerable_type', self::class)

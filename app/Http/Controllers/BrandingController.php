@@ -40,20 +40,32 @@ class BrandingController extends Controller
             ];
         });
 
-        return $this->success($branding);
+        $response = $this->success($branding);
+        $response->headers->set(
+            'Cache-Control',
+            'public, max-age=300, stale-while-revalidate=3600'
+        );
+
+        return $response;
     }
 
     public function logo(): BinaryFileResponse
     {
         $path = 'logos/brand-logo';
 
-        if (!Storage::disk('public')->exists($path)) {
-            return response()->file(public_path('images/vendify-logo.png'), ['Content-Type' => 'image/png']);
+        if (! Storage::disk('public')->exists($path)) {
+            return response()->file(public_path('images/vendify-logo.png'), [
+                'Content-Type' => 'image/png',
+                'Cache-Control' => 'public, max-age=300, stale-while-revalidate=3600',
+            ]);
         }
 
         $filePath = Storage::disk('public')->path($path);
         $mimeType = mime_content_type($filePath) ?: 'application/octet-stream';
 
-        return response()->file($filePath, ['Content-Type' => $mimeType]);
+        return response()->file($filePath, [
+            'Content-Type' => $mimeType,
+            'Cache-Control' => 'public, max-age=300, stale-while-revalidate=3600',
+        ]);
     }
 }

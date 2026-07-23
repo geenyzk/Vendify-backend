@@ -49,6 +49,9 @@ class CustomerCatalogController extends Controller
 
         $response = $this->success($networks);
         $response->headers->set('X-Cache', $cacheHit ? 'HIT' : 'MISS');
+        $response->headers->set('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+        $response->headers->set('Vary', 'Authorization, Cookie');
+
         return $response;
     }
 
@@ -60,7 +63,7 @@ class CustomerCatalogController extends Controller
         $cacheHit = $plans !== null;
         if (! $cacheHit) {
             $columns = ['id', 'network', 'plan_name', 'plan_size', 'plan_type', 'validity', 'active', 'pricing'];
-            $legacyPriceColumn = $role . '_price';
+            $legacyPriceColumn = $role.'_price';
             if (Schema::hasColumn('data_plans', $legacyPriceColumn)) {
                 $columns[] = $legacyPriceColumn;
             }
@@ -83,13 +86,21 @@ class CustomerCatalogController extends Controller
                     'plan' => $plan->plan,
                     'validity' => $plan->validity,
                     'active' => true,
-                    'price' => $plan->price,
+                    'price' => $plan->price === null ? null : (float) $plan->price,
                 ])->values()->all();
             Cache::put($key, $plans, now()->addMinutes(10));
         }
 
-        $response = $this->success($plans);
+        $response = response()->json([
+            'message' => 'successful',
+            'success' => true,
+            'data' => $plans,
+            'type' => 'success',
+        ], 200, [], JSON_PRESERVE_ZERO_FRACTION);
         $response->headers->set('X-Cache', $cacheHit ? 'HIT' : 'MISS');
+        $response->headers->set('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+        $response->headers->set('Vary', 'Authorization, Cookie');
+
         return $response;
     }
 }

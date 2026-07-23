@@ -289,9 +289,15 @@ class AdminController extends Controller
                 && $request->get('view') === 'list';
 
             if ($isCompactDataPlanList) {
+                // Price needs `pricing` (new JSON-per-role pricing) plus the
+                // legacy flat per-role columns getPriceAttribute() falls back
+                // to — both are cheap decimal/json columns, unlike the ~40
+                // per-vendor cost/margin columns this compact select exists
+                // to avoid pulling for every row.
                 $query->select([
                     'id', 'network', 'plan_name', 'plan_size', 'plan_type',
                     'validity', 'active', 'is_draft', 'sort_order',
+                    'pricing', 'user_price', 'agent_price', 'bonanza_price', 'api_price',
                 ]);
             }
 
@@ -347,8 +353,14 @@ class AdminController extends Controller
             }
 
             // 2. Eager Loading (Relationships)
-            if ($modelSlug === 'data_plans' && !$isCompactDataPlanList) {
-                $query->with('providers:id,name,code,sub_category,category');
+            if ($modelSlug === 'data_plans') {
+                // The compact list still needs the provider pivot's cost_price
+                // for percentage-type pricing entries (DataPlan::resolveCostPrice()),
+                // just not the extra provider columns — eager-loading `id` only
+                // keeps that a single batched query instead of one query per row.
+                $query->with($isCompactDataPlanList
+                    ? 'providers:id'
+                    : 'providers:id,name,code,sub_category,category');
             }
 
             $this->handleEagerLoading($query, $request);
@@ -437,6 +449,8 @@ class AdminController extends Controller
             'is_draft' => (bool) $plan->is_draft,
             'status' => $plan->is_draft ? 'draft' : ($plan->active ? 'active' : 'inactive'),
             'sort_order' => $plan->sort_order,
+            'price' => $plan->price,
+            'price_ngn' => $plan->price_ngn,
         ])->values()->all();
     }
 

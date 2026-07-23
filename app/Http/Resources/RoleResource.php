@@ -23,6 +23,7 @@ class RoleResource extends JsonResource
             'is_default' => $this->is_default ?? false,
             'upgradable' => $this->upgradable,
             'upgrade_cost' => $this->upgrade_cost,
+            'users_count' => $this->whenCounted('users'),
             'service_cost_margins' => ServiceCostMarginResource::collection($this->whenLoaded('serviceCostMargins')),
             'users' => UserResource::collection($this->whenLoaded('users')),
             'permissions' => PermissionResource::collection($this->whenLoaded('permissions')),
