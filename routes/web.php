@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Models\Role;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -10,6 +11,12 @@ use Illuminate\Support\Facades\Route;
 Route::get("/", function(){
     return view("welcome");
 });
+
+// Public because recipients may open the signed verification link on a
+// different browser/device. The temporary signature and email hash are
+// validated by VerifyEmailController before the account is changed.
+Route::get('/verify-email/{id}/{hash}', [VerifyEmailController::class, 'verifyFromLink'])
+    ->name('verification.verify');
 
 // A browser on vendify.com.ng cannot read a host-only XSRF cookie created by
 // api.vendify.com.ng. Return the token for the same server-side session so the
