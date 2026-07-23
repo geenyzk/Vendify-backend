@@ -26,6 +26,16 @@ class PerformanceCache
 
     public static function clearDashboard(): void
     {
+        // A busy installation writes transactions continuously. Invalidating
+        // on every write meant the supposedly cached admin dashboard was
+        // almost always cold and repeatedly ran all aggregate queries.
+        // One invalidation per minute matches the stats TTL and bounds
+        // staleness while allowing the cache to do useful work.
+        if (!app()->environment('testing')
+            && !Cache::add('admin:dashboard:invalidation-lock', 1, now()->addMinute())) {
+            return;
+        }
+
         Cache::forget(self::ADMIN_STATS_KEY);
         self::clearAnalytics();
     }

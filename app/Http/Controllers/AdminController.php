@@ -285,6 +285,15 @@ class AdminController extends Controller
         try {
             $query = $modelClass::query();
             $table = (new $modelClass)->getTable();
+            $isCompactDataPlanList = $modelSlug === 'data_plans'
+                && $request->get('view') === 'list';
+
+            if ($isCompactDataPlanList) {
+                $query->select([
+                    'id', 'network', 'plan_name', 'plan_size', 'plan_type',
+                    'validity', 'active', 'is_draft', 'sort_order',
+                ]);
+            }
 
             // 1. Dynamic Filtering
             if ($request->filled('query')) {
@@ -308,7 +317,7 @@ class AdminController extends Controller
             }
 
             foreach ($request->query() as $column => $value) {
-                if (in_array($column, ['with', 'sort', 'page', 'per_page', 'query'], true)) {
+                if (in_array($column, ['with', 'sort', 'page', 'per_page', 'query', 'view'], true)) {
                     continue;
                 }
 
@@ -338,7 +347,7 @@ class AdminController extends Controller
             }
 
             // 2. Eager Loading (Relationships)
-            if ($modelSlug === 'data_plans') {
+            if ($modelSlug === 'data_plans' && !$isCompactDataPlanList) {
                 $query->with('providers:id,name,code,sub_category,category');
             }
 
@@ -369,7 +378,9 @@ class AdminController extends Controller
 
                 $items = $records->items();
                 $resourceClass = $this->resolveResourceClass($modelClass);
-                if ($resourceClass && count($items) > 0) {
+                if ($isCompactDataPlanList) {
+                    $items = $this->compactDataPlanList($items);
+                } elseif ($resourceClass && count($items) > 0) {
                     $items = $resourceClass::collection(collect($items))->resolve();
                 }
 
@@ -393,6 +404,10 @@ class AdminController extends Controller
                 ? Cache::remember($catalogCacheKey, now()->addMinutes(10), fn () => $query->get())
                 : $query->get();
 
+            if ($isCompactDataPlanList) {
+                return $this->success($this->compactDataPlanList($records));
+            }
+
             if ($records->isNotEmpty()) {
                 $resourceClass = $this->resolveResourceClass($modelClass);
                 if ($resourceClass) {
@@ -406,6 +421,23 @@ class AdminController extends Controller
 
             return $this->failFromException($e);
         }
+    }
+
+    private function compactDataPlanList(iterable $plans): array
+    {
+        return collect($plans)->map(fn (DataPlan $plan) => [
+            'id' => $plan->id,
+            'network' => $plan->network,
+            'plan_name' => $plan->plan_name,
+            'plan_size' => $plan->plan_size,
+            'plan_type' => $plan->plan_type,
+            'plan' => $plan->plan,
+            'validity' => $plan->validity,
+            'active' => (bool) $plan->active,
+            'is_draft' => (bool) $plan->is_draft,
+            'status' => $plan->is_draft ? 'draft' : ($plan->active ? 'active' : 'inactive'),
+            'sort_order' => $plan->sort_order,
+        ])->values()->all();
     }
 
     /**

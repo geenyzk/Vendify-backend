@@ -22,15 +22,24 @@ class AiMonitor
     {
         $response = $next($request);
 
-        try {
-            $user = $request->user('sanctum');
-            if ($user && $user->role?->is_staff) {
-                app(HealthSweeper::class)->sweepIfDue($user);
-            }
-        } catch (\Throwable) {
-            // Missing tables pre-migration, cache hiccups — never the
-            // request's problem.
+        $middleware = $request->route()?->gatherMiddleware() ?? [];
+        if (!in_array('auth:sanctum', $middleware, true)) {
+            return $response;
         }
+
+        // Health checks can aggregate weeks of data and contact notification
+        // channels. Run them after the response is sent, never in an admin
+        // navigation request's critical path.
+        app()->terminating(function () use ($request) {
+            try {
+                $user = $request->user();
+                if ($user && $user->role?->is_staff) {
+                    app(HealthSweeper::class)->sweepIfDue($user);
+                }
+            } catch (\Throwable) {
+                // Monitoring is best-effort.
+            }
+        });
 
         return $response;
     }

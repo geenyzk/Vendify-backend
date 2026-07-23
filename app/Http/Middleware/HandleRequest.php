@@ -33,52 +33,20 @@ class HandleRequest
 
     protected function transformResponse(Request $request, Response $response): Response
     {
-        if($this->isJsonResponse($response)){
-            $data = json_decode($response->getContent(), true);
-
-            $meta = $this->share($request);
-
-            if (is_array($data) && !array_is_list($data)) {
-                // Merge meta into the controller's own envelope. Preserve
-                // any existing meta from prior response formatting and add
-                // our standard request metadata.
-                if (isset($data['meta']) && is_array($data['meta'])) {
-                    $data['meta'] = array_merge($data['meta'], $meta);
-                } else {
-                    $data['meta'] = $meta;
-                }
-                $response->setContent(json_encode($data));
-            } else {
-                // Fallback for the rare response that isn't a JSON object at
-                // its top level (a bare list/scalar/null) — nothing to merge
-                // meta into, so wrap as before.
-                $response->setContent(json_encode([
-                    'success' => $response->isSuccessful(),
-                    'meta' => $meta,
-                    'data' => $data,
-                ]));
-            }
+        // Do not decode and re-encode every JSON payload merely to attach
+        // diagnostics. That doubled peak memory and added work proportional
+        // to response size on transaction, customer and catalog lists.
+        // Pagination metadata is produced by its controller and remains in
+        // the body; request diagnostics belong in cheap response headers.
+        if ($this->isJsonResponse($response)) {
+            $response->headers->set(
+                'X-Request-Id',
+                (string) $request->attributes->get('request_id'),
+            );
+            $response->headers->set('X-Response-Timestamp', now()->toIso8601String());
         }
-        return $response;
-    }
 
-    // Previously also attached "app" (a full, unfiltered General::find(1) —
-    // including bank/BVN fields never meant to leave the admin-only General
-    // settings screen) and "auth.user" (the full authenticated User model,
-    // with its heavy $appends — transactions, banks, stats, referrals — so
-    // every single API response, not just GET /user, carried a duplicate
-    // copy of the user's entire transaction history) to EVERY JSON
-    // response. Confirmed unused by the frontend (only the real /branding
-    // endpoint and GET /user are ever read for this data) and removed: it
-    // was an extra DB query plus a real data leak on every request for
-    // nothing.
-    protected function share(Request $request): array
-    {
-        return [
-            'timestamp' => now()->toDateTimeString(),
-            'path' => $request->path(),
-            'request_id' => $request->attributes->get('request_id'),
-        ];
+        return $response;
     }
 
     protected function isJsonResponse(Response $response):bool{

@@ -10,7 +10,6 @@ use App\Classes\Vendor\Providers\SMEPlug;
 use App\Classes\Vendor\Providers\Vtpass;
 use App\Models\Vendor;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class VendorFactory
@@ -123,25 +122,9 @@ class VendorFactory
         // and pinging one (often mid-configuration, with bad credentials)
         // just burns dashboard load time on a request bound to fail.
         Vendor::where('active', true)->get()->each(function ($vendor) use (&$total) {
-            try {
-                // Each checkBalance() is a live HTTP round-trip to the vendor,
-                // and this runs inside the admin dashboard request — before
-                // caching, a few slow/unreachable vendors pushed the stats
-                // endpoint past PHP's 60s execution limit. A 5-minute-old
-                // balance is more than fresh enough for a dashboard tile.
-                $total += Cache::remember(
-                    "vendor-balance:{$vendor->id}",
-                    now()->addMinutes(3),
-                    fn () => (float) str_replace(',', '', self::make($vendor)->checkBalance())
-                );
-            } catch (\Throwable $e) {
-                // Never log the full Vendor model here — it carries
-                // username/password/api_key/secret_key, and this used to go
-                // straight into the log on every single failure.
-                Log::warning("Failed to fetch balance for vendor [{$vendor->name}]: " . $e->getMessage(), [
-                    'vendor_id' => $vendor->id,
-                    'sub_category' => $vendor->sub_category,
-                ]);
+            $balance = $vendor->balance;
+            if ($balance !== null && is_numeric(str_replace(',', '', (string) $balance))) {
+                $total += (float) str_replace(',', '', (string) $balance);
             }
         });
 

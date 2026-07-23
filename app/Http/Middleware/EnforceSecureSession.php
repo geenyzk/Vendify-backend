@@ -12,6 +12,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnforceSecureSession
 {
+    private static bool $schemaReady = false;
+
     public function __construct(private readonly SessionSecurityService $sessions)
     {
     }
@@ -21,15 +23,30 @@ class EnforceSecureSession
         // Some narrowly-scoped tests intentionally build only the tables they
         // exercise. Production fails closed until the security migration is
         // present rather than silently running without session enforcement.
-        if (!Schema::hasTable('auth_sessions')) {
-            if (app()->environment('testing')) {
+        if (app()->environment('testing')) {
+            // Several focused tests intentionally replace the database with a
+            // reduced schema between test cases, so process-static production
+            // state must not leak across them.
+            if (!Schema::hasTable('auth_sessions')) {
                 return $next($request);
             }
-            return response()->json([
-                'message' => 'Session security is not ready. Run the pending database migrations.',
-                'success' => false,
-                'code' => 'SESSION_SECURITY_NOT_READY',
-            ], 503);
+        } else {
+            // Once a worker has observed the deployed table, do not ask the
+            // database for schema metadata again on every authenticated
+            // request. A false result is deliberately not cached so a
+            // migration applied while a long-lived worker is running can
+            // recover immediately.
+            if (!self::$schemaReady) {
+                self::$schemaReady = Schema::hasTable('auth_sessions');
+            }
+
+            if (!self::$schemaReady) {
+                return response()->json([
+                    'message' => 'Session security is not ready. Run the pending database migrations.',
+                    'success' => false,
+                    'code' => 'SESSION_SECURITY_NOT_READY',
+                ], 503);
+            }
         }
 
         try {

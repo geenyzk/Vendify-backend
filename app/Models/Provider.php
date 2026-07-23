@@ -59,19 +59,15 @@ class Provider extends Model
             return null;
         }
 
-        try {
-            return Cache::remember("payment_provider_connection_{$this->id}", now()->addMinutes(3), function () {
-                return PaymentFactory::make($this)->connect();
-            });
-        } catch (\Throwable $e) {
-            Log::warning('Payment provider connection lookup failed', [
-                'provider_id' => $this->id,
-                'provider' => $this->name,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
+        $key = "payment_provider_connection_{$this->id}";
+        $cached = Cache::get($key);
+        if ($cached !== null) {
+            return $cached;
         }
+
+        $this->refreshMetricAfterResponse($key, 'connection', fn () => PaymentFactory::make($this)->connect());
+
+        return null;
     }
 
     public function getBalanceAttribute(): mixed
@@ -80,19 +76,40 @@ class Provider extends Model
             return null;
         }
 
-        try {
-            return Cache::remember("payment_provider_balance_{$this->id}", now()->addMinutes(3), function () {
-                return PaymentFactory::make($this)->checkBalance();
-            });
-        } catch (\Throwable $e) {
-            Log::warning('Payment provider balance lookup failed', [
-                'provider_id' => $this->id,
-                'provider' => $this->name,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
+        $key = "payment_provider_balance_{$this->id}";
+        $cached = Cache::get($key);
+        if ($cached !== null) {
+            return $cached;
         }
+
+        $this->refreshMetricAfterResponse($key, 'balance', fn () => PaymentFactory::make($this)->checkBalance());
+
+        return null;
+    }
+
+    private function refreshMetricAfterResponse(string $key, string $metric, callable $resolver): void
+    {
+        if (app()->environment('testing')) {
+            return;
+        }
+
+        $providerId = $this->id;
+        $providerName = $this->name;
+        app()->terminating(function () use ($key, $metric, $resolver, $providerId, $providerName) {
+            try {
+                Cache::lock("provider-metric:{$key}", 30)->get(function () use ($key, $resolver) {
+                    if (Cache::get($key) === null) {
+                        Cache::put($key, $resolver(), now()->addMinutes(3));
+                    }
+                });
+            } catch (\Throwable $e) {
+                Log::warning("Payment provider {$metric} lookup failed", [
+                    'provider_id' => $providerId,
+                    'provider' => $providerName,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        });
     }
 
     /**

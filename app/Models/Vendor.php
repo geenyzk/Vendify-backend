@@ -74,7 +74,7 @@ class Vendor extends Model
         $query = parent::newQuery();
 
         $app_type = env('APP_TYPE', "standalone");
-        $type = (boolean) (env('APP_TYPE', "standalone") === "affiliate");
+        $type = (bool) (env('APP_TYPE', "standalone") === "affiliate");
         if ($type) {
             $query->limit(1);
         }
@@ -84,22 +84,17 @@ class Vendor extends Model
 
     public function getConnectionAttribute()
     {
-        try {
-            $key = md5($this->base_url . $this->username . $this->password."-123");
-            $provider = VendorFactory::make($this);
-            return Cache::remember($key, now()->addMinutes(3), function() use($provider) {
-                return $provider->isHealthy();
-            });
-        } catch (\Throwable $e) {
-            // sub_category/name combinations not wired into VendorFactory yet
-            // (e.g. "misc", "payment") shouldn't crash the whole list.
-            Log::warning('Vendor connection lookup failed', [
-                'vendor_id' => $this->id,
-                'sub_category' => $this->sub_category,
-                'error' => $e->getMessage(),
-            ]);
-            return null;
+        $key = md5($this->base_url . $this->username . $this->password . '-123');
+        $cached = Cache::get($key);
+        if ($cached !== null) {
+            return $cached;
         }
+
+        $this->refreshMetricAfterResponse($key, 'health', fn () => VendorFactory::make($this)->isHealthy());
+
+        // The saved switch is immediately useful while a live health result
+        // is warming in the background.
+        return (bool) $this->active;
     }
 
     public function getBalanceAttribute()
@@ -108,20 +103,40 @@ class Vendor extends Model
             return (float) $this->manual_balance;
         }
 
-        try {
-            $key = md5($this->base_url . $this->username . $this->password ."_balance");
-            $provider = VendorFactory::make($this);
-            return Cache::remember($key, now()->addMinutes(3), function() use($provider) {
-                return $provider->checkBalance();
-            });
-        } catch (\Throwable $e) {
-            Log::warning('Vendor balance lookup failed', [
-                'vendor_id' => $this->id,
-                'sub_category' => $this->sub_category,
-                'error' => $e->getMessage(),
-            ]);
-            return null;
+        $key = md5($this->base_url . $this->username . $this->password . '_balance');
+        $cached = Cache::get($key);
+        if ($cached !== null) {
+            return $cached;
         }
+
+        $this->refreshMetricAfterResponse($key, 'balance', fn () => VendorFactory::make($this)->checkBalance());
+
+        return null;
+    }
+
+    private function refreshMetricAfterResponse(string $key, string $metric, callable $resolver): void
+    {
+        if (app()->environment('testing')) {
+            return;
+        }
+
+        $vendorId = $this->id;
+        $subCategory = $this->sub_category;
+        app()->terminating(function () use ($key, $metric, $resolver, $vendorId, $subCategory) {
+            try {
+                Cache::lock("provider-metric:{$key}", 30)->get(function () use ($key, $resolver) {
+                    if (Cache::get($key) === null) {
+                        Cache::put($key, $resolver(), now()->addMinutes(3));
+                    }
+                });
+            } catch (\Throwable $e) {
+                Log::warning("Vendor {$metric} lookup failed", [
+                    'vendor_id' => $vendorId,
+                    'sub_category' => $subCategory,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        });
     }
 
 

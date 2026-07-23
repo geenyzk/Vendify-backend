@@ -27,7 +27,6 @@ use App\Repository\Admin\UserRepository;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -96,13 +95,10 @@ class AppServiceProvider extends ServiceProvider
     protected function applyDatabaseMailConfig(): void
     {
         try {
-            if (!Schema::hasTable('settings')) {
-                return;
-            }
-
             // Login and every API request boot the application. Avoid a
-            // settings-table query on each request while still picking up
-            // admin mail changes promptly.
+            // schema metadata query on every request too. If the table is not
+            // deployed yet, the guarded cache callback throws into this
+            // method's existing fallback and .env mail config remains active.
             $settings = Cache::remember('runtime_mail_settings', now()->addMinute(), fn () => Setting::first());
             if (!$settings) {
                 return;

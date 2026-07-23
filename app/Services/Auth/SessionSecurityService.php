@@ -231,7 +231,10 @@ class SessionSecurityService
         }
 
         $this->touch($session, $request);
-        return $session->fresh();
+        // touch() mutates this instance when a write is due. Re-querying the
+        // same session unconditionally added a full database round-trip to
+        // every authenticated API request.
+        return $session;
     }
 
     public function extend(AuthSession $session, Request $request): AuthSession
