@@ -393,7 +393,7 @@ abstract class VendorBase implements VendorInterface
     protected function resolveCallbackReference(array $callback): ?string
     {
         foreach (['tx_ref', 'transaction_reference', 'request_id', 'request-id', 'customer_reference', 'reference', 'payment_reference'] as $key) {
-            if (!empty($callback[$key])) {
+            if (array_key_exists($key, $callback) && $callback[$key] !== null && $callback[$key] !== '') {
                 return (string) $callback[$key];
             }
         }
