@@ -396,7 +396,17 @@ class VTUServicesController extends Controller
                             'plan_id' => $planId,
                         ]);
 
-                        return $fallback->process($service, $validated);
+                        $fallbackResult = $fallback->process($service, $validated);
+
+                        // The primary's fail row is an internal retry artifact once
+                        // the fallback vendor has taken over. Its funds were already
+                        // refunded by VendorBase::process(), so it should not
+                        // linger as a second misleading transaction.
+                        Transaction::where('transaction_reference', $primaryReference)
+                            ->where('status', 'fail')
+                            ->delete();
+
+                        return $fallbackResult;
                     }
                 }
 
