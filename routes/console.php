@@ -28,6 +28,16 @@ Schedule::command('transactions:prune')
         \Illuminate\Support\Facades\Log::error('transactions:prune scheduled run failed.');
     });
 
+// Expire very old pending transactions so stuck purchases return funds and
+// don't sit in the pending queue forever.
+Schedule::command('transactions:expire-stale --hours=24')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('transactions:expire-stale scheduled run failed.');
+    });
+
 // Ages out the audit trail per config/audit.php (AUDIT_RETENTION_DAYS). The
 // log is append-only and can't be deleted from the UI, so this is the only
 // thing that trims the table.
