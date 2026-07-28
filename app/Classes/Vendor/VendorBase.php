@@ -390,13 +390,25 @@ abstract class VendorBase implements VendorInterface
      * expiry sweeper — reuse the exact same locking, refund and reward
      * semantics without fabricating a Request.
      */
+    protected function resolveCallbackReference(array $callback): ?string
+    {
+        foreach (['tx_ref', 'transaction_reference', 'request_id', 'request-id', 'customer_reference', 'reference'] as $key) {
+            if (!empty($callback[$key])) {
+                return (string) $callback[$key];
+            }
+        }
+
+        return null;
+    }
+
     public function settleCallback(array $callback): void
     {
-        $ref = $callback['tx_ref'] ?? null;
+        $ref = $this->resolveCallbackReference($callback);
 
         if (!$ref) {
-            Log::warning("Vendor webhook: callback carried no tx_ref", [
+            Log::warning("Vendor webhook: callback carried no transaction reference", [
                 'provider' => $this->providerName ?? null,
+                'callback_keys' => array_keys($callback),
             ]);
             return;
         }
@@ -406,28 +418,27 @@ abstract class VendorBase implements VendorInterface
                 ->lockForUpdate()
                 ->first();
 
+            if (!$transaction && !empty($callback['payment_reference'])) {
+                $transaction = Transaction::where("payment_reference", $callback['payment_reference'])
+                    ->lockForUpdate()
+                    ->first();
+            }
+
             if (!$transaction) {
-                Log::warning("Vendor webhook: no transaction for reference", ['tx_ref' => $ref]);
+                Log::warning("Vendor webhook: no transaction for reference", ['reference' => $ref]);
                 return;
             }
 
             $previousStatus = $transaction->status;
             $newStatus = $callback['status'] ?? $previousStatus;
 
-            // A pending purchase already had its funds reserved (debited) at
-            // purchase time. Only the transition OUT of pending needs money
-            // handling, and the guard on the DB status makes a duplicate
-            // webhook a no-op (the row is already terminal on the second hit).
             if ($previousStatus === 'pending' && $newStatus !== 'pending') {
                 $user = User::whereKey($transaction->user_id)->lockForUpdate()->first();
 
                 if ($newStatus === 'fail' && $user) {
-                    // Confirmed failure → return the reserved funds.
                     $user->increment('wallet_balance', (float) $transaction->amount);
                     $callback['balance_after'] = (float) $user->fresh()->wallet_balance;
                 } elseif ($newStatus === 'success' && $user) {
-                    // Funds already held; just pay out the rewards that an
-                    // immediate success would have earned at record() time.
                     TransactionService::awardForSettledTransaction(
                         $user,
                         (float) $transaction->amount,
@@ -437,7 +448,17 @@ abstract class VendorBase implements VendorInterface
                 }
             }
 
-            $transaction->update($callback);
+            $updateData = array_filter(
+                array_intersect_key(
+                    $callback,
+                    array_flip(['status', 'response_message', 'completed_at', 'balance_after', 'payment_reference']),
+                ),
+                fn ($value) => $value !== null,
+            );
+
+            if (!empty($updateData)) {
+                $transaction->update($updateData);
+            }
         });
     }
 }
