@@ -106,7 +106,7 @@ abstract class VendorBase implements VendorInterface
             $responseMessage = $message
                 ? $parser->with(["transaction" => $transaction])->parse($message->body ?? "")
                 : ($response['data']['msg'] ?? $response['msg'] ?? $response['message'] ?? $response['response_message'] ?? null);
-            
+
             // Log transaction details
             Log::info("Transaction Completed", [
                 'transaction_id' => $transaction['id'] ?? null,
@@ -114,7 +114,7 @@ abstract class VendorBase implements VendorInterface
                 'discount_applied' => $transaction['discount_applied'] ?? null,
                 'status' => $transaction['status'] ?? null
             ]);
-            
+
             // Return success response with full transaction details
             if ($transaction['status'] === "success") {
                 return $this->success($transaction, $responseMessage, 200);
@@ -392,7 +392,7 @@ abstract class VendorBase implements VendorInterface
      */
     protected function resolveCallbackReference(array $callback): ?string
     {
-        foreach (['tx_ref', 'transaction_reference', 'request_id', 'request-id', 'customer_reference', 'reference'] as $key) {
+        foreach (['tx_ref', 'transaction_reference', 'request_id', 'request-id', 'customer_reference', 'reference', 'payment_reference'] as $key) {
             if (!empty($callback[$key])) {
                 return (string) $callback[$key];
             }
