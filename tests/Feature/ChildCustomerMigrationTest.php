@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Schema;
 
@@ -155,4 +156,102 @@ test('bulk migrating selected affiliate customers creates parent accounts and di
         ->and(ChildDirective::where('child_instance_id', $instance->id)->count())->toBe(2)
         ->and(User::where('email', 'alpha@example.test')->exists())->toBeTrue()
         ->and(User::where('email', 'beta@example.test')->exists())->toBeTrue();
+});
+
+test('email and migrate sends the email after migration succeeds', function () {
+    Mail::fake();
+
+    $admin = User::create([
+        'username' => 'admin-email-migrator',
+        'email' => 'admin-email@example.test',
+        'password' => 'secret-pass',
+        'user_type' => 'admin',
+        'role_id' => Role::first()->id,
+        'status' => 'active',
+    ]);
+    $parent = User::create([
+        'username' => 'migration-target',
+        'email' => 'target@example.test',
+        'phone' => '+2348000000010',
+        'password' => 'secret-pass',
+        'role_id' => Role::first()->id,
+        'status' => 'active',
+    ]);
+    $instance = ChildInstance::create([
+        'name' => 'Affiliate Email',
+        'slug' => 'affiliate-email',
+        'status' => 'active',
+    ]);
+    $customer = ChildCustomer::create([
+        'child_instance_id' => $instance->id,
+        'external_id' => 'email-child-1',
+        'username' => 'target',
+        'email' => $parent->email,
+        'phone' => $parent->phone,
+        'wallet_balance' => 0,
+    ]);
+
+    $response = $this->actingAs($admin, 'sanctum')
+        ->postJson("/api/admin/child-instances/{$instance->id}/customers/email-and-migrate", [
+            'customer_ids' => [$customer->id],
+            'subject' => 'Migration complete',
+            'body' => 'Hello {{ user.username }}',
+        ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.0.success', true)
+        ->assertJsonPath('data.0.email_sent', true);
+    expect($customer->fresh()->migrated_to_user_id)->toBe($parent->id);
+    Mail::assertSent(\App\Mail\AdminNotificationMail::class, function ($mail) use ($customer) {
+        return $mail->hasTo($customer->email)
+            && $customer->fresh()->migrated_to_user_id !== null;
+    });
+});
+
+test('email and migrate still emails customers that were already migrated', function () {
+    Mail::fake();
+
+    $admin = User::create([
+        'username' => 'admin-remailer',
+        'email' => 'admin-remailer@example.test',
+        'password' => 'secret-pass',
+        'user_type' => 'admin',
+        'role_id' => Role::first()->id,
+        'status' => 'active',
+    ]);
+    $parent = User::create([
+        'username' => 'already-parent',
+        'email' => 'already@example.test',
+        'phone' => '+2348000000020',
+        'password' => 'secret-pass',
+        'role_id' => Role::first()->id,
+        'status' => 'active',
+    ]);
+    $instance = ChildInstance::create([
+        'name' => 'Affiliate Remail',
+        'slug' => 'affiliate-remail',
+        'status' => 'active',
+    ]);
+    $customer = ChildCustomer::create([
+        'child_instance_id' => $instance->id,
+        'external_id' => 'email-child-2',
+        'username' => 'already',
+        'email' => $parent->email,
+        'phone' => $parent->phone,
+        'wallet_balance' => 0,
+        'migrated_to_user_id' => $parent->id,
+    ]);
+
+    $response = $this->actingAs($admin, 'sanctum')
+        ->postJson("/api/admin/child-instances/{$instance->id}/customers/email-and-migrate", [
+            'customer_ids' => [$customer->id],
+            'subject' => 'Important update',
+            'body' => 'Hello {{ user.username }}',
+        ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.0.success', true)
+        ->assertJsonPath('data.0.email_sent', true)
+        ->assertJsonPath('data.0.message', 'Email sent; customer was already migrated');
+    Mail::assertSent(\App\Mail\AdminNotificationMail::class, fn ($mail) => $mail->hasTo($customer->email));
 });

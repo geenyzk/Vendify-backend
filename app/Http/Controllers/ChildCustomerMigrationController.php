@@ -165,16 +165,46 @@ class ChildCustomerMigrationController extends Controller
                 continue;
             }
 
-            $blocker = $this->migrationBlocker($customer);
-            if ($blocker) {
-                $results[] = [
-                    'customer_id' => $customerId,
-                    'success' => false,
-                    'email_sent' => false,
-                    'message' => $blocker['message'],
-                    'errors' => $blocker['errors'],
-                ];
-                continue;
+            $alreadyMigrated = (bool) $customer->migrated_to_user_id;
+            $migrationResult = null;
+
+            if (!$alreadyMigrated) {
+                $blocker = $this->migrationBlocker($customer);
+                if ($blocker) {
+                    $results[] = [
+                        'customer_id' => $customerId,
+                        'success' => false,
+                        'email_sent' => false,
+                        'message' => $blocker['message'],
+                        'errors' => $blocker['errors'],
+                    ];
+                    continue;
+                }
+
+                try {
+                    // Complete the migration before sending the requested message.
+                    // This also ensures an email failure can never prevent migration.
+                    $migrationResult = $this->migrateCustomer(
+                        $instance,
+                        $customer,
+                        $validated['target_url'] ?? null,
+                    );
+                } catch (Throwable $e) {
+                    Log::warning('Affiliate email-and-migrate migration failed', [
+                        'child_instance_id' => $instance->id,
+                        'child_customer_id' => $customerId,
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    $results[] = [
+                        'customer_id' => $customerId,
+                        'success' => false,
+                        'email_sent' => false,
+                        'message' => 'Could not migrate this customer, so the email was not sent.',
+                        'errors' => [],
+                    ];
+                    continue;
+                }
             }
 
             try {
@@ -194,40 +224,28 @@ class ChildCustomerMigrationController extends Controller
                     'customer_id' => $customerId,
                     'success' => false,
                     'email_sent' => false,
-                    'message' => 'Email could not be sent, so migration was skipped.',
+                    'message' => $alreadyMigrated
+                        ? 'Customer was already migrated, but the email could not be sent.'
+                        : 'Customer was migrated, but the email could not be sent.',
                     'errors' => [],
+                    ...($migrationResult ? ['data' => $migrationResult['data']] : []),
                 ];
                 continue;
             }
 
-            try {
-                $result = $this->migrateCustomer($instance, $customer, $validated['target_url'] ?? null);
-                $results[] = [
-                    'customer_id' => $customerId,
-                    'success' => true,
-                    'email_sent' => true,
-                    'message' => 'Email sent and customer migrated',
-                    'data' => $result['data'],
-                ];
-                $processed++;
-            } catch (Throwable $e) {
-                Log::warning('Affiliate email-and-migrate migration failed', [
-                    'child_instance_id' => $instance->id,
-                    'child_customer_id' => $customerId,
-                    'error' => $e->getMessage(),
-                ]);
-
-                $results[] = [
-                    'customer_id' => $customerId,
-                    'success' => false,
-                    'email_sent' => true,
-                    'message' => 'Email was sent, but migration failed. Please review this customer.',
-                    'errors' => [],
-                ];
-            }
+            $results[] = [
+                'customer_id' => $customerId,
+                'success' => true,
+                'email_sent' => true,
+                'message' => $alreadyMigrated
+                    ? 'Email sent; customer was already migrated'
+                    : 'Customer migrated and email sent',
+                ...($migrationResult ? ['data' => $migrationResult['data']] : []),
+            ];
+            $processed++;
         }
 
-        return $this->success($results, "Emailed and migrated {$processed} of " . count($customerIds) . ' affiliate customers');
+        return $this->success($results, "Sent email to {$processed} of " . count($customerIds) . ' affiliate customers');
     }
 
     protected function migrationBlocker(ChildCustomer $customer): ?array
