@@ -345,6 +345,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::post('/child-instances/{id}/customers/email-and-migrate', [ChildCustomerMigrationController::class, 'emailAndMigrate']);
         Route::post('/child-instances/{id}/customers/bulk-migrate', [ChildCustomerMigrationController::class, 'bulkMigrate']);
         Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
+        Route::post('/child-instances/{id}/customers/messages', [ChildCustomerContactController::class, 'sendBulk']);
         Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
         Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ChildCustomer;
+use App\Models\ChildCustomerMessage;
 use App\Models\ChildDirective;
 use App\Models\ChildInstance;
 use App\Models\Role;
@@ -85,6 +86,15 @@ function createMigrationTestTables(): void
         $table->string('result_note', 1000)->nullable();
         $table->timestamps();
     });
+
+    Schema::create('child_customer_messages', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('child_customer_id');
+        $table->unsignedBigInteger('sent_by')->nullable();
+        $table->string('subject');
+        $table->text('body');
+        $table->timestamps();
+    });
 }
 
 beforeEach(function () {
@@ -100,7 +110,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    foreach (['child_directives', 'child_customers', 'child_instances', 'users', 'roles'] as $table) {
+    foreach (['child_customer_messages', 'child_directives', 'child_customers', 'child_instances', 'users', 'roles'] as $table) {
         Schema::dropIfExists($table);
     }
 });
@@ -254,4 +264,52 @@ test('email and migrate still emails customers that were already migrated', func
         ->assertJsonPath('data.0.email_sent', true)
         ->assertJsonPath('data.0.message', 'Email sent; customer was already migrated');
     Mail::assertSent(\App\Mail\AdminNotificationMail::class, fn ($mail) => $mail->hasTo($customer->email));
+});
+
+test('bulk customer email is a separate action for migrated customers', function () {
+    Mail::fake();
+
+    $admin = User::create([
+        'username' => 'admin-bulk-email',
+        'email' => 'admin-bulk-email@example.test',
+        'password' => 'secret-pass',
+        'user_type' => 'admin',
+        'role_id' => Role::first()->id,
+        'status' => 'active',
+    ]);
+    $parent = User::create([
+        'username' => 'bulk-email-parent',
+        'email' => 'bulk-email@example.test',
+        'phone' => '+2348000000030',
+        'password' => 'secret-pass',
+        'role_id' => Role::first()->id,
+        'status' => 'active',
+    ]);
+    $instance = ChildInstance::create([
+        'name' => 'Affiliate Bulk Email',
+        'slug' => 'affiliate-bulk-email',
+        'status' => 'active',
+    ]);
+    $customer = ChildCustomer::create([
+        'child_instance_id' => $instance->id,
+        'external_id' => 'bulk-email-child',
+        'username' => 'bulk-recipient',
+        'email' => $parent->email,
+        'phone' => $parent->phone,
+        'wallet_balance' => 0,
+        'migrated_to_user_id' => $parent->id,
+    ]);
+
+    $response = $this->actingAs($admin, 'sanctum')
+        ->postJson("/api/admin/child-instances/{$instance->id}/customers/messages", [
+            'customer_ids' => [$customer->id],
+            'subject' => 'Welcome {{ user.username }}',
+            'body' => 'Your migration is complete.',
+        ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.0.success', true)
+        ->assertJsonPath('data.0.email_sent', true);
+    Mail::assertSent(\App\Mail\AdminNotificationMail::class, fn ($mail) => $mail->hasTo($customer->email));
+    expect(ChildCustomerMessage::where('child_customer_id', $customer->id)->exists())->toBeTrue();
 });
