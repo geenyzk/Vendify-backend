@@ -64,7 +64,7 @@ class OgdamsWebhookController extends Controller
                 'event_type' => $eventType,
             ]);
 
-            if ($eventType !== 'data') {
+            if (!in_array($eventType, ['data', 'airtime'], true)) {
                 Log::info('Ogdams webhook ignored unsupported event type', [
                     'reference' => $reference,
                     'event_type' => $eventType,
