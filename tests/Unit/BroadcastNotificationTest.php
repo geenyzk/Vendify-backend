@@ -1,6 +1,7 @@
 <?php
 
 use App\Notifications\BroadcastNotification;
+use App\Support\MailDeliverability;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
 test('broadcast customer emails are sent synchronously', function () {
@@ -33,4 +34,18 @@ test('broadcast customer emails use deliverable branded mail views', function ()
         ->and($message->view)->toBe(['html' => 'emails.base', 'text' => 'emails.plain'])
         ->and($message->viewData['body'])->toBe('Hello customer')
         ->and($message->callbacks)->toHaveCount(1);
+});
+
+test('email bodies apply a branded inline style to links', function () {
+    $body = "Visit https://vendify.com.ng/login and <a href='https://example.com'>Example</a>";
+
+    $styled = MailDeliverability::styleLinks($body);
+
+    expect($styled)
+        ->toContain('<a href="https://vendify.com.ng/login"')
+        ->toContain('color:#ff7a1a !important')
+        ->toContain('font-weight:700')
+        ->toContain('text-decoration:underline')
+        ->toContain('href="https://example.com"')
+        ->toContain('style="color:#ff7a1a !important;font-weight:700;text-decoration:underline;"');
 });

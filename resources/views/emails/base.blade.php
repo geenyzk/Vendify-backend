@@ -26,7 +26,7 @@
                                 <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#334155;">{{ $intro }}</p>
                             @endisset
                             @isset($body)
-                                <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#475569;white-space:pre-line;">{{ $body }}</p>
+                                <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#475569;white-space:pre-line;">{!! \App\Support\MailDeliverability::styleLinks((string) $body) !!}</p>
                             @endisset
                             @isset($details)
                                 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:20px 0;border:1px solid #e5e7eb;border-radius:6px;">
