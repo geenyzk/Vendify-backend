@@ -378,35 +378,52 @@ class VTUServicesController extends Controller
                     && ($resultBody['success'] ?? false) === false;
 
                 if ($shouldFailOver && in_array($serviceType, ['data', 'airtime', 'cable'], true)) {
-                    $fallback = VTUServiceFactory::makeFallback(
-                        $serviceType,
-                        $routingSub,
-                        $validated['network'] ?? null,
-                        $planId,
-                        (float) $originalAmount,
-                    );
+                    $failedReference = $validated['tx_ref'];
+                    $excludedProviderIds = [$handler->providerId()];
 
-                    if ($fallback && $fallback->providerId() !== $handler->providerId()) {
-                        $primaryReference = $validated['tx_ref'];
+                    while (true) {
+                        $fallback = VTUServiceFactory::makeFallback(
+                            $serviceType,
+                            $routingSub,
+                            $validated['network'] ?? null,
+                            $planId,
+                            (float) $originalAmount,
+                            $excludedProviderIds,
+                        );
+
+                        if (! $fallback) {
+                            break;
+                        }
+
+                        $excludedProviderIds[] = $fallback->providerId();
                         $validated['tx_ref'] = Transaction::generateTransactionId();
-                        Log::warning('Primary VTU provider failed; trying configured fallback', [
+                        Log::warning('VTU provider failed; trying configured fallback', [
                             'service' => $serviceType,
-                            'primary_reference' => $primaryReference,
+                            'failed_reference' => $failedReference,
                             'fallback_reference' => $validated['tx_ref'],
+                            'fallback_provider_id' => $fallback->providerId(),
                             'plan_id' => $planId,
                         ]);
 
                         $fallbackResult = $fallback->process($service, $validated);
 
-                        // The primary's fail row is an internal retry artifact once
-                        // the fallback vendor has taken over. Its funds were already
-                        // refunded by VendorBase::process(), so it should not
-                        // linger as a second misleading transaction.
-                        Transaction::where('transaction_reference', $primaryReference)
+                        // The failed row is an internal retry artifact once
+                        // another configured provider has taken over. Its
+                        // funds were already refunded by VendorBase::process().
+                        Transaction::where('transaction_reference', $failedReference)
                             ->where('status', 'fail')
                             ->delete();
 
-                        return $fallbackResult;
+                        $fallbackBody = $fallbackResult->getData(true);
+                        $fallbackFailedImmediately = $fallbackResult->getStatusCode() >= 500
+                            && ($fallbackBody['success'] ?? false) === false;
+
+                        if (! $fallbackFailedImmediately) {
+                            return $fallbackResult;
+                        }
+
+                        $failedReference = $validated['tx_ref'];
+                        $result = $fallbackResult;
                     }
                 }
 

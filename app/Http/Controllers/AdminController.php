@@ -826,6 +826,64 @@ class AdminController extends Controller
         return is_numeric($value) ? (float) $value : null;
     }
 
+    /**
+     * Normalize the ordered provider fallback list sent by plan forms. Legacy
+     * single-fallback fields are still accepted and mirrored into the first
+     * entry so old clients keep working.
+     *
+     * @return array<int, array{provider_id:int, server_id:?string, cost_price:?float, provider_discount:?float}>
+     */
+    private static function normalizeProviderFallbacks(array $providerable, $primaryProviderId): array
+    {
+        $entries = $providerable['fallbacks'] ?? null;
+
+        if (! is_array($entries)) {
+            $entries = [];
+            if (! empty($providerable['fallback_provider_id'])) {
+                $entries[] = [
+                    'provider_id' => $providerable['fallback_provider_id'],
+                    'server_id' => $providerable['fallback_server_id'] ?? null,
+                    'cost_price' => $providerable['fallback_cost_price'] ?? null,
+                    'provider_discount' => $providerable['fallback_provider_discount'] ?? null,
+                ];
+            }
+        }
+
+        $rows = [];
+        $seen = [];
+        $primaryId = $primaryProviderId !== null && $primaryProviderId !== ''
+            ? (int) $primaryProviderId
+            : null;
+
+        foreach ($entries as $entry) {
+            if (! is_array($entry) || empty($entry['provider_id'])) {
+                continue;
+            }
+
+            $providerId = (int) $entry['provider_id'];
+            if ($primaryId !== null && $providerId === $primaryId) {
+                throw new \InvalidArgumentException('Fallback providers must be different from the primary provider.');
+            }
+            if (isset($seen[$providerId])) {
+                throw new \InvalidArgumentException('Fallback providers must not be repeated.');
+            }
+            if (! Vendor::whereKey($providerId)->exists()) {
+                throw new \InvalidArgumentException('One of the selected fallback providers does not exist.');
+            }
+
+            $seen[$providerId] = true;
+            $serverId = $entry['server_id'] ?? null;
+            $rows[] = [
+                'provider_id' => $providerId,
+                'server_id' => $serverId !== null && $serverId !== '' ? (string) $serverId : null,
+                'cost_price' => self::nullableCost($entry['cost_price'] ?? null),
+                'provider_discount' => self::nullableCost($entry['provider_discount'] ?? null),
+            ];
+        }
+
+        return $rows;
+    }
+
     private function syncModelRelations(Model $model, array $item)
     {
         // Log entry for tracing relation sync input
@@ -837,24 +895,29 @@ class AdminController extends Controller
             if (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable'] === false) {
                 // Insert or update a providerables row with provider_id = null so the plan
                 // is considered "global" (uses NetworkType->provider). Keep default pivot values.
+                $prov = $item['providerable'] ?? [];
+                $fallbackRows = self::normalizeProviderFallbacks($prov, null);
+                $firstFallback = $fallbackRows[0] ?? null;
                 $serverIdDefault = $item['providerable']['server_id'] ?? $item['server_id'] ?? null;
-                $fallbackProviderId = $item['providerable']['fallback_provider_id'] ?? null;
                 $pivotDataDefault = [
                     'provider_id' => null,
-                    'fallback_provider_id' => $fallbackProviderId,
+                    'fallback_provider_id' => $firstFallback['provider_id'] ?? null,
                     'providerable_id' => $model->id,
                     'providerable_type' => get_class($model),
                     'cost_price' => 0,
-                    'fallback_cost_price' => self::nullableCost($item['providerable']['fallback_cost_price'] ?? null),
-                    'provider_discount' => self::nullableCost($item['providerable']['provider_discount'] ?? null),
-                    'fallback_provider_discount' => self::nullableCost($item['providerable']['fallback_provider_discount'] ?? null),
+                    'fallback_cost_price' => $firstFallback['cost_price'] ?? null,
+                    'provider_discount' => self::nullableCost($prov['provider_discount'] ?? null),
+                    'fallback_provider_discount' => $firstFallback['provider_discount'] ?? null,
                     'margin_value' => 0,
                     'margin_type' => 'fiat',
                     'server_id' => $serverIdDefault,
-                    'fallback_server_id' => $item['providerable']['fallback_server_id'] ?? null,
+                    'fallback_server_id' => $firstFallback['server_id'] ?? null,
                     'updated_at' => now(),
                     'created_at' => now(),
                 ];
+                if (Schema::hasColumn('providerables', 'fallbacks')) {
+                    $pivotDataDefault['fallbacks'] = $fallbackRows === [] ? null : json_encode($fallbackRows);
+                }
                 try {
                     DB::table('providerables')->updateOrInsert(
                         ['providerable_id' => $model->id, 'providerable_type' => get_class($model)],
@@ -871,29 +934,24 @@ class AdminController extends Controller
                 $prov = $item['providerable'];
                 // Use the top-level toggle to decide whether this plan should use a plan-specific provider
                 $provId = (array_key_exists('use_provider_as_providerable', $item) && $item['use_provider_as_providerable']) ? ($prov['provider_id'] ?? null) : null;
-                $fallbackProviderId = $prov['fallback_provider_id'] ?? null;
-                if ($fallbackProviderId !== null && (int) $fallbackProviderId === (int) $provId) {
-                    throw new \InvalidArgumentException('The fallback provider must be different from the primary provider.');
-                }
-                if ($fallbackProviderId !== null && ! Vendor::whereKey($fallbackProviderId)->exists()) {
-                    throw new \InvalidArgumentException('The selected fallback provider does not exist.');
-                }
+                $fallbackRows = self::normalizeProviderFallbacks($prov, $provId);
+                $firstFallback = $fallbackRows[0] ?? null;
                 $pivotData = [
                     'cost_price' => $prov['cost_price'] ?? 0,
                     // Null (not 0) when the admin leaves it blank, so the plan
                     // keeps costing failed-over sales at the primary's price
                     // rather than recording them as free.
-                    'fallback_cost_price' => self::nullableCost($prov['fallback_cost_price'] ?? null),
+                    'fallback_cost_price' => $firstFallback['cost_price'] ?? null,
                     // Airtime's cost basis: the % each provider knocks off face
                     // value. Null (not 0) when unset, so airtime stays out of
                     // the profit figure instead of booking a 100% margin.
                     'provider_discount' => self::nullableCost($prov['provider_discount'] ?? null),
-                    'fallback_provider_discount' => self::nullableCost($prov['fallback_provider_discount'] ?? null),
+                    'fallback_provider_discount' => $firstFallback['provider_discount'] ?? null,
                     'margin_value' => $prov['margin_value'] ?? 0,
                     'margin_type' => $prov['margin_type'] ?? 'fiat',
                     'server_id' => $prov['server_id'] ?? $item['server_id'] ?? null,
-                    'fallback_provider_id' => $fallbackProviderId,
-                    'fallback_server_id' => $prov['fallback_server_id'] ?? null,
+                    'fallback_provider_id' => $firstFallback['provider_id'] ?? null,
+                    'fallback_server_id' => $firstFallback['server_id'] ?? null,
                 ];
 
                 Log::info('providerable payload', ['model' => get_class($model), 'id' => $model->id ?? null, 'providerable' => $prov]);
@@ -915,6 +973,9 @@ class AdminController extends Controller
                         'updated_at' => now(),
                         'created_at' => now(),
                     ];
+                    if (Schema::hasColumn('providerables', 'fallbacks')) {
+                        $upsert['fallbacks'] = $fallbackRows === [] ? null : json_encode($fallbackRows);
+                    }
 
                     DB::table('providerables')->updateOrInsert($where, $upsert);
                     Log::info('providerables upserted (single row) with provider_id', ['model' => get_class($model), 'id' => $model->id, 'provider_id' => $provId, 'pivot' => $upsert]);

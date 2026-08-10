@@ -229,15 +229,76 @@ abstract class VendorBase implements VendorInterface
         $actingId = (int) ($this->provider->id ?? 0);
         // Only treat this as a fallback sale when the fallback is a *different*
         // vendor than the primary; a plan can name the same vendor in both.
-        $servedByFallback = $actingId > 0
-            && (int) ($row->fallback_provider_id ?? 0) === $actingId
+        $fallback = $this->fallbackRowForProvider($row, $actingId);
+        $servedByFallback = $fallback !== null
             && (int) ($row->provider_id ?? 0) !== $actingId;
 
         $cost = $servedByFallback
-            ? ($row->fallback_cost_price ?? $row->cost_price)
+            ? ($fallback['cost_price'] ?? $row->cost_price)
             : ($row->cost_price ?? null);
 
         return $cost !== null ? (float) $cost : null;
+    }
+
+    /**
+     * @return array<int, array{provider_id:int, server_id:?string, cost_price:?float, provider_discount:?float}>
+     */
+    private function fallbackRows(object $row): array
+    {
+        $fallbacks = property_exists($row, 'fallbacks') ? $row->fallbacks : null;
+        $decoded = is_string($fallbacks) && $fallbacks !== ''
+            ? json_decode($fallbacks, true)
+            : null;
+
+        if (is_array($decoded)) {
+            $rows = [];
+            foreach ($decoded as $entry) {
+                if (! is_array($entry) || empty($entry['provider_id'])) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'provider_id' => (int) $entry['provider_id'],
+                    'server_id' => ($entry['server_id'] ?? null) !== null && $entry['server_id'] !== ''
+                        ? (string) $entry['server_id']
+                        : null,
+                    'cost_price' => ($entry['cost_price'] ?? null) !== null && $entry['cost_price'] !== ''
+                        ? (float) $entry['cost_price']
+                        : null,
+                    'provider_discount' => ($entry['provider_discount'] ?? null) !== null && $entry['provider_discount'] !== ''
+                        ? (float) $entry['provider_discount']
+                        : null,
+                ];
+            }
+
+            return $rows;
+        }
+
+        if (($row->fallback_provider_id ?? null) === null) {
+            return [];
+        }
+
+        return [[
+            'provider_id' => (int) $row->fallback_provider_id,
+            'server_id' => ($row->fallback_server_id ?? null) !== null ? (string) $row->fallback_server_id : null,
+            'cost_price' => ($row->fallback_cost_price ?? null) !== null ? (float) $row->fallback_cost_price : null,
+            'provider_discount' => ($row->fallback_provider_discount ?? null) !== null ? (float) $row->fallback_provider_discount : null,
+        ]];
+    }
+
+    private function fallbackRowForProvider(object $row, int $providerId): ?array
+    {
+        if ($providerId <= 0) {
+            return null;
+        }
+
+        foreach ($this->fallbackRows($row) as $fallback) {
+            if ((int) $fallback['provider_id'] === $providerId) {
+                return $fallback;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -279,8 +340,9 @@ abstract class VendorBase implements VendorInterface
         $value = null;
         if ((int) ($row->provider_id ?? 0) === (int) $this->provider->id) {
             $value = $row->server_id ?? null;
-        } elseif ((int) ($row->fallback_provider_id ?? 0) === (int) $this->provider->id) {
-            $value = $row->fallback_server_id ?? null;
+        } else {
+            $fallback = $this->fallbackRowForProvider($row, (int) $this->provider->id);
+            $value = $fallback['server_id'] ?? null;
         }
 
         return $value !== null && (string) $value !== '' && (string) $value !== '0'

@@ -45,19 +45,19 @@ class VTUServiceFactory
      * normal precedence chain, this never guesses another vendor: failover is
      * attempted only when an admin selected one in the plan create/edit form.
      */
-    public static function makeFallback($service = '', $sub = '', $network = null, $planId = null, ?float $amount = null)
+    public static function makeFallback($service = '', $sub = '', $network = null, $planId = null, ?float $amount = null, array $excludeProviderIds = [])
     {
         $provider = null;
 
         if ($service === 'data' && $planId) {
-            $provider = DataPlan::find($planId)?->resolveFallbackVendor();
+            $provider = DataPlan::find($planId)?->resolveFallbackVendor($excludeProviderIds);
         } elseif ($service === 'cable' && $planId) {
-            $provider = CablePlan::find($planId)?->resolveFallbackVendor();
+            $provider = CablePlan::find($planId)?->resolveFallbackVendor($excludeProviderIds);
         } elseif ($service === 'airtime' && $network) {
             $plans = AirtimePlan::where('name', $network)->where('active', true)->get();
             $plan = $plans->first(fn ($candidate) => ($candidate->category ?: 'vtu') === $sub)
                 ?? $plans->first();
-            $provider = $plan?->resolveFallbackVendor();
+            $provider = $plan?->resolveFallbackVendor($excludeProviderIds);
         }
 
         $provider = self::usable($provider, $service, $network, $planId, $amount);
