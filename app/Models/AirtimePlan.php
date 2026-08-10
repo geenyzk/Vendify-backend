@@ -19,7 +19,7 @@ class AirtimePlan extends Model
 
     // Expose the attached provider (and whether one is set) so the admin form
     // can pre-fill the provider picker on edit — mirrors DataPlan.
-    protected $appends = ["provider", "use_provider_as_providerable", "fallback_provider", "fallback_provider_id", "fallback_server_id", "fallback_cost_price", "provider_discount", "fallback_provider_discount"];
+    protected $appends = ["provider", "use_provider_as_providerable", "fallbacks", "fallback_provider", "fallback_provider_id", "fallback_server_id", "fallback_cost_price", "provider_discount", "fallback_provider_discount"];
 
     public function toArray()
     {

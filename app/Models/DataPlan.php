@@ -14,7 +14,7 @@ class DataPlan extends Model
     use Auditable;
     use HasProviderFallback;
 
-    protected $appends = ['price_ngn', 'plan', 'status', 'price', 'provider', 'use_provider_as_providerable', 'fallback_provider', 'fallback_provider_id', 'fallback_server_id', 'fallback_cost_price'];
+    protected $appends = ['price_ngn', 'plan', 'status', 'price', 'provider', 'use_provider_as_providerable', 'fallbacks', 'fallback_provider', 'fallback_provider_id', 'fallback_server_id', 'fallback_cost_price'];
 
     protected $fillable = [
         'id',
