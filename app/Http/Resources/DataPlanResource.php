@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\ProviderPlanPresentation;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -19,6 +20,7 @@ class DataPlanResource extends JsonResource
             : $this->provider;
 
         $pivot = $provider?->pivot;
+        $presentation = ProviderPlanPresentation::from($pivot?->provider_plan_name, $this->validity);
         $fallbackProvider = $this->fallback_provider;
 
         return [
@@ -29,6 +31,9 @@ class DataPlanResource extends JsonResource
             'plan' => $this->plan,
             'network' => $this->network,
             'validity' => $this->validity,
+            'provider_plan_name' => $presentation['original'],
+            'provider_plan_description' => $presentation['description'],
+            'provider_plan_parse_confident' => $presentation['confident'],
             'active' => $this->active,
             'status' => $this->status,
 

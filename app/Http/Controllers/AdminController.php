@@ -21,6 +21,7 @@ use App\Models\Vendor;
 use App\Support\AuditLogger;
 use App\Support\ErrorMessage;
 use App\Support\PerformanceCache;
+use App\Support\ProviderPlanPresentation;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
@@ -496,21 +497,29 @@ class AdminController extends Controller
 
     private function compactDataPlanList(iterable $plans): array
     {
-        return collect($plans)->map(fn (DataPlan $plan) => [
-            'id' => $plan->id,
-            'network' => $plan->network,
-            'plan_name' => $plan->plan_name,
-            'plan_size' => $plan->plan_size,
-            'plan_type' => $plan->plan_type,
-            'plan' => $plan->plan,
-            'validity' => $plan->validity,
-            'active' => (bool) $plan->active,
-            'is_draft' => (bool) $plan->is_draft,
-            'status' => $plan->is_draft ? 'draft' : ($plan->active ? 'active' : 'inactive'),
-            'sort_order' => $plan->sort_order,
-            'price' => $plan->price,
-            'price_ngn' => $plan->price_ngn,
-        ])->values()->all();
+        return collect($plans)->map(function (DataPlan $plan) {
+            $providerPlan = $plan->providers->first()?->pivot?->provider_plan_name;
+            $presentation = ProviderPlanPresentation::from($providerPlan, $plan->validity);
+
+            return [
+                'id' => $plan->id,
+                'network' => $plan->network,
+                'plan_name' => $plan->plan_name,
+                'plan_size' => $plan->plan_size,
+                'plan_type' => $plan->plan_type,
+                'plan' => $plan->plan,
+                'validity' => $plan->validity,
+                'provider_plan_name' => $presentation['original'],
+                'provider_plan_description' => $presentation['description'],
+                'provider_plan_parse_confident' => $presentation['confident'],
+                'active' => (bool) $plan->active,
+                'is_draft' => (bool) $plan->is_draft,
+                'status' => $plan->is_draft ? 'draft' : ($plan->active ? 'active' : 'inactive'),
+                'sort_order' => $plan->sort_order,
+                'price' => $plan->price,
+                'price_ngn' => $plan->price_ngn,
+            ];
+        })->values()->all();
     }
 
     /**

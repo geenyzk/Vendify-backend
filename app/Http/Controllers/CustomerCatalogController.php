@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\DataPlan;
 use App\Models\Network;
 use App\Support\PerformanceCache;
+use App\Support\ProviderPlanPresentation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -79,17 +80,25 @@ class CustomerCatalogController extends Controller
                 ->with('providers:id,name')
                 ->orderBy('network')->orderBy('sort_order')->orderBy('plan_name')
                 ->get()
-                ->map(fn (DataPlan $plan) => [
-                    'id' => $plan->id,
-                    'network' => $plan->network,
-                    'plan_name' => $plan->plan_name,
-                    'plan_size' => $plan->plan_size,
-                    'plan_type' => $plan->plan_type,
-                    'plan' => $plan->plan,
-                    'validity' => $plan->validity,
-                    'active' => true,
-                    'price' => $plan->price === null ? null : (float) $plan->price,
-                ])->values()->all();
+                ->map(function (DataPlan $plan) {
+                    $providerPlan = $plan->providers->first()?->pivot?->provider_plan_name;
+                    $presentation = ProviderPlanPresentation::from($providerPlan, $plan->validity);
+
+                    return [
+                        'id' => $plan->id,
+                        'network' => $plan->network,
+                        'plan_name' => $plan->plan_name,
+                        'plan_size' => $plan->plan_size,
+                        'plan_type' => $plan->plan_type,
+                        'plan' => $plan->plan,
+                        'validity' => $plan->validity,
+                        'provider_plan_name' => $presentation['original'],
+                        'provider_plan_description' => $presentation['description'],
+                        'provider_plan_parse_confident' => $presentation['confident'],
+                        'active' => true,
+                        'price' => $plan->price === null ? null : (float) $plan->price,
+                    ];
+                })->values()->all();
             Cache::put($key, $plans, now()->addMinutes(10));
         }
 
