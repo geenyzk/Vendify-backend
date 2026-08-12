@@ -7,6 +7,7 @@ use App\Models\Vendor;
 use App\Models\Provider;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Resources\VendorResource;
 use App\Jobs\ReconcileVTUNgTransaction;
 use App\Notifications\AppNotification;
 use Illuminate\Database\Schema\Blueprint;
@@ -174,7 +175,12 @@ it('persists the vendor connection switch to the raw active field used by reconc
     ]);
     $response = AdminController::universalCreateOrUpdate($request, 'vendors', $provider->id);
 
+    $resource = (new VendorResource(
+        Vendor::withoutGlobalScopes()->findOrFail($provider->id),
+    ))->resolve();
+
     expect($response->status())->toBe(200)
         ->and((bool) Provider::withoutGlobalScopes()->findOrFail($provider->id)->getRawOriginal('active'))->toBeTrue()
-        ->and(VTUNg::activeProvider()?->id)->toBe($provider->id);
+        ->and(VTUNg::activeProvider()?->id)->toBe($provider->id)
+        ->and($resource['active'])->toBeTrue();
 });

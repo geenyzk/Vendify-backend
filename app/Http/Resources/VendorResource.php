@@ -21,6 +21,10 @@ class VendorResource extends JsonResource
             'code' => $this->code,
             'base_url' => $this->base_url,
             'balance' => $this->balance,
+            // Administrative enable/disable state. Keep this separate from
+            // `connection`, which is the cached live health accessor and can
+            // remain healthy even while an admin has disabled the provider.
+            'active' => (bool) $this->active,
             'connection' => $this->connection,
             'username' => $this->username,
             'password' => $this->password,
