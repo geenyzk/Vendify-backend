@@ -34,6 +34,11 @@ return [
         'webhook_pin' => env('VTU_NG_WEBHOOK_PIN'),
     ],
 
+    'cheapdatahub' => [
+        'api_key' => env('CHEAPDATAHUB_API_KEY'),
+        'base_url' => env('CHEAPDATAHUB_BASE_URL', 'https://www.cheapdatahub.ng/api/v1/resellers'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

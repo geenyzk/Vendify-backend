@@ -9,6 +9,7 @@ use App\Classes\Vendor\Providers\SimVending;
 use App\Classes\Vendor\Providers\SMEPlug;
 use App\Classes\Vendor\Providers\Vtpass;
 use App\Classes\Vendor\Providers\VTUNg;
+use App\Classes\Vendor\Providers\CheapDataHub;
 use App\Models\Vendor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -27,6 +28,7 @@ class VendorFactory
         'sme plug' => SMEPlug::class,
         'vtpass'   => Vtpass::class,
         'vtu_ng'   => VTUNg::class,
+        'cheapdatahub' => CheapDataHub::class,
         'ogdams'   => Ogdams::class,
         'sandbox'  => SandboxService::class,
         // Deliberately absent from PROVIDER_META: SIM vending is the
@@ -57,6 +59,7 @@ class VendorFactory
         'simhost'  => ['ogdams', ['api_key'], true],
         'vtpass'   => ['VTpass', ['api_key', 'public_key'], true],
         'vtu_ng'   => ['VTU.ng', ['username', 'password', 'api_key'], true],
+        'cheapdatahub' => ['CheapDataHub', ['api_key'], true],
     ];
 
     /**

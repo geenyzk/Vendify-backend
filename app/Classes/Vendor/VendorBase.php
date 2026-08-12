@@ -381,6 +381,12 @@ abstract class VendorBase implements VendorInterface
         return in_array($service, $this->getSupportedServices());
     }
 
+    /** Whether this provider has the provider-specific mapping needed to vend a plan. */
+    public function canServePlan(string $service, $planId): bool
+    {
+        return true;
+    }
+
     public function providerId(): int
     {
         return (int) $this->provider->id;

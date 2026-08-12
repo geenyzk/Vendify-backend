@@ -157,6 +157,28 @@ class VTUServiceFactory
             return null;
         }
 
+        if ($vendor && $planId) {
+            try {
+                $handler = VendorFactory::make($vendor);
+                if (! $handler->supportsService($service) || ! $handler->canServePlan($service, $planId)) {
+                    Log::info('Configured vendor cannot serve the selected plan', [
+                        'service' => $service,
+                        'provider_id' => $vendor->id,
+                        'plan_id' => $planId,
+                    ]);
+                    return null;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Configured vendor availability check failed', [
+                    'service' => $service,
+                    'provider_id' => $vendor->id,
+                    'plan_id' => $planId,
+                    'error' => $e->getMessage(),
+                ]);
+                return null;
+            }
+        }
+
         return $vendor;
     }
 
