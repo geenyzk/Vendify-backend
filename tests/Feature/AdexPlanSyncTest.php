@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Auth;
 beforeEach(function () {
     Cache::flush();
     Schema::dropIfExists('providerables');
+    Schema::dropIfExists('service_routes');
     Schema::dropIfExists('data_plans');
     Schema::dropIfExists('roles');
     Schema::dropIfExists('providers');
@@ -83,6 +84,14 @@ beforeEach(function () {
         $table->decimal('provider_discount', 12, 2)->nullable();
         $table->decimal('fallback_provider_discount', 12, 2)->nullable();
         $table->string('fallback_server_id')->nullable();
+    });
+
+    Schema::create('service_routes', function (Blueprint $table) {
+        $table->id();
+        $table->timestamps();
+        $table->string('service_type');
+        $table->string('route_key');
+        $table->unsignedBigInteger('provider_id')->nullable();
     });
 
     Role::create(['name' => 'user', 'is_staff' => false]);
@@ -463,7 +472,11 @@ test('vtu ng sync keeps provider price separate from an editable cost override',
         'updated' => 0,
         'skipped' => 0,
         'conflicts' => 0,
-    ])->and($plan->active)->toBeTrue()
+    ])->and(DB::table('service_routes')
+        ->where('service_type', 'data')
+        ->where('route_key', 'VTU.NG')
+        ->value('provider_id'))->toBe($vendor->id)
+        ->and($plan->active)->toBeTrue()
         ->and($plan->is_draft)->toBeFalse()
         ->and($plan->plan_type)->toBe('VTU.NG')
         ->and($mapping->external_plan_id)->toBe('244542')

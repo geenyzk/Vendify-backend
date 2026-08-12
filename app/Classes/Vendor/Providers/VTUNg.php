@@ -6,6 +6,7 @@ use App\Classes\Vendor\VendorBase;
 use App\Models\DataPlan;
 use App\Models\Transaction;
 use App\Models\Role;
+use App\Models\ServiceRoute;
 use App\Support\PerformanceCache;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -13,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 
 class VTUNg extends VendorBase
 {
@@ -233,6 +235,16 @@ class VTUNg extends VendorBase
         ];
         $seen = [];
         $defaultPricing = $this->defaultPricing();
+
+        // Synced plans use VTU.NG as their plan type, so register that exact
+        // key with the existing Service Routing system. Never overwrite an
+        // explicit admin assignment; this only supplies the missing default.
+        if (Schema::hasTable('service_routes')) {
+            ServiceRoute::firstOrCreate(
+                ['service_type' => 'data', 'route_key' => 'VTU.NG'],
+                ['provider_id' => $this->provider->id],
+            );
+        }
 
         foreach ($remotePlans as $remote) {
             $seen[] = $remote['external_plan_id'];
