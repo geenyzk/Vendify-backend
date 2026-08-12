@@ -317,6 +317,44 @@ class DataPlan extends Model
      */
     public function resolveVendor(): ?Vendor
     {
+        // Purchases must resolve from the exact provider-specific mapping
+        // written by catalogue sync. Reading the pivot directly avoids an
+        // indirect morph relation silently hiding a valid synced mapping and
+        // lets us enforce enabled/available/priority in one deterministic
+        // query before falling through to Service Routing.
+        try {
+            if (Schema::hasTable('providerables')) {
+                $mapping = DB::table('providerables')
+                    ->join('providers', 'providers.id', '=', 'providerables.provider_id')
+                    ->where('providerables.providerable_id', $this->getKey())
+                    ->where('providerables.providerable_type', self::class)
+                    ->where('providers.active', true)
+                    ->when(
+                        Schema::hasColumn('providerables', 'provider_enabled'),
+                        fn ($query) => $query->where('providerables.provider_enabled', true),
+                    )
+                    ->when(
+                        Schema::hasColumn('providerables', 'provider_available'),
+                        fn ($query) => $query->where('providerables.provider_available', true),
+                    )
+                    ->when(
+                        Schema::hasColumn('providerables', 'priority'),
+                        fn ($query) => $query->orderBy('providerables.priority'),
+                    )
+                    ->value('providerables.provider_id');
+
+                if ($mapping) {
+                    $vendor = Vendor::find($mapping);
+                    if ($vendor) {
+                        return $vendor;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Older installations may not have every mapping column yet.
+            // Preserve the relation-based legacy resolution below.
+        }
+
         $query = $this->providers()->where('providers.active', true);
         if (Schema::hasColumn('providerables', 'provider_enabled')) {
             $query->wherePivot('provider_enabled', true)->wherePivot('provider_available', true);

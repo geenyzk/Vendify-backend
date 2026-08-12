@@ -2,6 +2,7 @@
 
 use App\Classes\Vendor\Providers\Adex;
 use App\Classes\Vendor\Providers\Ogdams;
+use App\Classes\Vendor\Providers\VTUNg;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Models\AirtimePlan;
 use App\Models\CablePlan;
@@ -91,4 +92,56 @@ test('airtime and cable expose their configured fallback handlers', function () 
         ->and($airtimeHandler->providerId())->toBe($fallback->id)
         ->and($cablePrimary->providerId())->toBe($primary->id)
         ->and($cableFallback->providerId())->toBe($fallback->id);
+});
+
+test('synced vtu ng glo and mtn plans resolve the adapter and provider payload', function (string $network, string $serviceId, string $variationId) {
+    $vendor = fallbackVendor('VTU.ng', 'vtu_ng');
+    $plan = DataPlan::create([
+        'network' => $network,
+        'plan_name' => $network === 'glo' ? '125' : '1',
+        'plan_size' => $network === 'glo' ? 'MB' : 'GB',
+        'plan_type' => 'VTU.NG',
+        'validity' => '1 Day',
+        'active' => true,
+        'pricing' => ['user' => ['type' => 'fiat', 'value' => 0]],
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id,
+        'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class,
+        'external_plan_id' => $variationId,
+        'server_id' => $variationId,
+        'provider_service_id' => $serviceId,
+        'provider_plan_name' => $network === 'glo' ? '125MB - 1 Day' : '1GB - 1 Day',
+        'provider_price' => 100,
+        'cost_price' => 100,
+        'provider_available' => true,
+        'provider_enabled' => true,
+        'priority' => 1,
+        'margin_value' => 0,
+        'margin_type' => 'fiat',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $handler = VTUServiceFactory::make('data', 'VTU.NG', $network, $plan->id, 'VTU.NG', 100);
+
+    expect($handler)->toBeInstanceOf(VTUNg::class)
+        ->and($handler->providerId())->toBe($vendor->id)
+        ->and($handler->formatPayload('data', [
+            'data_plan' => $plan->id,
+            'phone' => '08000000000',
+            'tx_ref' => 'VTU-ROUTING-TEST',
+        ]))->toMatchArray([
+            'phone' => '08000000000',
+            'service_id' => $serviceId,
+            'variation_id' => $variationId,
+        ]);
+})->with([
+    'glo' => ['glo', 'glo', '5580758'],
+    'mtn' => ['mtn', 'mtn', '244542'],
+]);
+
+test('a genuinely unsupported service still has no purchase adapter', function () {
+    expect(VTUServiceFactory::make('unsupported-service'))->toBeNull();
 });
