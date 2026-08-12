@@ -11,13 +11,13 @@ class VendorErrorMessage
     public const PLAN_UNAVAILABLE = 'This plan is temporarily unavailable. Please choose another plan or try again later.';
     public const PROCESSING = 'Your purchase is still processing. Please check your transaction history for updates.';
 
-    public static function forCurrentUser(?string $message, string $status = 'fail'): string
+    public static function forCurrentUser(?string $message, string $status = 'fail', bool $allowStaffDetail = true): string
     {
         $message = trim((string) $message);
 
         // Staff need the provider's exact response to repair configuration,
         // funding and routing. Ordinary customers must not see those details.
-        if ((bool) Auth::user()?->role?->is_staff) {
+        if ($allowStaffDetail && (bool) Auth::user()?->role?->is_staff) {
             return $message !== '' ? $message : self::fallback($status);
         }
 

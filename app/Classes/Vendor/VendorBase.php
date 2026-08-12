@@ -127,13 +127,14 @@ abstract class VendorBase implements VendorInterface
                 // actually just still in flight; 202 Accepted + the
                 // transaction record lets the frontend show a "processing"
                 // state instead of a false failure.
-                $publicMessage = VendorErrorMessage::forCurrentUser($responseMessage, 'pending');
-                if (! (bool) Auth::user()?->role?->is_staff) {
-                    $transaction['response_message'] = $publicMessage;
-                }
+                // A vend is a customer-facing action even when an owner is
+                // currently using the storefront. Staff diagnostics remain
+                // available in the admin transaction view and logs.
+                $publicMessage = VendorErrorMessage::forCurrentUser($responseMessage, 'pending', false);
+                $transaction['response_message'] = $publicMessage;
                 return $this->success($transaction, $publicMessage, 202);
             } else {
-                return $this->fail([], VendorErrorMessage::forCurrentUser($responseMessage), 500);
+                return $this->fail([], VendorErrorMessage::forCurrentUser($responseMessage, 'fail', false), 500);
             }
         } catch (\Throwable $e) {
             // Vendor call blew up after we reserved (e.g. a null/non-JSON
@@ -145,7 +146,7 @@ abstract class VendorBase implements VendorInterface
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return $this->fail([], VendorErrorMessage::forCurrentUser($e->getMessage()), 500);
+            return $this->fail([], VendorErrorMessage::forCurrentUser($e->getMessage(), 'fail', false), 500);
         }
     }
 

@@ -30,6 +30,20 @@ test('staff receive the exact upstream diagnostic', function () {
     expect(VendorErrorMessage::forCurrentUser($message))->toBe($message);
 });
 
+test('staff using a customer purchase screen receive customer safe wording', function () {
+    $user = new User;
+    $role = new Role;
+    $role->is_staff = true;
+    $user->setRelation('role', $role);
+    Auth::setUser($user);
+
+    expect(VendorErrorMessage::forCurrentUser(
+        'No Adex plan ID for data plan #24 on vendor [Data world api 1].',
+        'fail',
+        false,
+    ))->toBe(VendorErrorMessage::PLAN_UNAVAILABLE);
+});
+
 test('customers receive a useful plan unavailable message for mapping errors', function () {
     expect(VendorErrorMessage::forCurrentUser('No Adex plan ID for data plan #24'))
         ->toBe(VendorErrorMessage::PLAN_UNAVAILABLE);

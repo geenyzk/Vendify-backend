@@ -436,7 +436,7 @@ class VTUServicesController extends Controller
                 ]);
                 return response()->json([
                     'status' => 'error',
-                    'message' => VendorErrorMessage::forCurrentUser($e->getMessage()),
+                    'message' => VendorErrorMessage::forCurrentUser($e->getMessage(), 'fail', false),
                 ], 500);
             }
         });
