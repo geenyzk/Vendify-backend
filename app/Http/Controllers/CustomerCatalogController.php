@@ -49,7 +49,9 @@ class CustomerCatalogController extends Controller
 
         $response = $this->success($networks);
         $response->headers->set('X-Cache', $cacheHit ? 'HIT' : 'MISS');
-        $response->headers->set('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+        // Application caching above is versioned and cheap; do not let the
+        // browser independently reuse an old response after an admin edit.
+        $response->headers->set('Cache-Control', 'private, no-cache, must-revalidate');
         $response->headers->set('Vary', 'Authorization, Cookie');
 
         return $response;
@@ -98,7 +100,9 @@ class CustomerCatalogController extends Controller
             'type' => 'success',
         ], 200, [], JSON_PRESERVE_ZERO_FRACTION);
         $response->headers->set('X-Cache', $cacheHit ? 'HIT' : 'MISS');
-        $response->headers->set('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+        // The catalog version changes on every admin plan mutation. Force the
+        // browser to revalidate so that version can take effect immediately.
+        $response->headers->set('Cache-Control', 'private, no-cache, must-revalidate');
         $response->headers->set('Vary', 'Authorization, Cookie');
 
         return $response;
