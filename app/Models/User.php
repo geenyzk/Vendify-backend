@@ -18,6 +18,8 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Services\Auth\SessionSecurityService;
+use App\Support\VendorErrorMessage;
+use Illuminate\Support\Facades\Auth;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -213,7 +215,20 @@ class User extends Authenticatable implements MustVerifyEmail
 
     function getTransactionsAttribute()
     {
-        return Transaction::where("user_id", $this->id)->get();
+        $transactions = Transaction::where("user_id", $this->id)->get();
+
+        if (! (bool) Auth::user()?->role?->is_staff) {
+            $transactions->each(function (Transaction $transaction) {
+                if ($transaction->provider && in_array($transaction->status, ['fail', 'pending'], true)) {
+                    $transaction->response_message = VendorErrorMessage::forCurrentUser(
+                        $transaction->response_message,
+                        $transaction->status,
+                    );
+                }
+            });
+        }
+
+        return $transactions;
     }
 
     function getStatsAttribute()

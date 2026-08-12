@@ -12,6 +12,7 @@ use App\Models\Discount;
 use App\Models\Transaction;
 use App\Services\PromotionService;
 use App\Support\PerformanceCache;
+use App\Support\VendorErrorMessage;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -429,10 +430,13 @@ class VTUServicesController extends Controller
 
                 return $result;
             } catch (\Throwable $e) {
+                Log::error('Failed to process VTU request', [
+                    'exception' => get_class($e),
+                    'error' => $e->getMessage(),
+                ]);
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to process VTU request.',
-                    'error' => $e->getMessage(),
+                    'message' => VendorErrorMessage::forCurrentUser($e->getMessage()),
                 ], 500);
             }
         });

@@ -11,6 +11,7 @@ use App\Models\Message;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\VendorErrorMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -126,9 +127,13 @@ abstract class VendorBase implements VendorInterface
                 // actually just still in flight; 202 Accepted + the
                 // transaction record lets the frontend show a "processing"
                 // state instead of a false failure.
-                return $this->success($transaction, $responseMessage, 202);
+                $publicMessage = VendorErrorMessage::forCurrentUser($responseMessage, 'pending');
+                if (! (bool) Auth::user()?->role?->is_staff) {
+                    $transaction['response_message'] = $publicMessage;
+                }
+                return $this->success($transaction, $publicMessage, 202);
             } else {
-                return $this->fail([], $responseMessage, 500);
+                return $this->fail([], VendorErrorMessage::forCurrentUser($responseMessage), 500);
             }
         } catch (\Throwable $e) {
             // Vendor call blew up after we reserved (e.g. a null/non-JSON
@@ -140,7 +145,7 @@ abstract class VendorBase implements VendorInterface
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return $this->fail([], $e->getMessage(), 500);
+            return $this->fail([], VendorErrorMessage::forCurrentUser($e->getMessage()), 500);
         }
     }
 

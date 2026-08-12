@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\VendorErrorMessage;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -37,7 +38,9 @@ class TransactionResource extends JsonResource
             'completed_at' => $this->completed_at,
             'refunded_at' => $this->refunded_at,
             'refund_reason' => $this->refund_reason,
-            'response_message' => $this->response_message,
+            'response_message' => $this->provider && in_array($this->status, ['fail', 'pending'], true)
+                ? VendorErrorMessage::forCurrentUser($this->response_message, $this->status)
+                : $this->response_message,
             'platform' => $this->platform,
             'plan_type' => $this->plan_type,
             'token' => $this->token,
