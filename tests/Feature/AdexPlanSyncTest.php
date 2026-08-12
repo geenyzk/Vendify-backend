@@ -42,6 +42,7 @@ beforeEach(function () {
         $table->id();
         $table->timestamps();
         $table->string('name');
+        $table->string('slug')->nullable();
         $table->boolean('is_staff')->default(false);
     });
 
@@ -564,4 +565,59 @@ test('admin vtu sync fails safely when provider price migration is missing', fun
 
     expect($response->status())->toBe(409)
         ->and($response->getData(true)['message'])->toContain('provider_price database column is missing');
+});
+
+test('bulk role pricing partially updates selected plans without changing provider mappings', function () {
+    Role::create(['name' => 'basic']);
+    Role::create(['name' => 'agent']);
+    $vendor = Vendor::create(['name' => 'VTU.ng', 'sub_category' => 'vtu_ng', 'active' => true]);
+    $selected = DataPlan::create([
+        'network' => 'glo', 'plan_type' => 'VTU.NG', 'plan_name' => '1', 'plan_size' => 'GB',
+        'active' => true, 'is_draft' => false,
+        'pricing' => ['user' => ['type' => 'percentage', 'value' => 1], 'agent' => ['type' => 'fiat', 'value' => 20]],
+    ]);
+    $untouched = DataPlan::create([
+        'network' => 'glo', 'plan_type' => 'GIFTING', 'plan_name' => '2', 'plan_size' => 'GB',
+        'active' => true, 'is_draft' => false,
+        'pricing' => ['basic' => ['type' => 'percentage', 'value' => 2]],
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id, 'providerable_id' => $selected->id,
+        'providerable_type' => DataPlan::class, 'external_plan_id' => 'vtu-1',
+        'server_id' => 'vtu-1', 'provider_price' => 990, 'cost_price' => 1000,
+        'margin_value' => 0, 'margin_type' => 'fiat', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $mappingBefore = (array) DB::table('providerables')->first();
+    $cacheVersion = (int) Cache::get('catalog:v1:version', 1);
+
+    $response = (new AdminController)->bulkUpdateDataPlanPricing(Request::create(
+        '/admin/data-plans/bulk-pricing',
+        'POST',
+        ['plan_ids' => [$selected->id], 'roles' => [
+            'basic' => ['mode' => 'percentage', 'value' => 5],
+            'agent' => ['mode' => 'fiat', 'value' => 75],
+        ]],
+    ));
+
+    expect($response->status())->toBe(200)
+        ->and($response->getData(true)['data']['updated'])->toBe(1)
+        ->and($selected->fresh()->pricing['basic']['type'])->toBe('percentage')
+        ->and((float) $selected->fresh()->pricing['basic']['value'])->toBe(5.0)
+        ->and($selected->fresh()->pricing['agent']['type'])->toBe('fiat')
+        ->and((float) $selected->fresh()->pricing['agent']['value'])->toBe(75.0)
+        ->and($selected->fresh()->pricing['user'])->toBe(['type' => 'percentage', 'value' => 1])
+        ->and($untouched->fresh()->pricing['basic'])->toBe(['type' => 'percentage', 'value' => 2])
+        ->and((array) DB::table('providerables')->first())->toBe($mappingBefore)
+        ->and((int) Cache::get('catalog:v1:version'))->toBe($cacheVersion + 1);
+});
+
+test('bulk pricing route requires admin settings permission', function () {
+    $route = collect(app('router')->getRoutes()->getRoutes())
+        ->first(fn ($route) => $route->uri() === 'api/admin/data-plans/bulk-pricing');
+
+    expect($route)->not->toBeNull()
+        ->and($route->methods())->toContain('POST')
+        ->and($route->gatherMiddleware())->toContain('auth:sanctum')
+        ->and($route->gatherMiddleware())->toContain('user_type:admin')
+        ->and($route->gatherMiddleware())->toContain('permission:settings');
 });

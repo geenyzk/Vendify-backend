@@ -202,6 +202,65 @@ class AdminController extends Controller
         return $this->success(['discount' => $discounts]);
     }
 
+    /** Merge selected role markups into selected plans without touching provider data. */
+    public function bulkUpdateDataPlanPricing(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'plan_ids' => ['required', 'array', 'min:1', 'max:1000'],
+            'plan_ids.*' => ['required', 'integer', 'distinct', 'exists:data_plans,id'],
+            'roles' => ['required', 'array', 'min:1'],
+            'roles.*.mode' => ['required', 'in:percentage,fiat'],
+            'roles.*.value' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $roleKeys = array_keys($validated['roles']);
+        $validRoleKeys = Role::query()
+            ->whereIn('name', $roleKeys)
+            ->orWhereIn('slug', $roleKeys)
+            ->get(['name', 'slug'])
+            ->flatMap(fn (Role $role) => [$role->name, $role->slug])
+            ->filter()
+            ->unique();
+        $invalidRoles = array_values(array_diff($roleKeys, $validRoleKeys->all()));
+        if ($invalidRoles !== []) {
+            return $this->fail(
+                ['roles' => $invalidRoles],
+                'One or more selected roles are invalid.',
+                422,
+            );
+        }
+
+        $updated = DB::transaction(function () use ($validated) {
+            $count = 0;
+            DataPlan::query()
+                ->whereIn('id', $validated['plan_ids'])
+                ->orderBy('id')
+                ->chunkById(100, function ($plans) use ($validated, &$count) {
+                    foreach ($plans as $plan) {
+                        $pricing = is_array($plan->pricing) ? $plan->pricing : [];
+                        foreach ($validated['roles'] as $role => $entry) {
+                            $pricing[$role] = [
+                                'type' => $entry['mode'],
+                                'value' => (float) $entry['value'],
+                            ];
+                        }
+                        $plan->pricing = $pricing;
+                        $plan->save();
+                        $count++;
+                    }
+                });
+
+            return $count;
+        });
+
+        PerformanceCache::clearCatalog();
+
+        return $this->success(
+            ['updated' => $updated, 'roles' => $roleKeys],
+            "Updated role pricing for {$updated} plans.",
+        );
+    }
+
     /**
      * Run pending framework/database migrations (admin-only).
      */

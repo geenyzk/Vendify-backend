@@ -253,6 +253,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
 
         Route::middleware('permission:settings')->group(function () {
             Route::resource('controls', ServiceControlController::class);
+            Route::post('/data-plans/bulk-pricing', [AdminController::class, 'bulkUpdateDataPlanPricing']);
             // Before the resource route, else "variables" is captured as
             // templates/{template}.
             Route::get('templates/variables', [TemplateController::class, 'variables']);
