@@ -374,6 +374,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::get('/gateway-types', [AdminController::class, 'gatewayTypes']);
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
+        Route::get('/vendor/{id}/plan-sync-status', [AdminController::class, 'vendorPlanSyncStatus']);
         Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans']);
         Route::get('/vendor/{id}/plan-imports', [AdminController::class, 'vendorPlanImports']);
         Route::patch('/vendor/{id}/plan-mappings/{planId}', [AdminController::class, 'updateVendorPlanMapping']);

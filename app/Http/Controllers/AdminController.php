@@ -1154,6 +1154,16 @@ class AdminController extends Controller
     {
         try {
             $vendor = Vendor::findOrFail($id);
+
+            if ($vendor->sub_category === 'vtu_ng'
+                && (! Schema::hasTable('providerables') || ! Schema::hasColumn('providerables', 'provider_price'))) {
+                return $this->fail(
+                    [],
+                    'VTU.ng sync cannot run because the provider_price database column is missing. Run the pending database migration from Admin → Settings → Danger Zone first.',
+                    409,
+                );
+            }
+
             $vendorInstance = VendorFactory::make($vendor);
 
             if (! method_exists($vendorInstance, 'syncPlans')) {
@@ -1161,11 +1171,47 @@ class AdminController extends Controller
             }
 
             $summary = $vendorInstance->syncPlans();
+            PerformanceCache::clearCatalog();
 
-            return $this->success($summary, 'Plans synced.');
-        } catch (Exception $e) {
-            return $this->failFromException($e);
+            return $this->success($summary, $vendor->name.' sync completed.');
+        } catch (\Throwable $e) {
+            return $this->failFromException($e, 'Provider plan sync failed');
         }
+    }
+
+    /** Non-sensitive catalogue health for the provider details screen. */
+    public function vendorPlanSyncStatus(string $id)
+    {
+        $vendor = Vendor::findOrFail($id);
+        $schemaReady = Schema::hasTable('providerables')
+            && Schema::hasColumn('providerables', 'provider_price');
+
+        if (! Schema::hasTable('providerables')) {
+            return $this->success([
+                'active' => (bool) $vendor->active,
+                'schema_ready' => false,
+                'last_synced_at' => null,
+                'synced_plans' => 0,
+                'available_plans' => 0,
+            ]);
+        }
+
+        $mappings = DB::table('providerables')
+            ->where('provider_id', $vendor->id)
+            ->where('providerable_type', DataPlan::class)
+            ->whereNotNull('external_plan_id');
+
+        return $this->success([
+            'active' => (bool) $vendor->active,
+            'schema_ready' => $schemaReady,
+            'last_synced_at' => Schema::hasColumn('providerables', 'last_synced_at')
+                ? (clone $mappings)->max('last_synced_at')
+                : null,
+            'synced_plans' => (clone $mappings)->count(),
+            'available_plans' => Schema::hasColumn('providerables', 'provider_available')
+                ? (clone $mappings)->where('provider_available', true)->count()
+                : (clone $mappings)->count(),
+        ]);
     }
 
     /**

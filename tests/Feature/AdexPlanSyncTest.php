@@ -551,3 +551,17 @@ test('fixed and percentage role markups use the editable cost price', function (
     $user->setRelation('role', $agent);
     expect($plan->fresh()->price)->toBe(1075.0);
 });
+
+test('admin vtu sync fails safely when provider price migration is missing', function () {
+    $vendor = Vendor::create([
+        'name' => 'VTU.ng',
+        'sub_category' => 'vtu_ng',
+        'active' => true,
+    ]);
+    Schema::table('providerables', fn (Blueprint $table) => $table->dropColumn('provider_price'));
+
+    $response = (new AdminController)->syncVendorPlans((string) $vendor->id);
+
+    expect($response->status())->toBe(409)
+        ->and($response->getData(true)['message'])->toContain('provider_price database column is missing');
+});
