@@ -41,6 +41,7 @@ class DataPlanResource extends JsonResource
 
             // Servers and their configurations
             'cost_price' => $pivot?->cost_price ?? 0,
+            'provider_price' => $pivot?->provider_price,
             'server_id' => $pivot?->server_id ?? 0,
             'external_plan_id' => $pivot?->external_plan_id,
             // 'server_id' =>
@@ -66,6 +67,7 @@ class DataPlanResource extends JsonResource
                 'pivot' => [
                     'provider_id' => $pivot?->provider_id ?? $provider->id,
                     'cost_price' => $pivot?->cost_price ?? 0,
+                    'provider_price' => $pivot?->provider_price,
                     'server_id' => $pivot?->server_id ?? 0,
                     'external_plan_id' => $pivot?->external_plan_id,
                     'margin_value' => $pivot?->margin_value ?? null,

@@ -117,7 +117,7 @@ class AnalyzeDataPlanPricingTool extends AiTool
             'plan_count' => count($rows),
             'average_markup_percentage' => $averageMarkup,
             'pricing_mix' => $mix,
-            'note' => 'Markup is relative to provider cost price. "fiat" = fixed naira price, "percentage" = markup tracking cost, "fallback" = no role-specific price set (uses the plan default). Use set_data_plan_price to change a price.',
+            'note' => 'Markup is relative to editable cost price. "fiat" = fixed naira markup, "percentage" = percentage markup, "fallback" = no role-specific pricing entry.',
             'plans' => $rows,
         ];
     }
@@ -134,7 +134,7 @@ class AnalyzeDataPlanPricingTool extends AiTool
             $value = (float) ($pricingConfig['value'] ?? 0);
             $price = $pricingType === 'percentage'
                 ? round($cost * (1 + $value / 100), 2)
-                : round($value, 2);
+                : round($cost + $value, 2);
         } elseif ($pricingConfig !== null) {
             $pricingType = 'fiat';
             $price = round((float) $pricingConfig, 2);

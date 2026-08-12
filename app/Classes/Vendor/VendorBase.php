@@ -223,10 +223,11 @@ abstract class VendorBase implements VendorInterface
             return null;
         }
 
-        $row = DB::table('providerables')
+        $baseQuery = DB::table('providerables')
             ->where('providerable_id', $planId)
-            ->where('providerable_type', $modelClass)
-            ->first();
+            ->where('providerable_type', $modelClass);
+        $row = (clone $baseQuery)->where('provider_id', $this->provider->id)->first()
+            ?? $baseQuery->first(); // legacy single-row compatibility
 
         if (!$row) {
             return null;
@@ -334,10 +335,11 @@ abstract class VendorBase implements VendorInterface
      */
     protected function configuredPlanId(Model $plan): ?string
     {
-        $row = DB::table('providerables')
+        $baseQuery = DB::table('providerables')
             ->where('providerable_id', $plan->getKey())
-            ->where('providerable_type', get_class($plan))
-            ->first();
+            ->where('providerable_type', get_class($plan));
+        $row = (clone $baseQuery)->where('provider_id', $this->provider->id)->first()
+            ?? $baseQuery->first(); // old plans may carry one shared server_id
 
         if (!$row) {
             return null;

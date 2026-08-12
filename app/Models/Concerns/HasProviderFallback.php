@@ -5,16 +5,20 @@ namespace App\Models\Concerns;
 use App\Models\Provider;
 use App\Models\Vendor;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 trait HasProviderFallback
 {
     private function providerRoutingRow(): ?object
     {
         try {
-            return DB::table('providerables')
+            $query = DB::table('providerables')
                 ->where('providerable_id', $this->getKey())
-                ->where('providerable_type', self::class)
-                ->first();
+                ->where('providerable_type', self::class);
+
+            return Schema::hasColumn('providerables', 'priority')
+                ? $query->orderBy('priority')->first()
+                : $query->first();
         } catch (\Throwable $e) {
             return null;
         }

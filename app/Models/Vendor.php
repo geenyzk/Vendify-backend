@@ -227,6 +227,9 @@ class Vendor extends Model
     public function dataPlans()
     {
         $fields = ['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'];
+        if (Schema::hasColumn('providerables', 'provider_price')) {
+            $fields[] = 'provider_price';
+        }
         foreach (['provider_service_id', 'provider_plan_name', 'provider_available', 'provider_enabled', 'priority', 'last_synced_at'] as $field) {
             if (Schema::hasColumn('providerables', $field)) {
                 $fields[] = $field;

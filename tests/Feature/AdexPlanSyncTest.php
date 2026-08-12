@@ -1,11 +1,13 @@
 <?php
 
 use App\Classes\Vendor\Providers\Adex;
+use App\Classes\Vendor\Providers\VTUNg;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CustomerCatalogController;
 use App\Models\DataPlan;
 use App\Models\Role;
 use App\Models\Vendor;
+use App\Models\User;
 use App\Support\PerformanceCache;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
@@ -13,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Auth;
 
 beforeEach(function () {
     Cache::flush();
@@ -63,10 +66,17 @@ beforeEach(function () {
         $table->unsignedBigInteger('providerable_id');
         $table->string('providerable_type');
         $table->decimal('cost_price', 12, 2)->nullable();
+        $table->decimal('provider_price', 12, 2)->nullable();
         $table->decimal('margin_value', 12, 2)->default(0);
         $table->string('margin_type')->nullable();
         $table->string('server_id')->nullable();
         $table->string('external_plan_id')->nullable();
+        $table->string('provider_service_id')->nullable();
+        $table->string('provider_plan_name')->nullable();
+        $table->boolean('provider_available')->default(true);
+        $table->boolean('provider_enabled')->default(true);
+        $table->unsignedInteger('priority')->default(100);
+        $table->timestamp('last_synced_at')->nullable();
         $table->unsignedBigInteger('fallback_provider_id')->nullable();
         $table->decimal('fallback_cost_price', 12, 2)->nullable();
         $table->decimal('provider_discount', 12, 2)->nullable();
@@ -387,12 +397,12 @@ test('customer catalogue returns an active configured price immediately and hide
     $visible = DataPlan::create([
         'network' => 'MTN', 'plan_type' => 'GIFTING', 'plan_name' => '1', 'plan_size' => 'GB',
         'validity' => '30 DAYS', 'active' => true, 'is_draft' => false,
-        'pricing' => ['user' => ['type' => 'fiat', 'value' => 350]],
+        'pricing' => ['user' => 350],
     ]);
     DataPlan::create([
         'network' => 'AIRTEL', 'plan_type' => 'GIFTING', 'plan_name' => '2', 'plan_size' => 'GB',
         'validity' => '30 DAYS', 'active' => true, 'is_draft' => true,
-        'pricing' => ['user' => ['type' => 'fiat', 'value' => 900]],
+        'pricing' => ['user' => 900],
     ]);
 
     $payload = (new CustomerCatalogController)->dataPlans(Request::create('/catalog/data-plans', 'GET'))->getData(true);
@@ -422,4 +432,109 @@ test('percentage and missing role pricing resolve to a real price or null, never
     $plan->pricing = ['affiliate' => ['type' => 'fiat', 'value' => 600]];
     $plan->save();
     expect($plan->fresh()->price)->toBeNull()->and($plan->fresh()->price_ngn)->toBeNull();
+});
+
+test('vtu ng sync keeps provider price separate from an editable cost override', function () {
+    $vendor = Vendor::create([
+        'name' => 'VTU.ng', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.ng/wp-json/api/v2', 'active' => true,
+    ]);
+
+    Http::fake([
+        'https://vtu.ng/wp-json/api/v2/variations/data' => Http::response([
+            'data' => [[
+                'variation_id' => 244542, 'service_name' => 'MTN', 'service_id' => 'mtn',
+                'data_plan' => '2GB - 30 Days', 'price' => '1599',
+                'reseller_price' => '1499.00', 'availability' => 'Available',
+            ]],
+        ]),
+    ]);
+
+    $client = new VTUNg($vendor);
+    $client->syncPlans();
+
+    $plan = DataPlan::firstOrFail();
+    $mapping = DB::table('providerables')->first();
+    expect($plan->active)->toBeTrue()
+        ->and($plan->is_draft)->toBeFalse()
+        ->and($mapping->external_plan_id)->toBe('244542')
+        ->and($mapping->provider_service_id)->toBe('mtn')
+        ->and((float) $mapping->provider_price)->toBe(1499.0)
+        ->and((float) $mapping->cost_price)->toBe(1499.0)
+        ->and((int) $mapping->priority)->toBe(1);
+
+    DB::table('providerables')->where('id', $mapping->id)->update(['cost_price' => 1525]);
+    Http::fake([
+        'https://vtu.ng/wp-json/api/v2/variations/data' => Http::response([
+            'data' => [[
+                'variation_id' => 244542, 'service_name' => 'MTN', 'service_id' => 'mtn',
+                'data_plan' => '2GB - 30 Days', 'price' => '1650',
+                'reseller_price' => '1520.00', 'availability' => 'Unavailable',
+            ]],
+        ]),
+    ]);
+    $client->syncPlans();
+
+    $mapping = DB::table('providerables')->first();
+    expect(DataPlan::count())->toBe(1)
+        ->and(DB::table('providerables')->count())->toBe(1)
+        ->and((float) $mapping->provider_price)->toBe(1520.0)
+        ->and((float) $mapping->cost_price)->toBe(1525.0)
+        ->and((bool) $mapping->provider_available)->toBeFalse();
+});
+
+test('vtu ng sync does not alter another providers mapping', function () {
+    $vtu = Vendor::create(['name' => 'VTU.ng', 'sub_category' => 'vtu_ng', 'base_url' => 'https://vtu.ng/wp-json/api/v2', 'active' => true]);
+    $other = Vendor::create(['name' => 'Existing provider', 'sub_category' => 'adex', 'active' => true]);
+    $plan = DataPlan::create([
+        'network' => 'glo', 'plan_type' => 'GIFTING', 'plan_name' => '1', 'plan_size' => 'GB',
+        'validity' => '3 Days', 'active' => true, 'is_draft' => false, 'pricing' => [],
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $other->id, 'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class, 'server_id' => 'legacy-827',
+        'cost_price' => 300, 'margin_value' => 0, 'margin_type' => 'fiat',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    Http::fake([
+        'https://vtu.ng/wp-json/api/v2/variations/data' => Http::response(['data' => [[
+            'variation_id' => 12345, 'service_id' => 'glo', 'service_name' => 'Glo',
+            'data_plan' => '1GB - 3 Days', 'reseller_price' => '299', 'availability' => 'Available',
+        ]]]),
+    ]);
+
+    (new VTUNg($vtu))->syncPlans();
+
+    $legacy = DB::table('providerables')->where('provider_id', $other->id)->first();
+    expect($legacy->server_id)->toBe('legacy-827')
+        ->and((float) $legacy->cost_price)->toBe(300.0)
+        ->and(DB::table('providerables')->where('provider_id', $vtu->id)->count())->toBe(1);
+});
+
+test('fixed and percentage role markups use the editable cost price', function () {
+    $vendor = Vendor::create(['name' => 'VTU.ng', 'sub_category' => 'vtu_ng', 'active' => true]);
+    $basic = Role::create(['name' => 'basic']);
+    $agent = Role::create(['name' => 'agent']);
+    $plan = DataPlan::create([
+        'network' => 'mtn', 'plan_type' => 'VTU.NG', 'plan_name' => '1', 'plan_size' => 'GB',
+        'validity' => '30 Days', 'active' => true, 'is_draft' => false,
+        'pricing' => [
+            'basic' => ['type' => 'percentage', 'value' => 5],
+            'agent' => ['type' => 'fiat', 'value' => 75],
+        ],
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id, 'providerable_id' => $plan->id,
+        'providerable_type' => DataPlan::class, 'cost_price' => 1000,
+        'provider_price' => 999, 'margin_value' => 0, 'margin_type' => 'fiat',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $user = new User;
+    $user->setRelation('role', $basic);
+    Auth::setUser($user);
+    expect($plan->fresh()->price)->toBe(1050.0);
+
+    $user->setRelation('role', $agent);
+    expect($plan->fresh()->price)->toBe(1075.0);
 });

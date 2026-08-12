@@ -5,6 +5,7 @@ namespace App\Classes\Vendor\Providers;
 use App\Classes\Vendor\VendorBase;
 use App\Models\DataPlan;
 use App\Models\Transaction;
+use App\Models\Role;
 use App\Support\PerformanceCache;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -212,7 +213,7 @@ class VTUNg extends VendorBase
                 'name' => trim((string) $row['data_plan']),
                 // Displayed retail price is deliberately not a Vendify cost.
                 // An absent reseller_price remains zero for admin review.
-                'cost_price' => (float) ($row['reseller_price'] ?? 0),
+                'provider_price' => (float) ($row['reseller_price'] ?? 0),
                 'available' => strcasecmp((string) ($row['availability'] ?? ''), 'available') === 0,
             ];
         }, $response->json('data'))));
@@ -223,6 +224,7 @@ class VTUNg extends VendorBase
         $remotePlans = $this->fetchRemotePlans();
         $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'unavailable' => 0];
         $seen = [];
+        $defaultPricing = $this->defaultPricing();
 
         foreach ($remotePlans as $remote) {
             $seen[] = $remote['external_plan_id'];
@@ -260,10 +262,17 @@ class VTUNg extends VendorBase
                 $plan = DataPlan::create([
                     'network' => $remote['service_id'], 'plan_type' => 'VTU.NG',
                     'plan_name' => $amount, 'plan_size' => $unit, 'validity' => $validity,
-                    'active' => false, 'is_draft' => true, 'sort_order' => 0, 'pricing' => [],
+                    'active' => $remote['available'], 'is_draft' => ! $remote['available'],
+                    'sort_order' => 0, 'pricing' => $defaultPricing,
                 ]);
                 $summary['created']++;
             } else {
+                // A plan first discovered while unavailable is held as a
+                // draft. Publish it automatically once VTU.ng makes it
+                // available; never reactivate a plan an admin later disabled.
+                if ($link && $plan->is_draft && $plan->plan_type === 'VTU.NG' && $remote['available']) {
+                    $plan->update(['active' => true, 'is_draft' => false]);
+                }
                 $summary['updated']++;
             }
 
@@ -273,8 +282,15 @@ class VTUNg extends VendorBase
                     'providerable_id' => $plan->id, 'providerable_type' => DataPlan::class,
                     'external_plan_id' => $remote['external_plan_id'], 'server_id' => $remote['external_plan_id'],
                     'provider_service_id' => $remote['service_id'], 'provider_plan_name' => $remote['name'],
-                    'cost_price' => $remote['cost_price'], 'provider_available' => $remote['available'],
-                    'provider_enabled' => $link->provider_enabled ?? true, 'priority' => $link->priority ?? 100,
+                    // provider_price always follows VTU.ng. cost_price is set
+                    // only on first import and remains an admin-owned override.
+                    'provider_price' => $remote['provider_price'],
+                    'cost_price' => $link->cost_price ?? $remote['provider_price'],
+                    'provider_available' => $remote['available'],
+                    'provider_enabled' => $link->provider_enabled ?? true,
+                    // VTU.ng is primary for data; existing mappings retain
+                    // their records and remain available as manual fallbacks.
+                    'priority' => $link->priority ?? 1,
                     'last_synced_at' => now(), 'margin_value' => $link->margin_value ?? 0,
                     'margin_type' => $link->margin_type ?? 'fiat', 'updated_at' => now(),
                     'created_at' => $link->created_at ?? now(),
@@ -294,6 +310,18 @@ class VTUNg extends VendorBase
 
         PerformanceCache::clearCatalog();
         return $summary;
+    }
+
+    /** New VTU.ng plans sell at cost until an admin adds role markups. */
+    private function defaultPricing(): array
+    {
+        $roles = Role::query()->pluck('name')->filter()->all();
+        $pricing = ['user' => ['type' => 'fiat', 'value' => 0]];
+        foreach ($roles as $role) {
+            $pricing[$role] = ['type' => 'fiat', 'value' => 0];
+        }
+
+        return $pricing;
     }
 
     public function verifyUser(string $service, string $identifier, array $payload): JsonResponse

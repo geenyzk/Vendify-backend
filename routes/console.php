@@ -52,7 +52,7 @@ Schedule::command('audit:prune')
 // Ogdams) so a purchase never has to call the vendor's API to resolve a
 // plan ID — no-ops for vendor classes that don't implement syncPlans().
 Schedule::command('vendors:sync-plans')
-    ->daily()
+    ->hourly()
     ->withoutOverlapping()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('vendors:sync-plans scheduled run failed.');

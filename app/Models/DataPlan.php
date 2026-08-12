@@ -142,7 +142,11 @@ class DataPlan extends Model
                         return $cost > 0 ? round($cost * (1 + $value / 100), 2) : null;
                     }
 
-                    return $value;
+                    // Fiat role pricing is a fixed Naira markup over the
+                    // editable Vendify cost price (e.g. 1000 + 75 = 1075).
+                    $cost = $this->resolveCostPrice();
+
+                    return $cost > 0 ? round($cost + $value, 2) : null;
                 }
 
                 // Legacy JSON shape: a plain fiat number.
@@ -242,6 +246,9 @@ class DataPlan extends Model
         // Polymorphic many-to-many relation: this model can have multiple providers
         // Pivot table `providerables` holds `cost_price`, `margin_value`, `margin_type` and timestamps
         $fields = ['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'];
+        if (Schema::hasColumn('providerables', 'provider_price')) {
+            $fields[] = 'provider_price';
+        }
         foreach (['provider_service_id', 'provider_plan_name', 'provider_available', 'provider_enabled', 'priority', 'last_synced_at'] as $field) {
             if (Schema::hasColumn('providerables', $field)) {
                 $fields[] = $field;

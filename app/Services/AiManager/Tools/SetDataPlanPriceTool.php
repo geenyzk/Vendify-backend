@@ -14,11 +14,11 @@ use App\Services\AiManager\AiManagerException;
  *
  * Consolidates what used to be two overlapping tools (update_data_plan_price +
  * adjust_data_plan_price) into one, via `mode`:
- *   - fiat                 : exact naira price, stored as a fixed price.
+ *   - fiat                 : fixed naira markup over editable cost.
  *   - percentage           : markup % over provider cost, stored so the price
  *                            tracks cost changes going forward.
  *   - increase_by_percentage / decrease_by_percentage : move the CURRENT price
- *                            up/down by a percentage, stored as a fixed price.
+ *                            up/down by a percentage, stored as a fixed markup.
  *
  * Mutating: proposal-only, gated by `settings`, since prices affect revenue.
  */
@@ -33,7 +33,7 @@ class SetDataPlanPriceTool extends AiTool
 
     public function description(): string
     {
-        return 'Propose setting or adjusting a data plan\'s selling price for a customer role. Modes: "fiat" (exact naira price), "percentage" (markup % over provider cost that keeps tracking cost), "increase_by_percentage"/"decrease_by_percentage" (move the current price up/down by a percentage). Find the plan id and current pricing first with search_plans (table data_plans). Creates a pending action an admin must approve.';
+        return 'Propose setting or adjusting a data plan markup for a customer role. Modes: "fiat" (fixed naira markup over editable cost), "percentage" (markup % over editable cost), or increase/decrease the current selling price by a percentage. Creates a pending action an admin must approve.';
     }
 
     public function isMutating(): bool
@@ -56,9 +56,9 @@ class SetDataPlanPriceTool extends AiTool
                 'mode' => [
                     'type' => 'string',
                     'enum' => self::MODES,
-                    'description' => 'fiat = exact price; percentage = markup over cost (tracks cost); increase_by_percentage/decrease_by_percentage = move the current price by a percentage.',
+                    'description' => 'fiat = fixed naira markup over cost; percentage = markup percent over cost; increase/decrease moves the current selling price.',
                 ],
-                'value' => ['type' => 'number', 'description' => 'The naira price (fiat) or the percentage (all other modes).'],
+                'value' => ['type' => 'number', 'description' => 'The fixed naira markup (fiat) or percentage (all other modes).'],
                 'reason' => ['type' => 'string', 'description' => 'Optional business rationale shown on the approval card.'],
             ],
             'required' => ['plan_id', 'mode', 'value'],
@@ -84,7 +84,7 @@ class SetDataPlanPriceTool extends AiTool
         $plan = "#{$arguments['plan_id']}";
 
         return match ($arguments['mode']) {
-            'fiat' => "Set data plan {$plan} price for role '{$role}' to NGN " . number_format($value, 2),
+            'fiat' => "Set data plan {$plan} markup for role '{$role}' to NGN " . number_format($value, 2),
             'percentage' => "Set data plan {$plan} price for role '{$role}' to a {$value}% markup over cost",
             'increase_by_percentage' => "Increase data plan {$plan} price for role '{$role}' by {$value}%",
             'decrease_by_percentage' => "Decrease data plan {$plan} price for role '{$role}' by {$value}%",
@@ -116,7 +116,7 @@ class SetDataPlanPriceTool extends AiTool
         $previous = $pricing[$role] ?? null;
 
         // Modes that operate on cost need a real cost basis.
-        if (in_array($mode, ['percentage', 'increase_by_percentage', 'decrease_by_percentage'], true) && $cost <= 0) {
+        if ($cost <= 0) {
             throw new AiManagerException('Unable to resolve this plan\'s cost price, which the chosen mode needs.');
         }
 
@@ -127,7 +127,8 @@ class SetDataPlanPriceTool extends AiTool
         } else {
             $current = $this->currentPriceForRole($plan, $previous, $cost);
             $factor = $mode === 'increase_by_percentage' ? (1 + $value / 100) : max(0, 1 - $value / 100);
-            $newConfig = ['type' => 'fiat', 'value' => round($current * $factor, 2)];
+            $newPrice = round($current * $factor, 2);
+            $newConfig = ['type' => 'fiat', 'value' => max(0, round($newPrice - $cost, 2))];
         }
 
         $pricing[$role] = $newConfig;
@@ -154,7 +155,7 @@ class SetDataPlanPriceTool extends AiTool
             if (($pricingConfig['type'] ?? 'fiat') === 'percentage') {
                 return round($cost * (1 + (float) ($pricingConfig['value'] ?? 0) / 100), 2);
             }
-            return round((float) ($pricingConfig['value'] ?? 0), 2);
+            return round($cost + (float) ($pricingConfig['value'] ?? 0), 2);
         }
 
         if ($pricingConfig !== null) {

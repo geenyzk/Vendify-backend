@@ -29,7 +29,9 @@ test('the admin data plan list uses the compact representation', function () {
         'validity' => '30 days',
         'active' => true,
         'is_draft' => false,
-        'pricing' => ['user' => ['type' => 'fiat', 'value' => 350]],
+        // Legacy scalar entries remain exact selling prices; structured fiat
+        // entries are the modern fixed-markup form tested separately.
+        'pricing' => ['user' => 350],
     ]);
 
     $response = $this->actingAs($user, 'sanctum')
