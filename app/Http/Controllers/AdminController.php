@@ -920,7 +920,7 @@ class AdminController extends Controller
                 }
                 try {
                     DB::table('providerables')->updateOrInsert(
-                        ['providerable_id' => $model->id, 'providerable_type' => get_class($model)],
+                        ['providerable_id' => $model->id, 'providerable_type' => get_class($model), 'provider_id' => null],
                         $pivotDataDefault
                     );
                     Log::info('providerables upserted with provider_id = null due to use_provider_as_providerable=false', ['model' => get_class($model), 'id' => $model->id]);
@@ -958,7 +958,13 @@ class AdminController extends Controller
 
                 try {
                     // Use a single upsert to ensure only one providerables row exists per providerable
-                    $where = ['providerable_id' => $model->id, 'providerable_type' => get_class($model)];
+                    // Provider-scoped identity preserves every other provider
+                    // mapping attached to this same customer-facing plan.
+                    $where = [
+                        'providerable_id' => $model->id,
+                        'providerable_type' => get_class($model),
+                        'provider_id' => $provId,
+                    ];
                     $upsert = [
                         'provider_id' => $provId,
                         'fallback_provider_id' => $pivotData['fallback_provider_id'],
@@ -1191,6 +1197,12 @@ class AdminController extends Controller
                 'providerables.external_plan_id',
                 'providerables.cost_price',
                 'providerables.margin_value',
+                'providerables.provider_service_id',
+                'providerables.provider_plan_name',
+                'providerables.provider_available',
+                'providerables.provider_enabled',
+                'providerables.priority',
+                'providerables.last_synced_at',
             ])
             ->map(function ($row) {
                 $cost = (float) $row->cost_price;
@@ -1205,6 +1217,12 @@ class AdminController extends Controller
                     'plan_size' => $row->plan_size,
                     'validity' => $row->validity,
                     'cost_price' => $cost > 0 ? $cost : null,
+                    'provider_service_id' => $row->provider_service_id,
+                    'provider_plan_name' => $row->provider_plan_name,
+                    'provider_available' => (bool) $row->provider_available,
+                    'provider_enabled' => (bool) $row->provider_enabled,
+                    'priority' => (int) $row->priority,
+                    'last_synced_at' => $row->last_synced_at,
                     'markup_percent' => $markup,
                     'selling_price' => $cost > 0 ? round($cost * (1 + $markup / 100), 2) : null,
                     'priced' => $cost > 0,
@@ -1217,6 +1235,37 @@ class AdminController extends Controller
             'provider' => ['id' => $vendor->id, 'name' => $vendor->name],
             'plans' => $rows,
         ]);
+    }
+
+    /** Update admin-controlled routing fields for one provider/plan mapping. */
+    public function updateVendorPlanMapping(Request $request, string $id, string $planId)
+    {
+        $vendor = Vendor::findOrFail($id);
+        $validated = $request->validate([
+            'provider_enabled' => ['sometimes', 'boolean'],
+            'priority' => ['sometimes', 'integer', 'min:1', 'max:100000'],
+        ]);
+
+        if ($validated === []) {
+            return $this->fail([], 'No mapping fields were supplied.', 422);
+        }
+
+        $updated = DB::table('providerables')
+            ->where('provider_id', $vendor->id)
+            ->where('providerable_type', DataPlan::class)
+            ->where('providerable_id', $planId)
+            ->update(array_merge($validated, ['updated_at' => now()]));
+
+        if ($updated === 0) {
+            return $this->fail([], 'Provider mapping not found.', 404);
+        }
+
+        PerformanceCache::clearCatalog();
+
+        return $this->success([
+            'provider_id' => $vendor->id,
+            'plan_id' => (int) $planId,
+        ], 'Provider mapping updated.');
     }
 
     /**

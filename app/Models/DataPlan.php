@@ -241,9 +241,19 @@ class DataPlan extends Model
     {
         // Polymorphic many-to-many relation: this model can have multiple providers
         // Pivot table `providerables` holds `cost_price`, `margin_value`, `margin_type` and timestamps
-        return $this->morphToMany(Provider::class, 'providerable', 'providerables', 'providerable_id', 'provider_id')
-            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'])
-            ->withTimestamps();
+        $fields = ['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'];
+        foreach (['provider_service_id', 'provider_plan_name', 'provider_available', 'provider_enabled', 'priority', 'last_synced_at'] as $field) {
+            if (Schema::hasColumn('providerables', $field)) {
+                $fields[] = $field;
+            }
+        }
+
+        $relation = $this->morphToMany(Provider::class, 'providerable', 'providerables', 'providerable_id', 'provider_id')
+            ->withPivot($fields)->withTimestamps();
+
+        return Schema::hasColumn('providerables', 'priority')
+            ? $relation->orderBy('providerables.priority')
+            : $relation;
     }
 
     /**
@@ -300,7 +310,11 @@ class DataPlan extends Model
      */
     public function resolveVendor(): ?Vendor
     {
-        $provider = $this->providers()->first();
+        $query = $this->providers()->where('providers.active', true);
+        if (Schema::hasColumn('providerables', 'provider_enabled')) {
+            $query->wherePivot('provider_enabled', true)->wherePivot('provider_available', true);
+        }
+        $provider = $query->first();
         if (! $provider) {
             return null;
         }

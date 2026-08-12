@@ -58,6 +58,16 @@ Schedule::command('vendors:sync-plans')
         \Illuminate\Support\Facades\Log::error('vendors:sync-plans scheduled run failed.');
     });
 
+// VTU.ng explicitly supports requery. Resolve processing/ambiguous orders
+// before generic stale-pending expiry can refund them.
+Schedule::command('vtu-ng:reconcile')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('vtu-ng:reconcile scheduled run failed.');
+    });
+
 // Refunds SIM vend jobs whose device lease or pending TTL lapsed without an
 // ack — the customer-facing safety net for the SIM vending channel (see
 // ExpireSimVendJobs for why expired leases are never re-dispatched).
@@ -88,4 +98,3 @@ Schedule::command('ai:sweep')
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('ai:sweep scheduled run failed.');
     });
-

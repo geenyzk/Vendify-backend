@@ -28,6 +28,10 @@ class ExpireStaleTransactions extends Command
         $expiredCount = 0;
 
         Transaction::where('status', 'pending')
+            // VTU.ng has an authoritative requery endpoint and ambiguous
+            // requests must never be assumed failed (or failed over/refunded)
+            // solely because they are old.
+            ->where(fn ($query) => $query->whereNull('provider')->orWhere('provider', '!=', 'vtu_ng'))
             ->where('created_at', '<', $cutoff)
             ->orderBy('id')
             ->chunkById(self::CHUNK_SIZE, function ($transactions) use (&$expiredCount, $dryRun, $hours, $cutoff) {

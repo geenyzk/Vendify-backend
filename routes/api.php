@@ -376,6 +376,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
         Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans']);
         Route::get('/vendor/{id}/plan-imports', [AdminController::class, 'vendorPlanImports']);
+        Route::patch('/vendor/{id}/plan-mappings/{planId}', [AdminController::class, 'updateVendorPlanMapping']);
         Route::post('/vendor/{id}/plan-imports', [AdminController::class, 'importVendorPlanPrices']);
         Route::get('/airtime_discount', [AdminController::class, 'airtimeDiscount']);
 

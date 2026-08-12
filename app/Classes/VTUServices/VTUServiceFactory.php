@@ -10,6 +10,8 @@ use App\Models\DataPlan;
 use App\Models\ServiceRoute;
 use App\Models\Vendor;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class VTUServiceFactory
 {
@@ -51,6 +53,22 @@ class VTUServiceFactory
 
         if ($service === 'data' && $planId) {
             $provider = DataPlan::find($planId)?->resolveFallbackVendor($excludeProviderIds);
+            // Native multi-provider mappings take precedence over the legacy
+            // JSON fallback slots. Select only explicit, enabled, available
+            // mappings in admin priority order.
+            if (Schema::hasColumn('providerables', 'priority')) {
+                $providerId = DB::table('providerables')
+                    ->join('providers', 'providers.id', '=', 'providerables.provider_id')
+                    ->where('providerables.providerable_id', $planId)
+                    ->where('providerables.providerable_type', DataPlan::class)
+                    ->where('providerables.provider_enabled', true)
+                    ->where('providerables.provider_available', true)
+                    ->where('providers.active', true)
+                    ->when($excludeProviderIds !== [], fn ($query) => $query->whereNotIn('providerables.provider_id', $excludeProviderIds))
+                    ->orderBy('providerables.priority')
+                    ->value('providerables.provider_id');
+                $provider = $providerId ? Vendor::find($providerId) : $provider;
+            }
         } elseif ($service === 'cable' && $planId) {
             $provider = CablePlan::find($planId)?->resolveFallbackVendor($excludeProviderIds);
         } elseif ($service === 'airtime' && $network) {

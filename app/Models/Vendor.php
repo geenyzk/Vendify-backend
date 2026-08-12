@@ -7,6 +7,7 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class Vendor extends Model
 {
@@ -225,8 +226,17 @@ class Vendor extends Model
      */
     public function dataPlans()
     {
-        return $this->morphedByMany(DataPlan::class, 'providerable', 'providerables', 'provider_id', 'providerable_id')
-            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'])
-            ->withTimestamps();
+        $fields = ['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'];
+        foreach (['provider_service_id', 'provider_plan_name', 'provider_available', 'provider_enabled', 'priority', 'last_synced_at'] as $field) {
+            if (Schema::hasColumn('providerables', $field)) {
+                $fields[] = $field;
+            }
+        }
+        $relation = $this->morphedByMany(DataPlan::class, 'providerable', 'providerables', 'provider_id', 'providerable_id')
+            ->withPivot($fields)->withTimestamps();
+
+        return Schema::hasColumn('providerables', 'priority')
+            ? $relation->orderBy('providerables.priority')
+            : $relation;
     }
 }

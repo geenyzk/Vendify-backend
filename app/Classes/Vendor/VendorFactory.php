@@ -8,6 +8,7 @@ use App\Classes\Vendor\Providers\SandboxService;
 use App\Classes\Vendor\Providers\SimVending;
 use App\Classes\Vendor\Providers\SMEPlug;
 use App\Classes\Vendor\Providers\Vtpass;
+use App\Classes\Vendor\Providers\VTUNg;
 use App\Models\Vendor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +26,7 @@ class VendorFactory
         'msorg'    => Adex::class,
         'sme plug' => SMEPlug::class,
         'vtpass'   => Vtpass::class,
+        'vtu_ng'   => VTUNg::class,
         'ogdams'   => Ogdams::class,
         'sandbox'  => SandboxService::class,
         // Deliberately absent from PROVIDER_META: SIM vending is the
@@ -54,6 +56,7 @@ class VendorFactory
         'sme plug' => ['SME Plug', ['api_key'], true],
         'simhost'  => ['ogdams', ['api_key'], true],
         'vtpass'   => ['VTpass', ['api_key', 'public_key'], true],
+        'vtu_ng'   => ['VTU.ng', ['username', 'password', 'api_key'], true],
     ];
 
     /**
