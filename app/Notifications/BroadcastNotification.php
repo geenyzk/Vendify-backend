@@ -60,7 +60,10 @@ class BroadcastNotification extends Notification
     {
         Log::info("database...");
         return [
+            'type'     => 'broadcast',
             'title'    => $this->data['notifTitle'] ?: 'Notification',
+            'body'     => $this->data['notifMessage'] ?: 'No content',
+            // Retain the legacy key for any older consumers.
             'message'  => $this->data['notifMessage'] ?: 'No content',
             'priority' => $this->data['priorityHigh'],
             'channels' => $this->data['channels'],
