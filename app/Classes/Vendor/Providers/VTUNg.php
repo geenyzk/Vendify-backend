@@ -222,7 +222,15 @@ class VTUNg extends VendorBase
     public function syncPlans(): array
     {
         $remotePlans = $this->fetchRemotePlans();
-        $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'unavailable' => 0];
+        $summary = [
+            'fetched' => count($remotePlans),
+            'created' => 0,
+            'matched' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'conflicts' => 0,
+            'unavailable' => 0,
+        ];
         $seen = [];
         $defaultPricing = $this->defaultPricing();
 
@@ -255,7 +263,15 @@ class VTUNg extends VendorBase
                     $normalize = fn ($value) => strtolower(trim(preg_replace('/\s+/', ' ', (string) $value) ?? ''));
                     $candidates = $candidates->filter(fn (DataPlan $candidate) => $normalize($candidate->validity) === $normalize($validity));
                 }
-                $plan = $candidates->count() === 1 ? $candidates->first() : null;
+                if ($candidates->count() === 1) {
+                    $plan = $candidates->first();
+                    $summary['matched']++;
+                } elseif ($candidates->count() > 1) {
+                    // Ambiguous legacy rows must not be mutated or linked at
+                    // random. Create a distinct, idempotent VTU.ng-backed plan
+                    // and report the conflict for an admin to reconcile.
+                    $summary['conflicts']++;
+                }
             }
 
             if (! $plan) {

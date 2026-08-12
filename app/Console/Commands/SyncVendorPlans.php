@@ -36,11 +36,15 @@ class SyncVendorPlans extends Command
             try {
                 $summary = $vendorInstance->syncPlans();
                 $this->info(sprintf(
-                    '  [%s] created=%d updated=%d skipped=%d',
+                    '  [%s] fetched=%d created=%d matched=%d updated=%d skipped=%d conflicts=%d unavailable=%d',
                     $vendor->name,
+                    $summary['fetched'] ?? 0,
                     $summary['created'] ?? 0,
+                    $summary['matched'] ?? 0,
                     $summary['updated'] ?? 0,
                     $summary['skipped'] ?? 0,
+                    $summary['conflicts'] ?? 0,
+                    $summary['unavailable'] ?? 0,
                 ));
             } catch (\Throwable $e) {
                 $this->error("  [{$vendor->name}] sync failed: {$e->getMessage()}");

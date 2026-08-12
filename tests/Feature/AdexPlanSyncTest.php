@@ -451,17 +451,30 @@ test('vtu ng sync keeps provider price separate from an editable cost override',
     ]);
 
     $client = new VTUNg($vendor);
-    $client->syncPlans();
+    $summary = $client->syncPlans();
 
     $plan = DataPlan::firstOrFail();
     $mapping = DB::table('providerables')->first();
-    expect($plan->active)->toBeTrue()
+    expect($summary)->toMatchArray([
+        'fetched' => 1,
+        'created' => 1,
+        'matched' => 0,
+        'updated' => 0,
+        'skipped' => 0,
+        'conflicts' => 0,
+    ])->and($plan->active)->toBeTrue()
         ->and($plan->is_draft)->toBeFalse()
+        ->and($plan->plan_type)->toBe('VTU.NG')
         ->and($mapping->external_plan_id)->toBe('244542')
         ->and($mapping->provider_service_id)->toBe('mtn')
         ->and((float) $mapping->provider_price)->toBe(1499.0)
         ->and((float) $mapping->cost_price)->toBe(1499.0)
         ->and((int) $mapping->priority)->toBe(1);
+
+    $catalog = (new CustomerCatalogController)
+        ->dataPlans(Request::create('/customer/catalog/data-plans', 'GET'))
+        ->getData(true);
+    expect(collect($catalog['data'])->pluck('id'))->toContain($plan->id);
 
     DB::table('providerables')->where('id', $mapping->id)->update(['cost_price' => 1525]);
     Http::fake([
