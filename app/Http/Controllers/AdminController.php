@@ -355,7 +355,7 @@ class AdminController extends Controller
                 // per-vendor cost/margin columns this compact select exists
                 // to avoid pulling for every row.
                 $query->select([
-                    'id', 'network', 'plan_name', 'plan_size', 'plan_type',
+                    'id', 'network', 'plan_name', 'plan_size', 'plan_type', 'network_type_id',
                     'validity', 'active', 'is_draft', 'sort_order',
                     'pricing', 'user_price', 'agent_price', 'bonanza_price', 'api_price',
                 ]);
@@ -421,6 +421,7 @@ class AdminController extends Controller
                 $query->with($isCompactDataPlanList
                     ? 'providers:id'
                     : 'providers:id,name,code,sub_category,category');
+                $query->with('networkType:id,name,service_type,active');
             }
 
             $this->handleEagerLoading($query, $request);
@@ -627,6 +628,16 @@ class AdminController extends Controller
                 if ($hasModel) {
                     // 2. Eloquent Handling (Preferred)
                     $relationsSyncedBeforeSave = false;
+                    if ($modelClass === DataPlan::class && array_key_exists('plan_type', $data)) {
+                        $managedType = NetworkType::query()
+                            ->whereRaw('LOWER(name) = ?', [strtolower(trim((string) $data['plan_type']))])
+                            ->whereRaw('LOWER(service_type) = ?', ['data'])
+                            ->first();
+                        $data['network_type_id'] = $managedType?->id;
+                        if ($managedType) {
+                            $data['plan_type'] = $managedType->name;
+                        }
+                    }
                     if ($isUpdate) {
                         $model = $modelClass::find($item['id']);
                         if ($model) {

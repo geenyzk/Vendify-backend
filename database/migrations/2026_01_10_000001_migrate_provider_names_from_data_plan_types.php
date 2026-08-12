@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use App\Models\DataPlan;
 
 return new class extends Migration
@@ -32,6 +33,10 @@ return new class extends Migration
         }
 
         // Ensure STANDARD type exists in the database (should be created by migration)
+        if (! Schema::hasTable('network_types') || ! Schema::hasColumn('network_types', 'service_type')) {
+            return;
+        }
+
         $standardTypeExists = DB::table('network_types')
             ->where('name', 'STANDARD')
             ->where('service_type', 'data')

@@ -53,6 +53,7 @@ class VendorProviderNameExposureTest extends TestCase
         $plan = DataPlan::create([
             'network' => 'mtn',
             'plan_type' => DataPlan::STANDARD_TYPE,
+            'network_type_id' => NetworkType::where('name', 'STANDARD')->value('id'),
             'plan_name' => '1',
             'plan_size' => 'GB',
             'validity' => '30 Days',
@@ -101,7 +102,7 @@ class VendorProviderNameExposureTest extends TestCase
     test('STANDARD type is returned by admin network type API', function () {
         $user = User::factory()->admin()->create();
 
-        $response = $this->actingAs($user)->getJson('/table/network_types');
+        $response = $this->actingAs($user)->getJson('/api/table/network_types');
 
         $response->assertOk();
         $types = collect($response->json('data'));
@@ -112,11 +113,43 @@ class VendorProviderNameExposureTest extends TestCase
             ->and($standard['active'])->toBeTrue();
     });
 
+    test('renaming a managed data type changes the customer catalogue without changing provider mappings', function () {
+        $standard = NetworkType::where('name', 'STANDARD')->where('service_type', 'data')->firstOrFail();
+        $vendor = Vendor::create([
+            'name' => 'VTU.ng', 'sub_category' => 'vtu_ng',
+            'base_url' => 'https://vtu.test', 'active' => true,
+        ]);
+        $plan = DataPlan::create([
+            'network' => 'mtn', 'plan_type' => 'STANDARD', 'network_type_id' => $standard->id,
+            'plan_name' => '1', 'plan_size' => 'GB', 'validity' => '30 Days',
+            'active' => true, 'is_draft' => false,
+            'pricing' => ['user' => ['type' => 'fiat', 'value' => 500]],
+        ]);
+        DB::table('providerables')->insert([
+            'provider_id' => $vendor->id, 'providerable_id' => $plan->id,
+            'providerable_type' => DataPlan::class, 'external_plan_id' => 'rename-test',
+            'server_id' => 'rename-test', 'cost_price' => 450, 'margin_value' => 0,
+            'margin_type' => 'fiat', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin)->putJson("/api/table/network_types/{$standard->id}", [
+            'name' => 'REGULAR', 'service_type' => 'data', 'active' => true,
+        ])->assertOk();
+
+        $catalog = $this->actingAs(User::factory()->create())
+            ->getJson('/api/customer/catalog/data-plans')->assertOk();
+        expect(collect($catalog->json('data'))->firstWhere('id', $plan->id)['plan_type'])->toBe('REGULAR')
+            ->and(DB::table('providerables')->where('providerable_id', $plan->id)->value('provider_id'))
+            ->toBe($vendor->id);
+    });
+
     // Test 5: STANDARD can be returned by the customer catalogue
     test('STANDARD type data plan is returned in customer catalogue', function () {
         $plan = DataPlan::create([
             'network' => 'airtel',
             'plan_type' => DataPlan::STANDARD_TYPE,
+            'network_type_id' => NetworkType::where('name', 'STANDARD')->value('id'),
             'plan_name' => '2',
             'plan_size' => 'GB',
             'validity' => '7 Days',
@@ -179,6 +212,7 @@ class VendorProviderNameExposureTest extends TestCase
         $plan = DataPlan::create([
             'network' => 'glo',
             'plan_type' => DataPlan::STANDARD_TYPE,
+            'network_type_id' => NetworkType::where('name', 'STANDARD')->value('id'),
             'plan_name' => '500',
             'plan_size' => 'MB',
             'validity' => '1 Day',
@@ -270,6 +304,10 @@ class VendorProviderNameExposureTest extends TestCase
 
     // Test 10: Provider names are not unnecessarily exposed in customer responses
     test('customer catalogue does not expose provider names unnecessarily', function () {
+        $gifting = NetworkType::firstOrCreate(
+            ['name' => 'GIFTING'],
+            ['service_type' => 'data', 'active' => true]
+        );
         $vendor = Vendor::create([
             'name' => 'VTU.ng',
             'sub_category' => 'vtu_ng',
@@ -280,6 +318,7 @@ class VendorProviderNameExposureTest extends TestCase
         $plan = DataPlan::create([
             'network' => '9mobile',
             'plan_type' => 'GIFTING',
+            'network_type_id' => $gifting->id,
             'plan_name' => '5',
             'plan_size' => 'GB',
             'validity' => '30 Days',

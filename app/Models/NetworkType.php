@@ -6,6 +6,7 @@ use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Network;
 use Illuminate\Support\Facades\DB;
+use App\Support\PerformanceCache;
 
 class NetworkType extends Model
 {
@@ -44,6 +45,13 @@ class NetworkType extends Model
             } catch (\Exception $e) {
                 // swallow; controller will log if needed
             }
+
+            if ($networkType->service_type === 'data' && $networkType->wasChanged('name')) {
+                DB::table('data_plans')
+                    ->where('network_type_id', $networkType->id)
+                    ->update(['plan_type' => $networkType->name, 'updated_at' => now()]);
+                PerformanceCache::clearCatalog();
+            }
         });
     }
 
@@ -59,5 +67,10 @@ class NetworkType extends Model
 
     public function provider(){
         return $this->belongsTo(Vendor::class, 'provider_id');
+    }
+
+    public function dataPlans()
+    {
+        return $this->hasMany(DataPlan::class, 'network_type_id');
     }
 }

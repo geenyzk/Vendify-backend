@@ -24,9 +24,12 @@ class CustomerCatalogController extends Controller
                     'id', 'name', 'active', 'airtime_to_cash_destination_number',
                     'airtime_to_cash_min', 'airtime_to_cash_max', 'airtime_to_cash_active',
                 ])
-                ->with(['networkTypes' => fn ($query) => $query->select([
-                    'network_types.id', 'network_types.name', 'network_types.service_type', 'network_types.active',
-                ])])
+                ->with(['networkTypes' => fn ($query) => $query
+                    ->select([
+                        'network_types.id', 'network_types.name', 'network_types.service_type', 'network_types.active',
+                    ])
+                    ->where('network_types.active', true)
+                    ->where('network_network_type.active', true)])
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Network $network) => [
@@ -65,7 +68,7 @@ class CustomerCatalogController extends Controller
         $plans = Cache::get($key);
         $cacheHit = $plans !== null;
         if (! $cacheHit) {
-            $columns = ['id', 'network', 'plan_name', 'plan_size', 'plan_type', 'validity', 'active', 'pricing'];
+            $columns = ['id', 'network', 'plan_name', 'plan_size', 'plan_type', 'network_type_id', 'validity', 'active', 'pricing'];
             $legacyPriceColumn = $role.'_price';
             if (Schema::hasColumn('data_plans', $legacyPriceColumn)) {
                 $columns[] = $legacyPriceColumn;
@@ -74,10 +77,13 @@ class CustomerCatalogController extends Controller
             $plans = DataPlan::query()
                 ->select($columns)
                 ->where('active', true)
+                ->whereHas('networkType', fn ($query) => $query
+                    ->where('service_type', 'data')
+                    ->where('active', true))
                 ->where(function ($query) {
                     $query->whereNull('is_draft')->orWhere('is_draft', false);
                 })
-                ->with('providers:id,name')
+                ->with(['providers:id,name', 'networkType:id,name,service_type,active'])
                 ->orderBy('network')->orderBy('sort_order')->orderBy('plan_name')
                 ->get()
                 ->map(function (DataPlan $plan) {
@@ -89,7 +95,7 @@ class CustomerCatalogController extends Controller
                         'network' => $plan->network,
                         'plan_name' => $plan->plan_name,
                         'plan_size' => $plan->plan_size,
-                        'plan_type' => $plan->plan_type,
+                        'plan_type' => $plan->networkType?->name ?? $plan->plan_type,
                         'plan' => $plan->plan,
                         'validity' => $plan->validity,
                         'provider_plan_name' => $presentation['original'],

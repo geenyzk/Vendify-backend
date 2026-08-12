@@ -334,9 +334,31 @@ class VTUNg extends VendorBase
                 }
             }
 
+            $standardTypeId = \App\Models\NetworkType::query()
+                ->whereRaw('LOWER(name) = ?', ['standard'])
+                ->whereRaw('LOWER(service_type) = ?', ['data'])
+                ->value('id');
+            if (! $standardTypeId) {
+                // Once an admin renames STANDARD, its stable foreign key is
+                // discovered through this provider's existing plan mappings.
+                $standardTypeId = DB::table('providerables')
+                    ->join('data_plans', function ($join) {
+                        $join->on('data_plans.id', '=', 'providerables.providerable_id')
+                            ->where('providerables.providerable_type', DataPlan::class);
+                    })
+                    ->join('network_types', 'network_types.id', '=', 'data_plans.network_type_id')
+                    ->where('providerables.provider_id', $this->provider->id)
+                    ->whereRaw('LOWER(network_types.service_type) = ?', ['data'])
+                    ->value('network_types.id');
+            }
+
             if (! $plan) {
+                $managedTypeName = $standardTypeId
+                    ? \App\Models\NetworkType::whereKey($standardTypeId)->value('name')
+                    : DataPlan::STANDARD_TYPE;
                 $plan = DataPlan::create([
-                    'network' => $remote['service_id'], 'plan_type' => DataPlan::STANDARD_TYPE,
+                    'network' => $remote['service_id'], 'plan_type' => $managedTypeName,
+                    'network_type_id' => $standardTypeId,
                     'plan_name' => $amount, 'plan_size' => $unit, 'validity' => $validity,
                     'active' => $remote['available'], 'is_draft' => ! $remote['available'],
                     'sort_order' => 0, 'pricing' => $defaultPricing,
@@ -346,7 +368,10 @@ class VTUNg extends VendorBase
                 // A plan first discovered while unavailable is held as a
                 // draft. Publish it automatically once VTU.ng makes it
                 // available; never reactivate a plan an admin later disabled.
-                if ($link && $plan->is_draft && $plan->plan_type === DataPlan::STANDARD_TYPE && $remote['available']) {
+                if ($standardTypeId && ! $plan->network_type_id) {
+                    $plan->update(['network_type_id' => $standardTypeId]);
+                }
+                if ($link && $plan->is_draft && (int) $plan->network_type_id === (int) $standardTypeId && $remote['available']) {
                     $plan->update(['active' => true, 'is_draft' => false]);
                 }
                 $summary['updated']++;

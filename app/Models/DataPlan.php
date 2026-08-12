@@ -24,6 +24,7 @@ class DataPlan extends Model
         'plan_name',
         'plan_size',
         'plan_type',
+        'network_type_id',
         'server_id',
         'network',
         'active',
@@ -95,6 +96,11 @@ class DataPlan extends Model
         }
 
         return $array;
+    }
+
+    public function networkType()
+    {
+        return $this->belongsTo(NetworkType::class, 'network_type_id');
     }
 
     public function getPlanAttribute()

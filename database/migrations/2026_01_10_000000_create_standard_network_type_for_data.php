@@ -12,6 +12,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // This migration's filename predates the migration that introduced
+        // service_type. On a fresh install the definitive August migration
+        // creates and links STANDARD after the schema is complete.
+        if (! Schema::hasTable('network_types') || ! Schema::hasColumn('network_types', 'service_type')) {
+            return;
+        }
         // Create the STANDARD data type if it doesn't already exist.
         // This type is used for plans that don't fit into other customer-facing
         // categories or come from providers without meaningful type classification.
@@ -41,7 +47,7 @@ return new class extends Migration
             ->first();
 
         if ($standardType) {
-            $hasAssociations = DB::table('network_network_type')
+            $hasAssociations = Schema::hasTable('network_network_type') && DB::table('network_network_type')
                 ->where('network_type_id', $standardType->id)
                 ->exists();
 
