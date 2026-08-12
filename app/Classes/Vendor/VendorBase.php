@@ -220,7 +220,6 @@ abstract class VendorBase implements VendorInterface
         $row = DB::table('providerables')
             ->where('providerable_id', $planId)
             ->where('providerable_type', $modelClass)
-            ->where('provider_id', $this->provider->id)
             ->first();
 
         if (!$row) {
@@ -332,7 +331,6 @@ abstract class VendorBase implements VendorInterface
         $row = DB::table('providerables')
             ->where('providerable_id', $plan->getKey())
             ->where('providerable_type', get_class($plan))
-            ->where('provider_id', $this->provider->id)
             ->first();
 
         if (!$row) {
