@@ -143,6 +143,10 @@ class VendorFactory
 
         try {
             $vendorInstance = self::make($vendor);
+            if ($vendorInstance instanceof VTUNg && ! $vendorInstance->webhookSignatureIsValid($request)) {
+                Log::warning('VTU.ng webhook rejected: invalid signature', ['vendor_id' => $vendor->id]);
+                return response()->json(['message' => 'Invalid signature'], 403);
+            }
             $vendorInstance->webhook($request);
         } catch (\Throwable $e) {
             Log::error('Vendor webhook processing failed', [

@@ -28,6 +28,12 @@ return [
         'key' => env('RESEND_KEY'),
     ],
 
+    'vtu_ng' => [
+        // VTU.ng signs the raw webhook body with HMAC-SHA256 using the
+        // account user PIN. Keep it separate from API login credentials.
+        'webhook_pin' => env('VTU_NG_WEBHOOK_PIN'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

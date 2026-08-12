@@ -7,6 +7,7 @@ use App\Models\DataPlan;
 use App\Models\Transaction;
 use App\Models\Role;
 use App\Models\ServiceRoute;
+use App\Jobs\ReconcileVTUNgTransaction;
 use App\Support\PerformanceCache;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -158,8 +159,8 @@ class VTUNg extends VendorBase
 
         $status = match (true) {
             $upstreamStatus === 'completed-api' => 'success',
-            in_array($upstreamStatus, ['refunded', 'failed', 'failed-api'], true) => 'fail',
-            $ambiguous, in_array($upstreamStatus, ['initiated-api', 'processing-api'], true) => 'pending',
+            in_array($upstreamStatus, ['refunded', 'failed', 'failed-api', 'cancelled', 'cancelled-api'], true) => 'fail',
+            $ambiguous, in_array($upstreamStatus, ['initiated-api', 'processing-api', 'queued-api', 'pending', 'on-hold'], true) => 'pending',
             $httpStatus >= 400 && $httpStatus < 500 => 'fail',
             default => 'pending',
         };
@@ -191,6 +192,29 @@ class VTUNg extends VendorBase
         } catch (ConnectionException) {
             return [];
         }
+    }
+
+    public function requeryOrder(string $requestId): array
+    {
+        return $this->verifyTransaction($requestId);
+    }
+
+    protected function onPendingTransaction(array $transaction): void
+    {
+        if (! empty($transaction['id'])) {
+            ReconcileVTUNgTransaction::dispatch((int) $transaction['id'])->delay(now()->addSeconds(10));
+        }
+    }
+
+    public function webhookSignatureIsValid(Request $request): bool
+    {
+        $pin = (string) config('services.vtu_ng.webhook_pin', '');
+        $signature = (string) $request->header('X-Signature', '');
+
+        return $pin !== '' && $signature !== '' && hash_equals(
+            hash_hmac('sha256', $request->getContent(), $pin),
+            $signature,
+        );
     }
 
     protected function getPlans(?array $payload = null): array|JsonResponse
@@ -357,18 +381,24 @@ class VTUNg extends VendorBase
         return response()->json(['success' => true, 'data' => []]);
     }
 
-    public function reconcile(Transaction $transaction): bool
+    public function reconcile(Transaction $transaction, ?array $response = null): bool
     {
-        $response = $this->verifyTransaction((string) ($transaction->payment_reference ?: $transaction->transaction_reference));
+        $response ??= $this->verifyTransaction((string) ($transaction->payment_reference ?: $transaction->transaction_reference));
         $data = is_array($response['data'] ?? null) ? $response['data'] : $response;
         $upstream = strtolower((string) ($data['status'] ?? ''));
         $status = match ($upstream) {
             'completed-api' => 'success',
-            'refunded', 'failed', 'failed-api' => 'fail',
+            'refunded', 'failed', 'failed-api', 'cancelled', 'cancelled-api' => 'fail',
             default => 'pending',
         };
 
         if ($status === 'pending') {
+            $this->settleCallback([
+                'status' => 'pending',
+                'tx_ref' => $transaction->transaction_reference,
+                'payment_reference' => $transaction->payment_reference,
+                'response_message' => $response['message'] ?? $data['message'] ?? 'VTU.ng order is still processing.',
+            ]);
             return false;
         }
 
@@ -388,7 +418,7 @@ class VTUNg extends VendorBase
         return [
             'status' => match ($status) {
                 'completed-api' => 'success',
-                'refunded', 'failed', 'failed-api' => 'fail',
+                'refunded', 'failed', 'failed-api', 'cancelled', 'cancelled-api' => 'fail',
                 default => 'pending',
             },
             'request_id' => $request->input('request_id', $request->input('data.request_id')),

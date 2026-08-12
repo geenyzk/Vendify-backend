@@ -190,6 +190,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::get('/vtu/{service}/discount', [VTUServicesController::class, 'discountPreview']);
     Route::get('/vtu/{service}/active-discount', [VTUServicesController::class, 'activeDiscount']);
     Route::post('/transactions/report', [TransactionController::class, 'report']);
+    Route::get('/transactions/{id}/status', [TransactionController::class, 'showOwn'])->whereNumber('id');
     Route::get('/search', [SearchController::class, 'userSearch']);
 
     Route::get('/welcome-message', [WelcomeMessageController::class, 'show']);
@@ -274,6 +275,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::middleware('permission:transactions')->group(function () {
             Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
             Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
+            Route::post('/transactions/{id}/recheck-provider', [TransactionController::class, 'recheckProvider']);
             Route::get('/transactions/prune-preview', [TransactionController::class, 'prunePreview']);
             Route::post('/transactions/prune', [TransactionController::class, 'pruneNow']);
         });

@@ -10,6 +10,7 @@ use App\HttpResponse;
 use App\Models\Message;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Notifications\AppNotification;
 use App\Models\Vendor;
 use App\Support\VendorErrorMessage;
 use Illuminate\Http\JsonResponse;
@@ -120,6 +121,7 @@ abstract class VendorBase implements VendorInterface
             if ($transaction['status'] === "success") {
                 return $this->success($transaction, $responseMessage, 200);
             } elseif ($transaction['status'] === "pending") {
+                $this->onPendingTransaction($transaction);
                 // Ogdams is the first vendor to ever produce this (its 201
                 // "queued" / 202 "processing" codes) — the real outcome
                 // arrives later via webhook(). Reporting it as a 500 fail()
@@ -148,6 +150,11 @@ abstract class VendorBase implements VendorInterface
             ]);
             return $this->fail([], VendorErrorMessage::forCurrentUser($e->getMessage(), 'fail', false), 500);
         }
+    }
+
+    /** Provider-specific hook for starting asynchronous reconciliation. */
+    protected function onPendingTransaction(array $transaction): void
+    {
     }
 
     /**
@@ -508,6 +515,8 @@ abstract class VendorBase implements VendorInterface
                 if ($newStatus === 'fail' && $user) {
                     $user->increment('wallet_balance', (float) $transaction->amount);
                     $callback['balance_after'] = (float) $user->fresh()->wallet_balance;
+                    $callback['refunded_at'] = now();
+                    $callback['refund_reason'] = $callback['response_message'] ?? 'Provider confirmed failure/refund.';
                 } elseif ($newStatus === 'success' && $user) {
                     TransactionService::awardForSettledTransaction(
                         $user,
@@ -516,12 +525,24 @@ abstract class VendorBase implements VendorInterface
                     );
                     $callback['completed_at'] = now();
                 }
+
+                if ($user) {
+                    $label = ucwords(str_replace('_', ' ', $transaction->transaction_type));
+                    $user->notify(new AppNotification(
+                        $newStatus === 'success' ? 'transaction_success' : 'transaction_failed',
+                        $newStatus === 'success' ? "{$label} successful" : "{$label} failed",
+                        $newStatus === 'success'
+                            ? "Your {$label} purchase of ₦{$transaction->amount} was successful. Ref: {$transaction->transaction_reference}"
+                            : "Your {$label} purchase of ₦{$transaction->amount} could not be completed and has been refunded.",
+                        ['transaction_id' => $transaction->id],
+                    ));
+                }
             }
 
             $updateData = array_filter(
                 array_intersect_key(
                     $callback,
-                    array_flip(['status', 'response_message', 'completed_at', 'balance_after', 'payment_reference']),
+                    array_flip(['status', 'response_message', 'completed_at', 'balance_after', 'payment_reference', 'refunded_at', 'refund_reason']),
                 ),
                 fn ($value) => $value !== null,
             );

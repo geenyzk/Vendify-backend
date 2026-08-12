@@ -14,6 +14,8 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Classes\Vendor\Providers\VTUNg;
+use App\Models\Vendor;
 
 class TransactionController extends Controller
 {
@@ -200,4 +202,40 @@ class TransactionController extends Controller
         return $this->success(['pruned' => $count], "Pruned {$count} transaction(s)");
     }
 
+    public function showOwn($id)
+    {
+        $transaction = Transaction::whereKey($id)
+            ->where('user_id', Auth::id())
+            ->firstOrFail();
+
+        return $this->success(new TransactionResource($transaction));
+    }
+
+    public function recheckProvider($id)
+    {
+        $transaction = Transaction::with('user')->findOrFail($id);
+        if ($transaction->provider !== 'vtu_ng' || $transaction->status !== 'pending') {
+            return $this->fail([], 'Only pending VTU.ng transactions can be requeried.', 422);
+        }
+        if (! $transaction->payment_reference) {
+            return $this->fail([], 'This transaction has no stored VTU.ng request ID.', 422);
+        }
+
+        $vendor = Vendor::where('sub_category', 'vtu_ng')->where('active', true)->first();
+        if (! $vendor) {
+            return $this->fail([], 'The VTU.ng provider is not active.', 422);
+        }
+
+        $client = new VTUNg($vendor);
+        $providerResponse = $client->requeryOrder($transaction->payment_reference);
+        $providerData = is_array($providerResponse['data'] ?? null)
+            ? $providerResponse['data']
+            : $providerResponse;
+        $client->reconcile($transaction, $providerResponse);
+
+        return $this->success([
+            'provider_status' => strtolower((string) ($providerData['status'] ?? 'unknown')),
+            'transaction' => new TransactionResource($transaction->fresh()->load('user')),
+        ], 'Provider status checked; the transaction was safely reconciled.');
+    }
 }

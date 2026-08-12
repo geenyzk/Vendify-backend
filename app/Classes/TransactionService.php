@@ -138,13 +138,19 @@ class TransactionService
             AdminNotifier::notifyTransaction($transaction);
 
             $label = ucwords(str_replace('_', ' ', $transactionType));
-            $user->notify(new AppNotification(
-                $status === 'success' ? 'transaction_success' : 'transaction_failed',
-                $status === 'success' ? "{$label} successful" : "{$label} failed",
-                $status === 'success'
-                    ? "Your {$label} purchase of ₦{$finalAmount} was successful. Ref: {$transaction->transaction_reference}"
-                    : "Your {$label} purchase of ₦{$finalAmount} could not be completed.",
-            ));
+            // Pending is not failure. Async providers can acknowledge an
+            // order long before its terminal result; the settlement path
+            // creates the one terminal notification when that result arrives.
+            if ($status !== 'pending') {
+                $user->notify(new AppNotification(
+                    $status === 'success' ? 'transaction_success' : 'transaction_failed',
+                    $status === 'success' ? "{$label} successful" : "{$label} failed",
+                    $status === 'success'
+                        ? "Your {$label} purchase of ₦{$finalAmount} was successful. Ref: {$transaction->transaction_reference}"
+                        : "Your {$label} purchase of ₦{$finalAmount} could not be completed.",
+                    ['transaction_id' => $transaction->id],
+                ));
+            }
 
             SendTransactionCallback::dispatch($user, $transaction);
 
