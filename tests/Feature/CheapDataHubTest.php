@@ -6,6 +6,7 @@ use App\Classes\Vendor\VendorFactory;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Models\DataPlan;
 use App\Models\Transaction;
+use App\Models\User;
 use App\Models\Vendor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,19 @@ function cheapDataHubPlan(): DataPlan
         'plan_type' => 'SME',
         'validity' => '30 Days',
         'active' => true,
+    ]);
+}
+
+function standardCheapDataHubPlan(): DataPlan
+{
+    return DataPlan::create([
+        'network' => 'airtel',
+        'plan_name' => '1',
+        'plan_size' => 'GB',
+        'plan_type' => DataPlan::STANDARD_TYPE,
+        'validity' => '1 Day',
+        'active' => true,
+        'pricing' => ['user' => ['type' => 'fiat', 'value' => 50]],
     ]);
 }
 
@@ -160,4 +174,38 @@ test('existing VTU.ng factory mapping remains unchanged', function () {
     ]);
 
     expect(VendorFactory::make($vendor))->toBeInstanceOf(VTUNg::class);
+});
+
+test('active STANDARD CheapDataHub plan is returned by the customer catalogue', function () {
+    $vendor = cheapDataHubVendor();
+    $plan = standardCheapDataHubPlan();
+    mapCheapDataHubPlan($plan, $vendor, '81');
+
+    $response = $this->actingAs(User::factory()->create())
+        ->getJson('/api/customer/catalog/data-plans');
+
+    $response->assertOk()
+        ->assertJsonFragment([
+            'id' => $plan->id,
+            'network' => 'airtel',
+            'plan_type' => 'STANDARD',
+            'active' => true,
+        ]);
+});
+
+test('STANDARD is accepted as purchase metadata and is not sent to CheapDataHub', function () {
+    $vendor = cheapDataHubVendor();
+    $plan = standardCheapDataHubPlan();
+    mapCheapDataHubPlan($plan, $vendor, '81');
+
+    $payload = (new CheapDataHub($vendor))->formatPayload('data', [
+        'data_plan' => $plan->id,
+        'network' => 'airtel',
+        'plan_type' => DataPlan::STANDARD_TYPE,
+        'phone' => '08012345678',
+        'tx_ref' => 'TXN-STANDARD',
+    ]);
+
+    expect($payload)->toMatchArray(['bundle_id' => 81, 'phone_number' => '08012345678'])
+        ->and($payload)->not->toHaveKey('plan_type');
 });
