@@ -478,7 +478,7 @@ test('vtu ng sync keeps provider price separate from an editable cost override',
         ->value('provider_id'))->toBe($vendor->id)
         ->and($plan->active)->toBeTrue()
         ->and($plan->is_draft)->toBeFalse()
-        ->and($plan->plan_type)->toBe('VTU.NG')
+        ->and($plan->plan_type)->toBe(DataPlan::STANDARD_TYPE)
         ->and($mapping->external_plan_id)->toBe('244542')
         ->and($mapping->provider_service_id)->toBe('mtn')
         ->and($mapping->provider_plan_name)->toBe('2GB - 30 Days')

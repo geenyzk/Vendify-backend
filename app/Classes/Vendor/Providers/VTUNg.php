@@ -336,7 +336,7 @@ class VTUNg extends VendorBase
 
             if (! $plan) {
                 $plan = DataPlan::create([
-                    'network' => $remote['service_id'], 'plan_type' => 'VTU.NG',
+                    'network' => $remote['service_id'], 'plan_type' => DataPlan::STANDARD_TYPE,
                     'plan_name' => $amount, 'plan_size' => $unit, 'validity' => $validity,
                     'active' => $remote['available'], 'is_draft' => ! $remote['available'],
                     'sort_order' => 0, 'pricing' => $defaultPricing,
@@ -346,7 +346,7 @@ class VTUNg extends VendorBase
                 // A plan first discovered while unavailable is held as a
                 // draft. Publish it automatically once VTU.ng makes it
                 // available; never reactivate a plan an admin later disabled.
-                if ($link && $plan->is_draft && $plan->plan_type === 'VTU.NG' && $remote['available']) {
+                if ($link && $plan->is_draft && $plan->plan_type === DataPlan::STANDARD_TYPE && $remote['available']) {
                     $plan->update(['active' => true, 'is_draft' => false]);
                 }
                 $summary['updated']++;
