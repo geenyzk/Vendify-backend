@@ -29,6 +29,7 @@ use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\GeneralController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\RecentRecipientController;
 use App\Http\Controllers\OgdamsWebhookController;
 use App\Http\Controllers\PayscribeController;
 use App\Http\Controllers\PermissionController;
@@ -202,6 +203,11 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+
+    Route::get('/recent-recipients', [RecentRecipientController::class, 'index']);
+    Route::post('/recent-recipients', [RecentRecipientController::class, 'store']);
+    Route::delete('/recent-recipients', [RecentRecipientController::class, 'clear']);
+    Route::delete('/recent-recipients/{recentRecipient}', [RecentRecipientController::class, 'destroy']);
 
     // Promotion routes
     Route::post('/promotions/validate', [PromotionController::class, 'validatePromotion']);

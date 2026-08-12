@@ -170,6 +170,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(AuthSession::class);
     }
 
+    public function recentRecipients(): HasMany
+    {
+        return $this->hasMany(RecentRecipient::class);
+    }
+
     /**
      * Whether a transaction PIN has been set — safe to expose even though
      * the hashed `pin` column itself stays hidden, so the frontend can force
