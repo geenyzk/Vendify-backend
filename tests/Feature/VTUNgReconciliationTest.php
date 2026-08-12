@@ -5,10 +5,12 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\Provider;
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\TransactionController;
 use App\Jobs\ReconcileVTUNgTransaction;
 use App\Notifications\AppNotification;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
@@ -159,4 +161,20 @@ it('background reconciliation uses the shared active provider lookup', function 
     (new ReconcileVTUNgTransaction($transaction->id))->handle();
 
     expect($transaction->fresh()->status)->toBe('success');
+});
+
+it('persists the vendor connection switch to the raw active field used by reconciliation', function () {
+    $provider = Provider::create([
+        'name' => 'VTU.ng', 'sub_category' => 'vtu_ng', 'category' => 'vendor',
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'token', 'active' => false,
+    ]);
+
+    $request = Request::create('/api/table/vendors/'.$provider->id, 'PUT', [
+        'connection' => true,
+    ]);
+    $response = AdminController::universalCreateOrUpdate($request, 'vendors', $provider->id);
+
+    expect($response->status())->toBe(200)
+        ->and((bool) Provider::withoutGlobalScopes()->findOrFail($provider->id)->getRawOriginal('active'))->toBeTrue()
+        ->and(VTUNg::activeProvider()?->id)->toBe($provider->id);
 });

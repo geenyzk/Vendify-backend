@@ -595,12 +595,12 @@ class AdminController extends Controller
                     continue;
                 }
 
-                // Gateway management uses the user-facing `connection`
-                // switch, while providers persist that state as `active`.
+                // Provider and gateway management use the user-facing
+                // `connection` switch, while both persist it as `active`.
                 // `connection` is an accessor, so it would otherwise be
                 // discarded by prepareModelData and the toggle would appear
-                // to save while leaving the gateway unchanged.
-                if (in_array($table, ['providers', 'payment-gateways', 'payment_gateways'], true)
+                // to save while leaving the raw state unchanged.
+                if (in_array($table, ['vendors', 'providers', 'payment-gateways', 'payment_gateways'], true)
                     && array_key_exists('connection', $item)
                     && !array_key_exists('active', $item)) {
                     $item['active'] = filter_var($item['connection'], FILTER_VALIDATE_BOOLEAN);
