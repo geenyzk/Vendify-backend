@@ -15,7 +15,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Classes\Vendor\Providers\VTUNg;
-use App\Models\Vendor;
 
 class TransactionController extends Controller
 {
@@ -221,7 +220,7 @@ class TransactionController extends Controller
             return $this->fail([], 'This transaction has no stored VTU.ng request ID.', 422);
         }
 
-        $vendor = Vendor::where('sub_category', 'vtu_ng')->where('active', true)->first();
+        $vendor = VTUNg::activeProvider();
         if (! $vendor) {
             return $this->fail([], 'The VTU.ng provider is not active.', 422);
         }

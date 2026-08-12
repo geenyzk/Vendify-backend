@@ -4,6 +4,9 @@ use App\Classes\Vendor\Providers\VTUNg;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Models\Provider;
+use App\Http\Controllers\TransactionController;
+use App\Jobs\ReconcileVTUNgTransaction;
 use App\Notifications\AppNotification;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Http;
@@ -12,7 +15,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
-    foreach (['event_awards', 'events', 'cashback_rates', 'settings', 'transactions', 'users'] as $table) {
+    foreach (['event_awards', 'events', 'cashback_rates', 'settings', 'transactions', 'users', 'providers'] as $table) {
         Schema::dropIfExists($table);
     }
     Schema::create('users', function (Blueprint $t) {
@@ -37,6 +40,12 @@ beforeEach(function () {
         $t->string('receiver')->nullable(); $t->string('plan_type')->nullable(); $t->string('token')->nullable();
         $t->unsignedBigInteger('promotion_id')->nullable(); $t->decimal('cost', 15, 2)->nullable();
         $t->string('related_reference')->nullable(); $t->timestamps();
+    });
+    Schema::create('providers', function (Blueprint $t) {
+        $t->id(); $t->string('name')->nullable(); $t->string('category')->nullable();
+        $t->string('sub_category')->nullable(); $t->string('base_url')->nullable();
+        $t->string('api_key')->nullable(); $t->string('username')->nullable();
+        $t->string('password')->nullable(); $t->boolean('active')->default(true); $t->timestamps();
     });
     Schema::create('settings', function (Blueprint $t) {
         $t->id(); $t->decimal('referral_commission_rate')->default(0);
@@ -111,4 +120,43 @@ it('refunds a provider-refunded order exactly once', function () {
         ->and($transaction->fresh()->refunded_at)->not->toBeNull()
         ->and((float) $user->fresh()->wallet_balance)->toBe(1000.0);
     Notification::assertSentToTimes($user, AppNotification::class, 1);
+});
+
+it('manual recheck resolves an active provider row and settles completed order', function () {
+    [, $transaction] = vtuNgFixture('completed-api');
+    Provider::create([
+        'name' => 'VTU.ng', 'sub_category' => 'vtu_ng', 'category' => null,
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'token', 'active' => true,
+    ]);
+
+    $response = (new TransactionController)->recheckProvider($transaction->id);
+
+    expect($response->status())->toBe(200)
+        ->and($transaction->fresh()->status)->toBe('success');
+});
+
+it('inactive provider still produces the accurate manual recheck error', function () {
+    [, $transaction] = vtuNgFixture('completed-api');
+    Provider::create([
+        'name' => 'VTU.ng', 'sub_category' => 'vtu_ng', 'category' => 'vendor',
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'token', 'active' => false,
+    ]);
+
+    $response = (new TransactionController)->recheckProvider($transaction->id);
+
+    expect($response->status())->toBe(422)
+        ->and($response->getData(true)['message'])->toBe('The VTU.ng provider is not active.')
+        ->and($transaction->fresh()->status)->toBe('pending');
+});
+
+it('background reconciliation uses the shared active provider lookup', function () {
+    [, $transaction] = vtuNgFixture('completed-api');
+    Provider::create([
+        'name' => 'VTU NG', 'sub_category' => 'VTU.NG', 'category' => null,
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'token', 'active' => true,
+    ]);
+
+    (new ReconcileVTUNgTransaction($transaction->id))->handle();
+
+    expect($transaction->fresh()->status)->toBe('success');
 });

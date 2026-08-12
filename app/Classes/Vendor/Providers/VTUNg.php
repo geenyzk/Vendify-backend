@@ -7,6 +7,8 @@ use App\Models\DataPlan;
 use App\Models\Transaction;
 use App\Models\Role;
 use App\Models\ServiceRoute;
+use App\Models\Provider;
+use App\Models\Vendor;
 use App\Jobs\ReconcileVTUNgTransaction;
 use App\Support\PerformanceCache;
 use Illuminate\Http\Client\ConnectionException;
@@ -20,6 +22,28 @@ use Illuminate\Support\Facades\Schema;
 class VTUNg extends VendorBase
 {
     protected string $providerName = 'vtu_ng';
+
+    /** Resolve the same active providers-table row for every recheck path. */
+    public static function activeProvider(): ?Vendor
+    {
+        $normalize = fn ($value): string => strtolower(preg_replace('/[^a-z0-9]+/i', '', (string) $value) ?? '');
+        $provider = Provider::query()
+            ->where('active', true)
+            ->orderBy('id')
+            ->get(['id', 'name', 'sub_category'])
+            ->first(fn (Provider $candidate) => in_array(
+                'vtung',
+                [$normalize($candidate->sub_category), $normalize($candidate->name)],
+                true,
+            ));
+
+        // Vendor's category scope can hide legacy rows that the Provider
+        // management model still exposes. Hydrate this exact internal row as
+        // Vendor so the existing VTU.ng adapter can use it unchanged.
+        return $provider
+            ? Vendor::withoutGlobalScopes()->find($provider->id)
+            : null;
+    }
 
     protected function baseUrl(): string
     {

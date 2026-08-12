@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Classes\Vendor\Providers\VTUNg;
 use App\Models\Transaction;
-use App\Models\Vendor;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -30,7 +29,7 @@ class ReconcileVTUNgTransaction implements ShouldQueue
             return;
         }
 
-        $vendor = Vendor::where('sub_category', 'vtu_ng')->where('active', true)->first();
+        $vendor = VTUNg::activeProvider();
         if (! $vendor) {
             $this->release($this->backoff()[min($this->attempts() - 1, 6)]);
             return;

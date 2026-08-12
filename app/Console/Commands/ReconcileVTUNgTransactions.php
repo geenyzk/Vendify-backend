@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Classes\Vendor\Providers\VTUNg;
 use App\Models\Transaction;
-use App\Models\Vendor;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -15,7 +14,7 @@ class ReconcileVTUNgTransactions extends Command
 
     public function handle(): int
     {
-        $vendor = Vendor::where('sub_category', 'vtu_ng')->where('active', true)->first();
+        $vendor = VTUNg::activeProvider();
         if (! $vendor) {
             return self::SUCCESS;
         }
