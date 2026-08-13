@@ -80,10 +80,10 @@ class MailDeliverability
         $headers = [
             'X-Auto-Response-Suppress' => 'All',
             'X-Entity-Ref-ID' => (string) Str::uuid(),
-            'Feedback-ID' => "vendify:{$category}:transactional",
+            'Feedback-ID' => "vendify:{$category}:email",
         ];
 
-        if (in_array($category, ['broadcast', 'admin-notification'], true)) {
+        if ($category === 'marketing') {
             $support = self::supportAddress();
             $headers['List-Unsubscribe'] = "<mailto:{$support}?subject=Unsubscribe>";
         }

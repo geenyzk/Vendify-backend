@@ -10,7 +10,11 @@ class AdminNotificationMail extends Mailable
 {
     use SerializesModels;
 
-    public function __construct(public string $subjectLine, public string $bodyText)
+    public function __construct(
+        public string $subjectLine,
+        public string $bodyText,
+        public string $emailCategory = 'transactional',
+    )
     {
     }
 
@@ -27,6 +31,6 @@ class AdminNotificationMail extends Mailable
         return $this->subject($this->subjectLine)
             ->view('emails.base', $viewData)
             ->text('emails.plain', $viewData)
-            ->withSymfonyMessage(fn ($message) => MailDeliverability::apply($message, 'admin-notification'));
+            ->withSymfonyMessage(fn ($message) => MailDeliverability::apply($message, $this->emailCategory));
     }
 }

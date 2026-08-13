@@ -60,6 +60,7 @@ class BroadcastController extends Controller
             'smsMessage' => 'nullable|string|max:160',
             'emailSubject' => 'nullable|string|max:255',
             'emailBody' => 'nullable|string',
+            'emailCategory' => 'required|in:transactional,marketing',
             'notifTitle' => 'nullable|string|max:255',
             'notifMessage' => 'nullable|string',
             'sendNow' => 'required|boolean',
@@ -399,6 +400,7 @@ class BroadcastController extends Controller
                     Mail::to($customer->email)->send(new AdminNotificationMail(
                         $parser->parse($validated['emailSubject']),
                         $parser->parse($validated['emailBody']),
+                        $validated['emailCategory'] ?? 'transactional',
                     ));
                     $count++;
                 } catch (\Throwable $e) {

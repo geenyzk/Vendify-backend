@@ -53,7 +53,10 @@ class BroadcastNotification extends Notification
         return (new MailMessage)
             ->subject($subject)
             ->view(['html' => 'emails.base', 'text' => 'emails.plain'], $viewData)
-            ->withSymfonyMessage(fn ($message) => MailDeliverability::apply($message, 'broadcast'));
+            ->withSymfonyMessage(fn ($message) => MailDeliverability::apply(
+                $message,
+                $this->data['emailCategory'] ?? 'transactional',
+            ));
     }
 
     public function toArray(object $notifiable): array

@@ -109,6 +109,7 @@ class SendBroadcastTool extends AiTool
             'channels' => $channels,
             'sendNow' => true,
             'priorityHigh' => (bool) ($arguments['priority_high'] ?? false),
+            'emailCategory' => 'transactional',
             'notifTitle' => $arguments['title'],
             'notifMessage' => $arguments['message'],
             'emailSubject' => $arguments['title'],
