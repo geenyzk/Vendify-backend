@@ -22,22 +22,16 @@ class PublicCatalogController extends Controller
 
     public function dataPlans(): JsonResponse
     {
-        $key = PerformanceCache::catalogVersionedKey('public-data-plans', ['role' => 'basic']);
+        $key = PerformanceCache::catalogVersionedKey('public-data-plans-v2', ['role' => 'basic']);
         $plans = Cache::get($key);
         $cacheHit = $plans !== null;
 
         if (! $cacheHit) {
             $activeNetworks = Network::query()
                 ->where('active', true)
-                ->with(['networkTypes' => fn ($query) => $query
-                    ->select('network_types.id')
-                    ->where('network_types.service_type', 'data')
-                    ->where('network_types.active', true)
-                    ->where('network_network_type.active', true)])
-                ->get(['id', 'name'])
-                ->mapWithKeys(fn (Network $network) => [
-                    strtolower($network->name) => $network->networkTypes->pluck('id')->map(fn ($id) => (int) $id)->all(),
-                ]);
+                ->pluck('name')
+                ->map(fn (string $name) => strtolower($name))
+                ->flip();
 
             $columns = [
                 'id', 'network', 'plan_name', 'plan_size', 'plan_type',
@@ -64,10 +58,9 @@ class PublicCatalogController extends Controller
                 ->orderBy('plan_name')
                 ->get()
                 ->filter(function (DataPlan $plan) use ($activeNetworks) {
-                    $networkTypes = $activeNetworks->get(strtolower($plan->network), []);
                     $type = strtoupper(trim((string) ($plan->networkType?->name ?? $plan->plan_type)));
 
-                    return in_array((int) $plan->network_type_id, $networkTypes, true)
+                    return $activeNetworks->has(strtolower($plan->network))
                         && in_array($type, self::CUSTOMER_PLAN_TYPES, true);
                 })
                 ->map(function (DataPlan $plan) {
