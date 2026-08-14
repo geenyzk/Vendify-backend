@@ -34,6 +34,7 @@ use App\Http\Controllers\OgdamsWebhookController;
 use App\Http\Controllers\PayscribeController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\PromotionController;
+use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\ResetWebsiteController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SearchController;
@@ -66,6 +67,11 @@ Route::get('/branding/logo', [BrandingController::class, 'logo']);
 Route::get('/app/latest', [AppReleaseController::class, 'latest']);
 Route::get('/app/download', [AppReleaseController::class, 'download']);
 Route::get('/app/download/{id}', [AppReleaseController::class, 'download'])->whereNumber('id');
+
+// Public retail catalogue for the landing page. This deliberately uses a
+// dedicated customer-safe projection rather than the internal table API.
+Route::get('/public/catalog/data-plans', [PublicCatalogController::class, 'dataPlans'])
+    ->middleware('throttle:60,1');
 
 Route::post('/login', [AuthenticatedSessionController::class, 'store']);
 Route::post('/register', [RegisteredUserController::class, 'store']);

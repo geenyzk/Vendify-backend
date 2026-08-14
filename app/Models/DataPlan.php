@@ -129,6 +129,22 @@ class DataPlan extends Model
             'user',
         ], fn ($key) => is_string($key) && $key !== '')));
 
+        return $this->priceForRoleKeys($roleKeys);
+    }
+
+    /**
+     * Resolve the customer selling price using the same pricing rules as the
+     * authenticated catalogue, but without requiring an authenticated user.
+     *
+     * @param  array<int, string>  $roleKeys
+     */
+    public function priceForRoleKeys(array $roleKeys): ?float
+    {
+        $roleKeys = array_values(array_unique(array_filter(
+            $roleKeys,
+            fn ($key) => is_string($key) && $key !== ''
+        )));
+
         // Prefer a role-specific JSON entry, accepting the display name,
         // slug, or legacy user_type. Roles added after a plan was priced use
         // the customer/user configuration where one exists rather than an
