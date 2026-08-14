@@ -63,7 +63,7 @@ class PublicDataCatalogTest extends TestCase
             ->assertJsonPath('data.0.unit', 'GB')
             ->assertJsonPath('data.0.validity', '30 Days')
             ->assertJsonPath('data.0.plan_type', 'STANDARD')
-            ->assertJsonPath('data.0.selling_price', 600);
+            ->assertJsonPath('data.0.selling_price', '600.00');
     }
 
     public function test_catalogue_excludes_inactive_draft_unpriced_and_unavailable_plans(): void

@@ -77,7 +77,10 @@ class PublicCatalogController extends Controller
                         'unit' => strtoupper((string) $plan->plan_size),
                         'validity' => $plan->validity,
                         'plan_type' => strtoupper(trim((string) ($plan->networkType?->name ?? $plan->plan_type))),
-                        'selling_price' => $price,
+                        // Decimal string avoids leaking PHP's binary float
+                        // representation (e.g. 1246.960000000000036...) into
+                        // this customer-facing money API.
+                        'selling_price' => number_format($price, 2, '.', ''),
                     ];
                 })
                 ->filter()
