@@ -126,6 +126,12 @@ class ChildSyncFactory
                     'transaction_type' => $record['transaction_type'] ?? null,
                     'amount' => $record['amount'] ?? 0,
                     'status' => $record['status'] ?? null,
+                    // This is the time the purchase happened on the child,
+                    // not the time this parent happened to ingest the batch.
+                    'transacted_at' => $record['transacted_at']
+                        ?? $record['created_at']
+                        ?? $record['date']
+                        ?? null,
                     'raw_payload' => $record,
                 ]
             );

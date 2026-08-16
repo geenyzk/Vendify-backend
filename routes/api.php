@@ -17,6 +17,7 @@ use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\ChildCustomerContactController;
+use App\Http\Controllers\ChildCustomerActivityController;
 use App\Http\Controllers\ChildCustomerMigrationController;
 use App\Http\Controllers\ChildDirectiveController;
 use App\Http\Controllers\ChildFundingController;
@@ -361,6 +362,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::post('/child-instances/{id}/customers/bulk-migrate', [ChildCustomerMigrationController::class, 'bulkMigrate']);
         Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
         Route::post('/child-instances/{id}/customers/messages', [ChildCustomerContactController::class, 'sendBulk']);
+        Route::get('/child-instances/{id}/customers/recent-activity', [ChildCustomerActivityController::class, 'index']);
         Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
         Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);
 

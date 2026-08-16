@@ -14,12 +14,14 @@ class ChildTransaction extends Model
         'transaction_type',
         'amount',
         'status',
+        'transacted_at',
         'raw_payload',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'raw_payload' => 'array',
+        'transacted_at' => 'datetime',
     ];
 
     public function childInstance(): BelongsTo
