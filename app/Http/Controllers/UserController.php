@@ -48,6 +48,10 @@ class UserController extends Controller
                     ->orWhere('username', 'like', "%{$search}%")
                     ->orWhere('email', 'like', "%{$search}%")
                     ->orWhere('phone', 'like', "%{$search}%");
+
+                if (ctype_digit($search)) {
+                    $builder->orWhere('id', $search);
+                }
             });
         }
         if ($request->filled('status') && $request->query('status') !== 'all') {
