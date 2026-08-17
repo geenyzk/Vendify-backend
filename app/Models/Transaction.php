@@ -18,11 +18,13 @@ class Transaction extends Model
         'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token',
         'promotion_id', 'discount_amount', 'refunded_at', 'refund_reason',
         'related_reference',
+        'idempotency_key', 'raw_payload',
     ];
 
     protected $casts = [
         'completed_at' => 'datetime',
         'refunded_at' => 'datetime',
+        'raw_payload' => 'array',
     ];
 
     // Transaction types where the wallet was actually charged, and a

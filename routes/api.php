@@ -5,6 +5,8 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AiManagerController;
 use App\Http\Controllers\AirtimeToCashController;
 use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\AdminBettingController;
+use App\Http\Controllers\BettingController;
 use App\Http\Controllers\AppReleaseController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -197,6 +199,9 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::get('/vtu/{service}/discount', [VTUServicesController::class, 'discountPreview']);
     Route::get('/vtu/{service}/active-discount', [VTUServicesController::class, 'activeDiscount']);
+    Route::get('/betting/providers', [BettingController::class, 'index']);
+    Route::post('/betting/verify', [BettingController::class, 'verify'])->middleware('throttle:30,1');
+    Route::post('/betting/fund', [BettingController::class, 'fund'])->middleware('throttle:10,1');
     Route::post('/transactions/report', [TransactionController::class, 'report']);
     Route::get('/transactions/{id}/status', [TransactionController::class, 'showOwn'])->whereNumber('id');
     Route::get('/search', [SearchController::class, 'userSearch']);
@@ -283,6 +288,10 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // Gateway screens it sits beside, which any admin can manage.
         Route::get('/service-routing', [ServiceRoutingController::class, 'index']);
         Route::put('/service-routing', [ServiceRoutingController::class, 'update']);
+        Route::get('/betting', [AdminBettingController::class, 'index']);
+        Route::put('/betting/settings', [AdminBettingController::class, 'updateSettings']);
+        Route::patch('/betting/providers/{bettingProvider}', [AdminBettingController::class, 'updateProvider']);
+        Route::post('/betting/providers/sync', [AdminBettingController::class, 'sync']);
 
         // Transaction status override & refund (money-moving, admin-only).
         Route::middleware('permission:transactions')->group(function () {
