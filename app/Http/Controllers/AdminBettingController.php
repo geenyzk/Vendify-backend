@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\BettingProvider;
 use App\Models\BettingSetting;
 use App\Models\Transaction;
+use App\Models\Vendor;
 use App\Services\Betting\BettingProviderManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,9 +15,23 @@ class AdminBettingController extends Controller
 {
     public function index(): JsonResponse
     {
+        $gatewayType = strtolower((string) config('betting.provider', 'vtpass'));
+        $gateway = Vendor::query()->where('sub_category', $gatewayType)->first();
+
         return $this->success([
             'enabled' => BettingSetting::current()->enabled,
-            'upstream_provider' => config('betting.provider'),
+            'upstream_provider' => $gatewayType,
+            'gateway' => [
+                'configured' => $gateway !== null,
+                'active' => (bool) $gateway?->active,
+                'provider_id' => $gateway?->id,
+                'name' => $gateway?->name,
+                'missing_credentials' => $gateway ? array_values(array_filter([
+                    empty($gateway->base_url) ? 'base_url' : null,
+                    empty($gateway->api_key) ? 'api_key' : null,
+                    empty($gateway->public_key) ? 'public_key' : null,
+                ])) : ['base_url', 'api_key', 'public_key'],
+            ],
             'providers' => BettingProvider::orderBy('name')->get(),
             'recent_transactions' => Transaction::where('transaction_type', 'betting_funding')->latest()->limit(25)->get(),
         ]);
@@ -48,7 +63,11 @@ class AdminBettingController extends Controller
 
     public function sync(BettingProviderManager $manager): JsonResponse
     {
-        $items = $manager->resolve()->supportedBillers();
+        try {
+            $items = $manager->resolve()->supportedBillers();
+        } catch (\RuntimeException $e) {
+            return $this->fail([], $e->getMessage(), 422, 'provider_unavailable');
+        }
         foreach ($items as $item) {
             BettingProvider::updateOrCreate(
                 ['biller_id' => $item['biller_id']],
