@@ -14,22 +14,21 @@ function bettingFixture(float $balance = 5000): array
 {
     BettingSetting::create(['enabled' => true]);
     $provider = BettingProvider::create([
-        'name' => 'Test Bet',
-        'slug' => 'test-bet',
-        'provider_code' => 'test-bet',
-        'biller_id' => 'test-bet-live-id',
+        'name' => 'Bet9ja',
+        'slug' => 'bet9ja',
+        'provider_code' => 'Bet9ja',
+        'biller_id' => 'Bet9ja',
         'active' => true,
         'verification_supported' => true,
         'minimum_amount' => 100,
-        'maximum_amount' => 10000,
+        'maximum_amount' => 100000,
     ]);
     Vendor::create([
-        'name' => 'VTpass',
-        'base_url' => 'https://sandbox.vtpass.test/api',
-        'api_key' => 'test-key',
-        'public_key' => 'test-public-key',
+        'name' => 'VTU.ng',
+        'base_url' => 'https://vtu.ng/wp-json/api/v2',
+        'api_key' => 'test-token',
         'category' => 'vendor',
-        'sub_category' => 'vtpass',
+        'sub_category' => 'vtu_ng',
         'active' => true,
     ]);
     $user = User::create([
@@ -49,7 +48,7 @@ function bettingFixture(float $balance = 5000): array
 function bettingPayload(array $overrides = []): array
 {
     return array_merge([
-        'provider' => 'test-bet',
+        'provider' => 'bet9ja',
         'customer_id' => 'BET12345',
         'amount' => 1000,
         'pin' => '1234',
@@ -60,13 +59,15 @@ function bettingPayload(array $overrides = []): array
 function fakeVerifiedThen(array $funding): void
 {
     Http::fakeSequence()
-        ->push(['code' => '000', 'content' => ['Customer_Name' => 'TEST USER']])
+        ->push(['code' => 'success', 'message' => 'Customer Details Retrieved', 'data' => ['customer_name' => 'TEST USER']])
         ->push($funding);
 }
 
 test('successful betting funding records and deducts once', function () {
     [$user] = bettingFixture();
-    fakeVerifiedThen(['code' => '000', 'response_description' => 'TRANSACTION SUCCESSFUL', 'transactionID' => 'UP-1']);
+    fakeVerifiedThen(['code' => 'success', 'message' => 'ORDER COMPLETED', 'data' => [
+        'status' => 'completed-api', 'request_id' => 'UP-1', 'amount_charged' => 1000,
+    ]]);
 
     $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload())
         ->assertOk()->assertJsonPath('data.status', 'success');
@@ -77,7 +78,7 @@ test('successful betting funding records and deducts once', function () {
 
 test('invalid betting account is rejected before wallet reservation', function () {
     [$user] = bettingFixture();
-    Http::fake(['*' => Http::response(['code' => '016', 'response_description' => 'Invalid customer ID'], 200)]);
+    Http::fake(['*' => Http::response(['code' => 'failure', 'message' => 'Invalid customer ID'], 200)]);
 
     $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload())->assertUnprocessable();
     expect((float) $user->fresh()->wallet_balance)->toBe(5000.0)->and(Transaction::count())->toBe(0);
@@ -91,7 +92,7 @@ test('unsupported betting provider is rejected', function () {
 
 test('insufficient wallet does not contact funding endpoint', function () {
     [$user] = bettingFixture(500);
-    Http::fake(['*' => Http::response(['code' => '000', 'content' => ['Customer_Name' => 'TEST USER']])]);
+    Http::fake(['*' => Http::response(['code' => 'success', 'data' => ['customer_name' => 'TEST USER']])]);
     $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload())->assertStatus(402);
     expect(Transaction::count())->toBe(0);
 });
@@ -100,11 +101,11 @@ test('amount limits are enforced server side', function (int $amount) {
     [$user] = bettingFixture();
     $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload(['amount' => $amount]))
         ->assertUnprocessable();
-})->with([99, 10001]);
+})->with([99, 100001]);
 
 test('provider failure refunds the reservation', function () {
     [$user] = bettingFixture();
-    fakeVerifiedThen(['code' => '016', 'response_description' => 'Unable to process']);
+    fakeVerifiedThen(['code' => 'failure', 'message' => 'Unable to process', 'data' => ['status' => 'failed-api']]);
     $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload())->assertUnprocessable();
     expect((float) $user->fresh()->wallet_balance)->toBe(5000.0)
         ->and(Transaction::first()->status)->toBe('fail');
@@ -116,7 +117,7 @@ test('provider timeout remains pending for safe reconciliation', function () {
     Http::fake(function () use (&$calls) {
         $calls++;
         if ($calls === 1) {
-            return Http::response(['code' => '000', 'content' => ['Customer_Name' => 'TEST USER']]);
+            return Http::response(['code' => 'success', 'data' => ['customer_name' => 'TEST USER']]);
         }
         throw new \Illuminate\Http\Client\ConnectionException('timeout');
     });
@@ -126,15 +127,15 @@ test('provider timeout remains pending for safe reconciliation', function () {
 
 test('permission errors are normalized and raw detail stays internal', function () {
     [$user] = bettingFixture();
-    fakeVerifiedThen(['code' => '016', 'response_description' => 'Your institution is not allowed to vend for this biller!']);
+    fakeVerifiedThen(['code' => 'rest_forbidden', 'message' => 'Your account cannot access this service.']);
     $response = $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload());
-    $response->assertUnprocessable()->assertJsonMissing(['Your institution is not allowed to vend for this biller!']);
+    $response->assertUnprocessable()->assertJsonMissing(['Your account cannot access this service.']);
     expect(data_get(Transaction::first()->raw_payload, 'internal_status'))->toBe('provider_permission_denied');
 });
 
 test('duplicate submissions return the original transaction without a second vend', function () {
     [$user] = bettingFixture();
-    fakeVerifiedThen(['code' => '000', 'response_description' => 'TRANSACTION SUCCESSFUL']);
+    fakeVerifiedThen(['code' => 'success', 'message' => 'ORDER COMPLETED', 'data' => ['status' => 'completed-api']]);
     $payload = bettingPayload();
     $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', $payload)->assertOk();
     $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', $payload)->assertOk()->assertJsonPath('data.replayed', true);
@@ -144,7 +145,7 @@ test('duplicate submissions return the original transaction without a second ven
 
 test('pending upstream response keeps the reservation pending', function () {
     [$user] = bettingFixture();
-    fakeVerifiedThen(['code' => '099', 'response_description' => 'PROCESSING']);
+    fakeVerifiedThen(['code' => 'success', 'message' => 'ORDER PROCESSING', 'data' => ['status' => 'processing-api']]);
     $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload())->assertStatus(202);
     expect(Transaction::first()->status)->toBe('pending')->and((float) $user->fresh()->wallet_balance)->toBe(4000.0);
 });

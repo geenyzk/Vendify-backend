@@ -32,6 +32,10 @@ return [
         // VTU.ng signs the raw webhook body with HMAC-SHA256 using the
         // account user PIN. Keep it separate from API login credentials.
         'webhook_pin' => env('VTU_NG_WEBHOOK_PIN'),
+        'base_url' => env('VTU_NG_BASE_URL', 'https://vtu.ng/wp-json/api/v2'),
+        'username' => env('VTU_NG_USERNAME'),
+        'password' => env('VTU_NG_PASSWORD'),
+        'api_token' => env('VTU_NG_API_TOKEN'),
     ],
 
     'cheapdatahub' => [

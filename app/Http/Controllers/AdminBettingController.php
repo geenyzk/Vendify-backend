@@ -15,22 +15,28 @@ class AdminBettingController extends Controller
 {
     public function index(): JsonResponse
     {
-        $gatewayType = strtolower((string) config('betting.provider', 'vtpass'));
-        $gateway = Vendor::query()->where('sub_category', $gatewayType)->first();
+        $gatewayType = strtolower((string) config('betting.provider', 'vtu_ng'));
+        $gateway = Vendor::query()->where(function ($query) {
+            $query->where('sub_category', 'vtu_ng')
+                ->orWhereRaw('LOWER(REPLACE(REPLACE(name, ".", ""), " ", "")) = ?', ['vtung']);
+        })->first();
+        $environmentHasToken = (bool) config('services.vtu_ng.api_token');
+        $environmentHasLogin = (bool) config('services.vtu_ng.username')
+            && (bool) config('services.vtu_ng.password');
+        $environmentConfigured = $environmentHasToken || $environmentHasLogin;
+        $hasToken = (bool) ($gateway?->api_key ?: config('services.vtu_ng.api_token'));
+        $hasLogin = (bool) ($gateway?->username ?: config('services.vtu_ng.username'))
+            && (bool) ($gateway?->password ?: config('services.vtu_ng.password'));
 
         return $this->success([
             'enabled' => BettingSetting::current()->enabled,
             'upstream_provider' => $gatewayType,
             'gateway' => [
-                'configured' => $gateway !== null,
-                'active' => (bool) $gateway?->active,
+                'configured' => $gateway !== null || $environmentConfigured,
+                'active' => $gateway ? (bool) $gateway->active : $environmentConfigured,
                 'provider_id' => $gateway?->id,
-                'name' => $gateway?->name,
-                'missing_credentials' => $gateway ? array_values(array_filter([
-                    empty($gateway->base_url) ? 'base_url' : null,
-                    empty($gateway->api_key) ? 'api_key' : null,
-                    empty($gateway->public_key) ? 'public_key' : null,
-                ])) : ['base_url', 'api_key', 'public_key'],
+                'name' => $gateway?->name ?? ($environmentConfigured ? 'VTU.ng (environment)' : null),
+                'missing_credentials' => $hasToken || $hasLogin ? [] : ['username/password or api_token'],
             ],
             'providers' => BettingProvider::orderBy('name')->get(),
             'recent_transactions' => Transaction::where('transaction_type', 'betting_funding')->latest()->limit(25)->get(),
