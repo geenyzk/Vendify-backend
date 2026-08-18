@@ -127,9 +127,11 @@ test('provider timeout remains pending for safe reconciliation', function () {
 
 test('permission errors are normalized and raw detail stays internal', function () {
     [$user] = bettingFixture();
-    fakeVerifiedThen(['code' => 'rest_forbidden', 'message' => 'Your account cannot access this service.']);
+    fakeVerifiedThen(['code' => 'failure', 'message' => 'Your institution is not allowed to vend for this biller!']);
     $response = $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload());
-    $response->assertUnprocessable()->assertJsonMissing(['Your account cannot access this service.']);
+    $response->assertUnprocessable()
+        ->assertJsonPath('message', 'VTU.ng has not authorised betting funding for this provider. Please choose another provider.')
+        ->assertJsonMissing(['Your institution is not allowed to vend for this biller!']);
     expect(data_get(Transaction::first()->raw_payload, 'internal_status'))->toBe('provider_permission_denied');
 });
 

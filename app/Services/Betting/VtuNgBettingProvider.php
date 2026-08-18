@@ -110,7 +110,9 @@ class VtuNgBettingProvider implements BettingProviderInterface
         $message = trim((string) ($body['message'] ?? ''));
         $data = is_array($body['data'] ?? null) ? $body['data'] : [];
         $upstreamStatus = strtolower((string) ($data['status'] ?? ''));
-        $permissionDenied = $httpStatus === 403 || in_array($code, ['rest_forbidden', 'jwt_auth_failed', 'jwt_auth_invalid_token'], true);
+        $permissionDenied = $httpStatus === 403
+            || in_array($code, ['rest_forbidden', 'jwt_auth_failed', 'jwt_auth_invalid_token'], true)
+            || (bool) preg_match('/not allowed to vend|not authorised|not authorized|permission denied|access denied/i', $message);
         $unsupported = in_array($code, ['invalid_service_id', 'invalid_service'], true);
         $customerMissing = $verification && in_array($code, ['failure', 'invalid_field'], true);
         $pending = in_array($upstreamStatus, ['processing-api', 'initiated-api', 'queued-api', 'pending', 'on-hold'], true)
