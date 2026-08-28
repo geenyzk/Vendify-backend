@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AdminSupportTicketController;
 use App\Http\Controllers\AiManagerController;
 use App\Http\Controllers\AirtimeToCashController;
 use App\Http\Controllers\AnalyticsController;
@@ -41,6 +42,7 @@ use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\ResetWebsiteController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\ServiceControlController;
 use App\Http\Controllers\ServiceCostMarginController;
 use App\Http\Controllers\ServiceRoutingController;
@@ -221,6 +223,14 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::delete('/recent-recipients', [RecentRecipientController::class, 'clear']);
     Route::delete('/recent-recipients/{recentRecipient}', [RecentRecipientController::class, 'destroy']);
 
+    Route::prefix('support')->group(function () {
+        Route::get('/tickets', [SupportTicketController::class, 'index']);
+        Route::post('/tickets', [SupportTicketController::class, 'store']);
+        Route::get('/tickets/{ticket}', [SupportTicketController::class, 'show'])->whereNumber('ticket');
+        Route::post('/tickets/{ticket}/messages', [SupportTicketController::class, 'reply'])->whereNumber('ticket');
+        Route::get('/transactions', [SupportTicketController::class, 'transactions']);
+    });
+
     // Promotion routes
     Route::post('/promotions/validate', [PromotionController::class, 'validatePromotion']);
     Route::post('/promotions/apply', [PromotionController::class, 'apply']);
@@ -317,6 +327,13 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
             Route::post('/broadcast/audience-count', [BroadcastController::class, 'audienceCount']);
             Route::get('/broadcast/users-search', [BroadcastController::class, 'searchUsers']);
             Route::get('/broadcast/history', [BroadcastController::class, 'history']);
+            Route::get('/support/tickets', [AdminSupportTicketController::class, 'index']);
+            Route::get('/support/tickets/{ticket}', [AdminSupportTicketController::class, 'show']);
+            Route::post('/support/tickets/{ticket}/messages', [AdminSupportTicketController::class, 'reply']);
+            Route::post('/support/tickets/{ticket}/notes', [AdminSupportTicketController::class, 'note']);
+            Route::patch('/support/tickets/{ticket}/status', [AdminSupportTicketController::class, 'status']);
+            Route::patch('/support/tickets/{ticket}/priority', [AdminSupportTicketController::class, 'priority']);
+            Route::patch('/support/tickets/{ticket}/assignment', [AdminSupportTicketController::class, 'assignment']);
         });
 
         // AI Manager — in-app assistant that reads live site data and proposes
