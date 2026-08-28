@@ -74,12 +74,14 @@ class RolesAndPermissionsSeeder extends Seeder
                     'name' => $slug,
                     'slug' => $slug,
                     'is_staff' => $config['is_staff'],
+                    'is_active' => true,
                     'is_default' => $isDefault,
                 ]);
             } else {
                 $role->update([
                     'slug' => $role->slug ?: $slug,
                     'is_staff' => $config['is_staff'],
+                    'is_active' => true,
                     'is_default' => $isDefault,
                 ]);
             }
