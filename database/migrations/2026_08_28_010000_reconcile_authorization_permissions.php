@@ -52,16 +52,16 @@ return new class extends Migration
 
             $customerCare = Role::where('slug', 'customer-care')->first();
             if ($customerCare) { $customerCare->forceFill(['is_staff' => true])->save(); }
-            $customerCare?->permissions()->syncWithoutDetaching([$permissions['switch_account']]);
+            $customerCare?->permissions()->detach($permissions['switch_account']);
 
-            // Preserve the legacy Admin role's existing abilities without
-            // turning it into the protected system-owner role.
+            // Keep legacy Admin as operational staff without owner-level
+            // impersonation or authorization controls.
             $admin = Role::where('slug', 'admin')->orWhere('name', 'Admin')->first();
             if ($admin) { $admin->forceFill(['is_staff' => true])->save(); }
-            $admin?->permissions()->syncWithoutDetaching([
-                $permissions['switch_account'], $permissions['ai_manager'],
-                $permissions['migrations'], $permissions['manage_roles'],
+            $admin?->permissions()->detach([
+                $permissions['switch_account'], $permissions['migrations'], $permissions['manage_roles'],
             ]);
+            $admin?->permissions()->syncWithoutDetaching([$permissions['ai_manager']]);
         });
     }
 

@@ -43,12 +43,11 @@ class PermissionSeeder extends Seeder
             $ids[] = $model->id;
         }
 
-        // The admin role gets every permission by default — other roles can
-        // be granted individual permissions later via the Roles & Permissions
-        // admin UI.
+        // Legacy Admin is operational staff, not an owner-level role.
         $adminRole = Role::where('slug', 'admin')->first();
-        $protectedId = Permission::where('slug', 'manage_system_roles')->value('id');
-        $whatsAppId = Permission::where('slug', 'manage_whatsapp_support')->value('id');
-        $adminRole?->permissions()->syncWithoutDetaching(array_values(array_diff($ids, [$protectedId, $whatsAppId])));
+        $ownerOnlyIds = Permission::whereIn('slug', [
+            'switch_account', 'migrations', 'manage_roles', 'manage_system_roles',
+        ])->pluck('id')->all();
+        $adminRole?->permissions()->sync(array_values(array_diff($ids, $ownerOnlyIds)));
     }
 }

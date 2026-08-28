@@ -20,12 +20,12 @@ The `owner` and `co-owner` roles cannot be deleted. The owner role cannot be dea
 Starting customer impersonation requires:
 
 1. authenticated secure session;
-2. active staff role;
+2. active `owner` or `co-owner` role;
 3. `customers` permission;
 4. `switch_account` permission;
 5. recent password confirmation.
 
-Targets must be non-staff customers and nested impersonation is rejected. Start and end events use the existing audit log with actor, actor role, customer, time, IP, user agent, and auth-session context.
+Owner and co-owner may target customer or staff accounts. Self-impersonation and nested impersonation are rejected. Start and end events use the existing audit log with actor, actor role, target account, time, IP, user agent, and auth-session context.
 
 While impersonating, the backend blocks profile/password/PIN changes, virtual-account generation, VTU purchases, betting funding, airtime-to-cash submission, wallet transfers, and withdrawal submission. Ending impersonation remains available even if `switch_account` is subsequently removed, provided the original account remains active staff.
 
@@ -35,7 +35,5 @@ After the authorization reconciliation migration and canonical seeder run, these
 
 - `owner`
 - `co-owner`
-- `customer-care`
-- legacy `Admin`/`admin`, when present
 
-Any custom role can use the capability only when the permission is explicitly assigned.
+The backend also verifies the role slug, so assigning `switch_account` to Admin, customer-care, or a custom role cannot grant impersonation. Legacy Admin does not receive `migrations` or `manage_roles`.

@@ -44,14 +44,24 @@ function assertCanImpersonate($test, User $actor, User $customer): void
         ->assertJsonPath('success', true);
 }
 
-it('allows owner, Admin, and customer-care only when switch_account is assigned', function () {
+it('allows only owner and co-owner to impersonate when switch_account is assigned', function () {
     $customer = matrixUser('customer', matrixRole('basic', false));
 
-    foreach (['owner', 'admin', 'customer-care'] as $slug) {
+    foreach (['owner', 'co-owner'] as $slug) {
         $actor = matrixUser($slug, matrixRole($slug, true, ['customers', 'switch_account']));
         assertCanImpersonate($this, $actor, $customer);
         // Reset the test client session before the next actor.
         $this->flushSession();
+    }
+});
+
+it('denies non-owner staff even when switch_account is assigned', function () {
+    $customer = matrixUser('restricted-customer', matrixRole('restricted-basic', false));
+
+    foreach (['admin', 'customer-care', 'custom-manager'] as $slug) {
+        $actor = matrixUser($slug, matrixRole($slug, true, ['customers', 'switch_account']));
+        Sanctum::actingAs($actor);
+        $this->withSession([])->postJson("/api/admin/users/{$customer->id}/impersonate")->assertForbidden();
     }
 });
 
@@ -77,7 +87,7 @@ it('denies customers and unauthenticated callers from admin impersonation APIs',
 
 it('uses active role staff state rather than the legacy user_type string', function () {
     $customer = matrixUser('legacy-target', matrixRole('legacy-basic', false));
-    $staff = matrixUser('staff-user-type-user', matrixRole('staff-capability', true, ['customers', 'switch_account']));
+    $staff = matrixUser('staff-user-type-user', matrixRole('owner', true, ['customers', 'switch_account']));
     expect($staff->user_type)->toBe('user');
     assertCanImpersonate($this, $staff, $customer);
 
@@ -89,7 +99,7 @@ it('uses active role staff state rather than the legacy user_type string', funct
 
 it('applies permission changes immediately without a permission cache', function () {
     $customer = matrixUser('cache-target', matrixRole('cache-basic', false));
-    $role = matrixRole('mutable-staff', true, ['customers', 'switch_account']);
+    $role = matrixRole('owner', true, ['customers', 'switch_account']);
     $staff = matrixUser('mutable-staff', $role);
     assertCanImpersonate($this, $staff, $customer);
 
@@ -125,11 +135,10 @@ it('reserves protected permissions for system-role managers', function () {
     ])->assertCreated();
 });
 
-it('does not allow switching into another staff account', function () {
-    $actor = matrixUser('switch-actor', matrixRole('switch-actor', true, ['customers', 'switch_account']));
+it('allows an owner to switch into another staff account', function () {
+    $actor = matrixUser('switch-actor', matrixRole('owner', true, ['customers', 'switch_account']));
     $otherStaff = matrixUser('other-staff', matrixRole('other-staff', true));
-    Sanctum::actingAs($actor);
-    $this->withSession([])->postJson("/api/admin/users/{$otherStaff->id}/impersonate")->assertForbidden();
+    assertCanImpersonate($this, $actor, $otherStaff);
 });
 
 it('keeps capability and impersonation restrictions on the routes themselves', function () {

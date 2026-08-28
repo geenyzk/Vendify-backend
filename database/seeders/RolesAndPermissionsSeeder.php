@@ -43,7 +43,8 @@ class RolesAndPermissionsSeeder extends Seeder
     private const ROLES = [
         'owner' => ['is_staff' => true, 'permissions' => self::PERMISSIONS],
         'co-owner' => ['is_staff' => true, 'permissions' => ['customers', 'settings', 'migrations', 'transactions', 'wallets', 'audit_logs', 'support', 'airtime_to_cash', 'switch_account', 'ai_manager', 'manage_roles', 'manage_whatsapp_support']],
-        'customer-care' => ['is_staff' => true, 'permissions' => ['customers', 'support', 'switch_account']],
+        'admin' => ['is_staff' => true, 'permissions' => ['customers', 'settings', 'transactions', 'wallets', 'audit_logs', 'support', 'airtime_to_cash', 'ai_manager', 'manage_whatsapp_support']],
+        'customer-care' => ['is_staff' => true, 'permissions' => ['customers', 'support']],
         'api' => ['is_staff' => false, 'permissions' => []],
         'agent' => ['is_staff' => false, 'permissions' => []],
         'bonanza' => ['is_staff' => false, 'permissions' => []],

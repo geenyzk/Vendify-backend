@@ -276,18 +276,16 @@ class UserController extends Controller
         $admin = $request->user();
         $target = User::with('role')->findOrFail($id);
 
+        if (! in_array(strtolower((string) $admin->role?->slug), Role::PROTECTED_SLUGS, true)) {
+            return $this->fail(null, 'Only an owner or co-owner can impersonate customer accounts.', 403);
+        }
+
         if ($request->session()->has('impersonator_user_id')) {
             return $this->fail(null, 'Nested impersonation is not allowed.', 409);
         }
 
         if ((string) $admin->id === (string) $target->id) {
             return $this->fail(null, "You are already signed in as this user.", 422);
-        }
-
-        // Support tooling is for customer accounts only — staff accounts
-        // would hand over their admin permissions along with the session.
-        if ($target->role && $target->role->is_staff) {
-            return $this->fail(null, "Staff accounts cannot be impersonated.", 403);
         }
 
         $security = app(SessionSecurityService::class);
