@@ -23,17 +23,30 @@ class PermissionSeeder extends Seeder
             ['name' => 'Airtime to Cash', 'slug' => 'airtime_to_cash', 'description' => 'Review and approve or reject airtime-to-cash conversion requests'],
             ['name' => 'Audit Log', 'slug' => 'audit_logs', 'description' => 'View the audit trail of admin actions and data changes'],
             ['name' => 'AI Manager', 'slug' => 'ai_manager', 'description' => 'Use the AI Manager assistant to monitor the site and propose admin actions'],
+            ['name' => 'Migrate DB', 'slug' => 'migrations', 'description' => 'Run database migrations from the admin interface'],
+            ['name' => 'Manage Roles', 'slug' => 'manage_roles', 'description' => 'Create roles, assign ordinary permissions, and manage staff assignments'],
+            ['name' => 'Manage System Roles', 'slug' => 'manage_system_roles', 'description' => 'Manage protected owner-level roles and permissions'],
         ];
 
         $ids = [];
         foreach ($permissions as $permission) {
-            $ids[] = Permission::firstOrCreate(['slug' => $permission['slug']], $permission)->id;
+            $model = Permission::where('slug', $permission['slug'])
+                ->orWhere('name', $permission['name'])
+                ->orWhere('name', $permission['slug'])
+                ->first();
+            if (!$model) {
+                $model = Permission::create($permission);
+            } else {
+                $model->update($permission);
+            }
+            $ids[] = $model->id;
         }
 
         // The admin role gets every permission by default — other roles can
         // be granted individual permissions later via the Roles & Permissions
         // admin UI.
         $adminRole = Role::where('slug', 'admin')->first();
-        $adminRole?->permissions()->syncWithoutDetaching($ids);
+        $protectedId = Permission::where('slug', 'manage_system_roles')->value('id');
+        $adminRole?->permissions()->syncWithoutDetaching(array_values(array_diff($ids, [$protectedId])));
     }
 }

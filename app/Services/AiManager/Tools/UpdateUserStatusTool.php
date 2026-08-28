@@ -74,7 +74,7 @@ class UpdateUserStatusTool extends AiTool
             throw new AiManagerException('User not found.');
         }
 
-        if ($user->user_type === 'admin') {
+        if ($user->role?->is_staff) {
             throw new AiManagerException('Admin accounts cannot be suspended or banned from here.');
         }
 

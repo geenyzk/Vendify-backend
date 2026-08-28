@@ -7,6 +7,8 @@ use App\Http\Middleware\EnforceSecureSession;
 use App\Http\Middleware\HandleRequest;
 use App\Http\Middleware\ProfilePerformance;
 use App\Http\Middleware\RequireRecentAuthentication;
+use App\Http\Middleware\RejectImpersonatedSession;
+use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\TrackLastSeen;
 use App\Http\Middleware\VerifyChildSignature;
 use App\Http\Middleware\VerifySimDeviceSignature;
@@ -43,7 +45,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'user_type' => EnsureUserType::class,
+            'staff' => EnsureUserIsAdmin::class,
             'permission' => EnsurePermission::class,
+            'not.impersonating' => RejectImpersonatedSession::class,
             'secure.session' => EnforceSecureSession::class,
             'recent.auth' => RequireRecentAuthentication::class,
             'verify.child.hmac' => VerifyChildSignature::class,

@@ -66,6 +66,6 @@ class AiManagerTools extends Command
             )->first();
         }
 
-        return User::with('role')->where('user_type', 'admin')->orderBy('id')->first();
+        return User::with('role')->whereHas('role', fn ($role) => $role->where('is_staff', true)->where('is_active', true))->orderBy('id')->first();
     }
 }

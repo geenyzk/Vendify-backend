@@ -107,7 +107,7 @@ class SupportTicketController extends Controller
 
     private function notifySupportStaff(SupportTicket $ticket, string $event): void
     {
-        $staff = User::whereHas('role', fn ($role) => $role->where('is_staff', true)
+        $staff = User::whereHas('role', fn ($role) => $role->where('is_staff', true)->where('is_active', true)
             ->whereHas('permissions', fn ($permission) => $permission->where('slug', 'support')))->get();
         Notification::send($staff, new SupportTicketNotification($ticket, $event));
     }

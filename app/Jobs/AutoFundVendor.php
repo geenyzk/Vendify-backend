@@ -106,7 +106,7 @@ class AutoFundVendor implements ShouldQueue
     private function notifyAdmins(Vendor $vendor, float $amount, string $status, string $note = ''): void
     {
         try {
-            $admins = \App\Models\User::query()->where('user_type', 'admin')->get();
+            $admins = \App\Models\User::query()->whereHas('role', fn ($role) => $role->where('is_staff', true)->where('is_active', true))->get();
             $label  = $status === 'success' ? 'Successful' : 'Failed';
             $title  = "Vendor Auto-Fund {$label}";
             $body   = "N" . number_format($amount, 2) . " transfer to {$vendor->name} ({$vendor->account_number}) — {$status}.";

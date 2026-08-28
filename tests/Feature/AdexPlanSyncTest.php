@@ -635,6 +635,6 @@ test('bulk pricing route requires admin settings permission', function () {
     expect($route)->not->toBeNull()
         ->and($route->methods())->toContain('POST')
         ->and($route->gatherMiddleware())->toContain('auth:sanctum')
-        ->and($route->gatherMiddleware())->toContain('user_type:admin')
+        ->and($route->gatherMiddleware())->toContain('staff')
         ->and($route->gatherMiddleware())->toContain('permission:settings');
 });

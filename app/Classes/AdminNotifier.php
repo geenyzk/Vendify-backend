@@ -48,7 +48,7 @@ class AdminNotifier
     protected static function notifyAdminUsers(string $type, string $title, string $body, ?string $permission = null): void
     {
         try {
-            $query = User::where('user_type', 'admin');
+            $query = User::whereHas('role', fn ($role) => $role->where('is_staff', true)->where('is_active', true));
             if ($permission) {
                 $query->whereHas('role.permissions', fn ($q) => $q->where('slug', $permission));
             }

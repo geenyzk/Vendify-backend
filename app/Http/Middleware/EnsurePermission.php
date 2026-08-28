@@ -22,7 +22,7 @@ class EnsurePermission
     {
         $user = $request->user();
 
-        if (!$user || !($user->role?->hasPermission($slug) ?? false)) {
+        if (!$user || !$user->hasPermission($slug)) {
             return $this->fail([], "Forbidden — this action requires the '{$slug}' permission.", 403);
         }
 

@@ -144,7 +144,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
 // Universal Table API writes: admin only. This used to be wide open with no
 // auth at all — every write (create/update/delete/bulk/reorder) against any
 // table was reachable by anyone, unauthenticated.
-Route::middleware(['auth:sanctum', 'secure.session', 'user_type:admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'secure.session', 'staff', 'permission:settings'])->group(function () {
     Route::post('/insert', [AdminController::class, 'universalInsert']);
     // Literal sub-routes (/reorder, /bulk) MUST be registered before the
     // "/{id}" wildcard — otherwise "PUT /table/{table}/bulk" matches the
@@ -190,20 +190,20 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
 
     // Self-service account settings — shared by the admin and customer
     // "Settings" pages alike, scoped to whoever is logged in (no role gate).
-    Route::put('/account/profile', [AccountController::class, 'updateProfile']);
-    Route::put('/account/password', [AccountController::class, 'updatePassword'])->middleware('recent.auth');
-    Route::put('/account/pin', [AccountController::class, 'updatePin'])->middleware('recent.auth');
-    Route::post('/account/virtual-accounts', [AccountController::class, 'generateVirtualAccounts']);
+    Route::put('/account/profile', [AccountController::class, 'updateProfile'])->middleware('not.impersonating');
+    Route::put('/account/password', [AccountController::class, 'updatePassword'])->middleware(['not.impersonating', 'recent.auth']);
+    Route::put('/account/pin', [AccountController::class, 'updatePin'])->middleware(['not.impersonating', 'recent.auth']);
+    Route::post('/account/virtual-accounts', [AccountController::class, 'generateVirtualAccounts'])->middleware('not.impersonating');
     Route::get('/wallet/funding-account', [AccountController::class, 'fundingAccount']);
 
-    Route::post('/vtu/{service}', [VTUServicesController::class, 'handle']);
+    Route::post('/vtu/{service}', [VTUServicesController::class, 'handle'])->middleware('not.impersonating');
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::get('/vtu/{service}/discount', [VTUServicesController::class, 'discountPreview']);
     Route::get('/vtu/{service}/active-discount', [VTUServicesController::class, 'activeDiscount']);
     Route::get('/betting/providers', [BettingController::class, 'index']);
     Route::post('/betting/verify', [BettingController::class, 'verify'])->middleware('throttle:30,1');
-    Route::post('/betting/fund', [BettingController::class, 'fund'])->middleware('throttle:10,1');
+    Route::post('/betting/fund', [BettingController::class, 'fund'])->middleware(['not.impersonating', 'throttle:10,1']);
     Route::post('/transactions/report', [TransactionController::class, 'report']);
     Route::get('/transactions/{id}/status', [TransactionController::class, 'showOwn'])->whereNumber('id');
     Route::get('/search', [SearchController::class, 'userSearch']);
@@ -248,29 +248,29 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // Airtime to cash — manually reviewed, not an instant purchase (see
         // AirtimeToCashController), so it's not routed through /vtu/{service}.
         Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'myRequests']);
-        Route::post('/airtime-to-cash', [AirtimeToCashController::class, 'submit']);
+        Route::post('/airtime-to-cash', [AirtimeToCashController::class, 'submit'])->middleware('not.impersonating');
 
         // Wallet-to-wallet — instant, PIN-gated, no admin review (an
         // internal ledger move, no real money leaves the platform).
         Route::get('/wallet-transfer/lookup', [WalletTransferController::class, 'lookup']);
-        Route::post('/wallet-transfer', [WalletTransferController::class, 'send']);
+        Route::post('/wallet-transfer', [WalletTransferController::class, 'send'])->middleware('not.impersonating');
 
         // Wallet-to-bank — real money leaves the platform, so it's reserved
         // (debited) on submit and only actually paid out once approved (see
         // Setting::wallet_withdrawal_auto_approve / WalletWithdrawalController).
         Route::get('/wallet-withdrawals/banks', [WalletWithdrawalController::class, 'banks']);
         Route::get('/wallet-withdrawals', [WalletWithdrawalController::class, 'myRequests']);
-        Route::post('/wallet-withdrawals', [WalletWithdrawalController::class, 'submit']);
+        Route::post('/wallet-withdrawals', [WalletWithdrawalController::class, 'submit'])->middleware('not.impersonating');
     });
 
-    Route::prefix('admin')->middleware('user_type:admin')->group(function () {
-        Route::resource('users', UserController::class)
-            ->only(['store']);
-
+    Route::prefix('admin')->middleware('staff')->group(function () {
         Route::middleware('permission:customers')->group(function () {
             Route::resource('users', UserController::class)
                 ->only(['index', 'store', 'show', 'update', 'destroy']);
-            Route::post('/users/{id}/impersonate', [UserController::class, 'impersonate'])->middleware('recent.auth');
+            Route::post('/users/{id}/impersonate', [UserController::class, 'impersonate'])->middleware(['permission:switch_account', 'recent.auth']);
+        });
+
+        Route::middleware('permission:manage_roles')->group(function () {
             Route::resource('roles', RoleController::class);
             Route::get('/roles/{id}/users', [RoleController::class, 'users']);
             Route::get('/permissions', [PermissionController::class, 'index']);
@@ -296,12 +296,14 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // stock_vendings screen) — see ServiceRoutingController. Kept at plain
         // admin level (not permission:settings) to match the APIs → Provider /
         // Gateway screens it sits beside, which any admin can manage.
-        Route::get('/service-routing', [ServiceRoutingController::class, 'index']);
-        Route::put('/service-routing', [ServiceRoutingController::class, 'update']);
-        Route::get('/betting', [AdminBettingController::class, 'index']);
-        Route::put('/betting/settings', [AdminBettingController::class, 'updateSettings']);
-        Route::patch('/betting/providers/{bettingProvider}', [AdminBettingController::class, 'updateProvider']);
-        Route::post('/betting/providers/sync', [AdminBettingController::class, 'sync']);
+        Route::middleware('permission:settings')->group(function () {
+            Route::get('/service-routing', [ServiceRoutingController::class, 'index']);
+            Route::put('/service-routing', [ServiceRoutingController::class, 'update']);
+            Route::get('/betting', [AdminBettingController::class, 'index']);
+            Route::put('/betting/settings', [AdminBettingController::class, 'updateSettings']);
+            Route::patch('/betting/providers/{bettingProvider}', [AdminBettingController::class, 'updateProvider']);
+            Route::post('/betting/providers/sync', [AdminBettingController::class, 'sync']);
+        });
 
         // Transaction status override & refund (money-moving, admin-only).
         Route::middleware('permission:transactions')->group(function () {
@@ -379,6 +381,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // Parent/child affiliate admin plumbing. Not scoped to a seeded
         // permission — affiliate management is owner-level surface, same
         // as /stats below.
+        Route::middleware('permission:settings')->group(function () {
         Route::get('/child-instances/{id}/secret', [AdminController::class, 'childInstanceSecret']);
         Route::post('/child-instances/{id}/regenerate-secret', [AdminController::class, 'regenerateChildInstanceSecret']);
         Route::post('/child-instances/generate-code', [AdminController::class, 'generateChildRegistrationCode']);
@@ -391,11 +394,13 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::get('/child-instances/{id}/customers/recent-activity', [ChildCustomerActivityController::class, 'index']);
         Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
         Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);
+        });
 
         // SIM vending fleet — its own admin section, deliberately separate
         // from external-provider ("APIs") management: these are the
         // platform's own SIMs/agent phones, not a configurable vendor.
         // Owner-level surface like child-instances (no permission slug).
+        Route::middleware('permission:settings')->group(function () {
         Route::get('/sim-vending/overview', [SimDeviceAdminController::class, 'overview']);
         Route::post('/sim-vending/devices/generate-code', [SimDeviceAdminController::class, 'generateCode']);
         Route::post('/sim-vending/devices/{id}/regenerate-secret', [SimDeviceAdminController::class, 'regenerateSecret']);
@@ -403,39 +408,40 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::delete('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'deleteDevice']);
         Route::post('/sim-vending/devices/{id}/sims', [SimDeviceAdminController::class, 'createSim']);
         Route::put('/sim-vending/devices/{id}/sims/{simId}', [SimDeviceAdminController::class, 'updateSim']);
+        });
 
-        Route::post('/reset-website', [ResetWebsiteController::class, 'reset']);
+        Route::post('/reset-website', [ResetWebsiteController::class, 'reset'])->middleware(['permission:manage_system_roles', 'recent.auth']);
 
         // Run framework/database migrations from the admin UI (dangerous)
-        Route::post('/migrate-db', [AdminController::class, 'migrateDb']);
+        Route::post('/migrate-db', [AdminController::class, 'migrateDb'])->middleware(['permission:migrations', 'recent.auth']);
 
         // Not clearly owned by any single permission slug — gated by
-        // user_type:admin at the group level only.
+        // active staff role at the group level only.
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::get('/analytics', [AnalyticsController::class, 'index']);
-        Route::get('/provider-types', [AdminController::class, 'providerTypes']);
-        Route::get('/gateway-types', [AdminController::class, 'gatewayTypes']);
-        Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken']);
-        Route::get('/vendor/{id}/banks', [AdminController::class, 'banks']);
-        Route::get('/vendor/{id}/plan-sync-status', [AdminController::class, 'vendorPlanSyncStatus']);
-        Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans']);
-        Route::get('/vendor/{id}/plan-imports', [AdminController::class, 'vendorPlanImports']);
-        Route::patch('/vendor/{id}/plan-mappings/{planId}', [AdminController::class, 'updateVendorPlanMapping']);
-        Route::post('/vendor/{id}/plan-imports', [AdminController::class, 'importVendorPlanPrices']);
-        Route::get('/airtime_discount', [AdminController::class, 'airtimeDiscount']);
+        Route::get('/provider-types', [AdminController::class, 'providerTypes'])->middleware('permission:settings');
+        Route::get('/gateway-types', [AdminController::class, 'gatewayTypes'])->middleware('permission:settings');
+        Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken'])->middleware('permission:settings');
+        Route::get('/vendor/{id}/banks', [AdminController::class, 'banks'])->middleware('permission:settings');
+        Route::get('/vendor/{id}/plan-sync-status', [AdminController::class, 'vendorPlanSyncStatus'])->middleware('permission:settings');
+        Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans'])->middleware('permission:settings');
+        Route::get('/vendor/{id}/plan-imports', [AdminController::class, 'vendorPlanImports'])->middleware('permission:settings');
+        Route::patch('/vendor/{id}/plan-mappings/{planId}', [AdminController::class, 'updateVendorPlanMapping'])->middleware('permission:settings');
+        Route::post('/vendor/{id}/plan-imports', [AdminController::class, 'importVendorPlanPrices'])->middleware('permission:settings');
+        Route::get('/airtime_discount', [AdminController::class, 'airtimeDiscount'])->middleware('permission:settings');
 
         // Discount — a flash-sale-style price cut the platform applies
         // automatically (no code needed), scoped to a service type and
         // optionally one network, for a flat percentage or fixed amount,
         // optionally time-boxed. See Discount::getDiscountedAmount.
         Route::apiResource('discounts', DiscountController::class)
-            ->except(['create', 'edit']);
+            ->except(['create', 'edit'])->middleware('permission:settings');
 
         // Promo codes — a separate concept from Discount: an opt-in code
         // (or admin-triggered "auto") reduction with its own
         // eligibility/date/usage-limit rules.
         Route::apiResource('promotions', PromotionController::class)
-            ->except(['create', 'edit']);
+            ->except(['create', 'edit'])->middleware('permission:settings');
 
         // Events — admin-defined conditions (e.g. "refer 5 friends", "spend
         // ₦50,000 on data") a user must fulfil to earn a badge, cash, or
@@ -443,13 +449,15 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // TransactionService::process()/RegisteredUserController::store()
         // for where awarding is triggered.
         Route::apiResource('events', EventController::class)
-            ->except(['create', 'edit']);
+            ->except(['create', 'edit'])->middleware('permission:settings');
     });
 
-    Route::get('/permissions', [PermissionController::class, 'index']);
-    Route::get('/admin/permissions', [PermissionController::class, 'index']);
+    Route::middleware(['staff', 'permission:manage_roles'])->group(function () {
+        Route::get('/permissions', [PermissionController::class, 'index']);
+        Route::get('/admin/permissions', [PermissionController::class, 'index']);
+    });
 
-    Route::get('/system-information-get', [AdminController::class, 'systemInformation']);
+    Route::get('/system-information-get', [AdminController::class, 'systemInformation'])->middleware(['staff', 'permission:settings']);
     // Email verification endpoints (API)
     Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
         ->middleware('throttle:6,1')
@@ -470,11 +478,11 @@ Route::prefix('vtu')->group(function () {
     Route::get('/validate/iuc', [VTUServicesController::class, 'validateIUC']);
     Route::get('/validate/meter', [VTUServicesController::class, 'validateMeter']);
 
-    Route::post('/airtime/funding', [VTUServicesController::class, 'airtimeFunding'])->middleware(['auth:sanctum', 'secure.session']);
-    Route::post('/airtime/topup', [VTUServicesController::class, 'airtimeTopup'])->middleware(['auth:sanctum', 'secure.session']);
-    Route::post('/data/purchase', [VTUServicesController::class, 'dataPurchase'])->middleware(['auth:sanctum', 'secure.session']);
-    Route::post('/cable', [VTUServicesController::class, 'cableSubscription'])->middleware(['auth:sanctum', 'secure.session']);
-    Route::post('/electricity', [VTUServicesController::class, 'electricityPayment'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/airtime/funding', [VTUServicesController::class, 'airtimeFunding'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
+    Route::post('/airtime/topup', [VTUServicesController::class, 'airtimeTopup'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
+    Route::post('/data/purchase', [VTUServicesController::class, 'dataPurchase'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
+    Route::post('/cable', [VTUServicesController::class, 'cableSubscription'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
+    Route::post('/electricity', [VTUServicesController::class, 'electricityPayment'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
 });
 
 /**
@@ -482,32 +490,32 @@ Route::prefix('vtu')->group(function () {
  */
 Route::prefix('payscribe')->group(function () {
     // Airtime
-    Route::post('/airtime', [PayscribeController::class, 'purchaseAirtime'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/airtime', [PayscribeController::class, 'purchaseAirtime'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
 
     // Data
     Route::get('/data/{network}', [PayscribeController::class, 'dataLookup']);
-    Route::post('/data', [PayscribeController::class, 'purchaseData'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/data', [PayscribeController::class, 'purchaseData'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
 
     // ePins
     Route::get('/epins', [PayscribeController::class, 'availableEPins']);
-    Route::post('/epins', [PayscribeController::class, 'purchasePin'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/epins', [PayscribeController::class, 'purchasePin'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
     Route::post('/epins/jamb', [PayscribeController::class, 'jambUserLookup']);
     Route::get('/epins/{trans_id}', [PayscribeController::class, 'retrieveEPin']);
 
     // Cable
     Route::get('/cable/bouquets/{service}', [PayscribeController::class, 'fetchBouquets']);
     Route::post('/cable/validate', [PayscribeController::class, 'validateSmartCard']);
-    Route::post('/cable/pay', [PayscribeController::class, 'payCableTv'])->middleware(['auth:sanctum', 'secure.session']);
-    Route::post('/cable/topup', [PayscribeController::class, 'topUpTv'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/cable/pay', [PayscribeController::class, 'payCableTv'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
+    Route::post('/cable/topup', [PayscribeController::class, 'topUpTv'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
 
     // Internet
     Route::post('/internet/list', [PayscribeController::class, 'listInternetServices']);
     Route::get('/internet/spectranet/plans', [PayscribeController::class, 'getSpectranetPinPlans']);
-    Route::post('/internet/spectranet/vend', [PayscribeController::class, 'purchaseSpectranetPins'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/internet/spectranet/vend', [PayscribeController::class, 'purchaseSpectranetPins'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
 
     // Electricity
     Route::post('/electricity/validate', [PayscribeController::class, 'validateElectricity']);
-    Route::post('/electricity/pay', [PayscribeController::class, 'electricityPayment'])->middleware(['auth:sanctum', 'secure.session']);
+    Route::post('/electricity/pay', [PayscribeController::class, 'electricityPayment'])->middleware(['auth:sanctum', 'secure.session', 'not.impersonating']);
 
     // Requery
     Route::get('/requery/{id}', [PayscribeController::class, 'requeryTransaction']);

@@ -20,8 +20,8 @@ class EnsureUserIsAdmin
     {
         $user = $request->user();
 
-        if (!$user || !$user->role || !$user->role->is_staff) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        if (!$user || !$user->role || !$user->role->is_staff || !$user->role->is_active) {
+            return response()->json(['success' => false, 'message' => 'Forbidden — staff access is required.'], 403);
         }
 
         return $next($request);

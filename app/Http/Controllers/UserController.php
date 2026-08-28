@@ -139,6 +139,10 @@ class UserController extends Controller
             ? Role::find($validated['role_id'])
             : Role::where('is_default', true)->first() ?? Role::where('slug', 'basic')->orWhere('name', 'basic')->first();
 
+        if ($denial = $this->roleAssignmentDenial($request, $role)) {
+            return $denial;
+        }
+
         $user = User::create([
             'fullname' => $validated['fullname'],
             'username' => $validated['username'],
@@ -200,6 +204,13 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
 
+        if ($user->role?->is_staff && !$request->user()->hasPermission('manage_roles')) {
+            return $this->fail([], 'You do not have permission to manage staff accounts.', 403);
+        }
+        if ($user->role?->isProtected() && !$request->user()->hasPermission('manage_system_roles')) {
+            return $this->fail([], 'You do not have permission to manage this protected account.', 403);
+        }
+
         try {
             $validated = $request->validate([
                 'fullname' => ['sometimes', 'required', 'string', 'max:255'],
@@ -212,6 +223,18 @@ class UserController extends Controller
             ]);
         } catch (ValidationException $e) {
             return $this->fail($e->errors(), "Validation Error", 422);
+        }
+
+        if ((string) $request->user()->id === (string) $user->id && array_intersect(['role_id', 'status', 'password'], array_keys($validated))) {
+            return $this->fail([], 'Use your account security settings; you cannot change your own role or status here.', 403);
+        }
+        if (array_key_exists('role_id', $validated)) {
+            if (!$request->user()->hasPermission('manage_roles')) {
+                return $this->fail([], 'The manage_roles permission is required to assign roles.', 403);
+            }
+            if ($denial = $this->roleAssignmentDenial($request, Role::find($validated['role_id']))) {
+                return $denial;
+            }
         }
 
         if (array_key_exists('password', $validated)) {
@@ -253,6 +276,10 @@ class UserController extends Controller
         $admin = $request->user();
         $target = User::with('role')->findOrFail($id);
 
+        if ($request->session()->has('impersonator_user_id')) {
+            return $this->fail(null, 'Nested impersonation is not allowed.', 409);
+        }
+
         if ((string) $admin->id === (string) $target->id) {
             return $this->fail(null, "You are already signed in as this user.", 422);
         }
@@ -279,7 +306,13 @@ class UserController extends Controller
             subject: $target,
             actor: $admin,
             description: "{$admin->email} started impersonating {$target->email}.",
-            context: ['auth_session_id' => $session->id],
+            context: [
+                'auth_session_id' => $session->id,
+                'admin_id' => $admin->id,
+                'admin_role' => $admin->role?->slug,
+                'customer_id' => $target->id,
+                'started_at' => now()->toIso8601String(),
+            ],
         );
 
         return $this->success([
@@ -296,13 +329,17 @@ class UserController extends Controller
         }
 
         $target = $request->user();
-        $admin = User::with('role')->findOrFail($adminId);
-        abort_unless($admin->role?->is_staff || $admin->user_type === 'admin', 403);
-
         $security = app(SessionSecurityService::class);
-        if ($current = $security->currentSession($request)) {
-            $security->revoke($current, 'impersonation_ended');
+        $current = $security->currentSession($request);
+        if (!$current || $current->channel !== 'impersonation') {
+            return $this->fail(null, 'No valid impersonation session is active.', 403);
         }
+        $admin = User::with('role')->findOrFail($adminId);
+        if (!$admin->role?->is_staff || !$admin->role?->is_active) {
+            return $this->fail(null, 'The original staff account is no longer eligible.', 403);
+        }
+
+        $security->revoke($current, 'impersonation_ended');
         Auth::guard('web')->login($admin);
         $request->session()->regenerate();
         $request->session()->forget('impersonator_user_id');
@@ -312,6 +349,13 @@ class UserController extends Controller
             subject: $target,
             actor: $admin,
             description: "{$admin->email} stopped impersonating {$target->email}.",
+            context: [
+                'admin_id' => $admin->id,
+                'admin_role' => $admin->role?->slug,
+                'customer_id' => $target->id,
+                'auth_session_id' => $current->id,
+                'ended_at' => now()->toIso8601String(),
+            ],
         );
 
         return $this->success([
@@ -330,11 +374,29 @@ class UserController extends Controller
         if ((string) $request->user()?->id === (string) $user->id) {
             return $this->fail(null, "You cannot delete your own account.", 422);
         }
+        if ($user->role?->is_staff && !$request->user()->hasPermission('manage_roles')) {
+            return $this->fail([], 'You do not have permission to delete staff accounts.', 403);
+        }
+        if ($user->role?->isProtected() && !$request->user()->hasPermission('manage_system_roles')) {
+            return $this->fail([], 'You do not have permission to delete this protected account.', 403);
+        }
 
         $user->delete();
         app(SessionSecurityService::class)->revokeAllForUser($user, 'account_deleted');
 
         return $this->success(null, "User deleted successfully.");
+    }
+
+    private function roleAssignmentDenial(Request $request, ?Role $role)
+    {
+        if (!$role) return null;
+        if ($role->isProtected() && !$request->user()->hasPermission('manage_system_roles')) {
+            return $this->fail([], 'The manage_system_roles permission is required to assign this protected role.', 403);
+        }
+        if ($role->is_staff && !$request->user()->hasPermission('manage_roles')) {
+            return $this->fail([], 'The manage_roles permission is required to assign a staff role.', 403);
+        }
+        return null;
     }
 
 }

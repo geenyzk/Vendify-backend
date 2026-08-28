@@ -125,6 +125,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->status === null || $this->status === '' || $this->status === self::STATUS_ACTIVE;
     }
 
+    public function hasPermission(string $slug): bool
+    {
+        return $this->role?->hasPermission($slug) ?? false;
+    }
+
     /**
      * Pricing tier for the legacy per-tier discount columns on ExamPlan,
      * AirtimePinPlan and DataPinPlan — their price accessor reads

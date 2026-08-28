@@ -9,11 +9,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Role extends Model
 {
+    public const PROTECTED_SLUGS = ['owner', 'co-owner'];
+    public const PROTECTED_PERMISSION_SLUGS = ['manage_system_roles', 'migrations'];
+
     use Auditable;
     protected $fillable = [
         'name',
         'slug',
         'description',
+        'is_staff',
         'is_active',
         'is_default',
         'upgradable',
@@ -56,6 +60,11 @@ class Role extends Model
      */
     public function hasPermission(string $slug): bool
     {
-        return $this->permissions()->where('slug', $slug)->exists();
+        return (bool) $this->is_active && $this->permissions()->where('slug', $slug)->exists();
+    }
+
+    public function isProtected(): bool
+    {
+        return in_array(strtolower((string) $this->slug), self::PROTECTED_SLUGS, true);
     }
 }

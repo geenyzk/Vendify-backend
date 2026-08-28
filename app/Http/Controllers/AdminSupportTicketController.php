@@ -96,7 +96,7 @@ class AdminSupportTicketController extends Controller
     {
         $data = $request->validate(['assigned_to' => 'nullable|integer|exists:users,id']);
         if (!empty($data['assigned_to'])) {
-            $eligible = User::whereKey($data['assigned_to'])->whereHas('role', fn ($role) => $role->where('is_staff', true)->whereHas('permissions', fn ($permission) => $permission->where('slug', 'support')))->exists();
+            $eligible = User::whereKey($data['assigned_to'])->whereHas('role', fn ($role) => $role->where('is_staff', true)->where('is_active', true)->whereHas('permissions', fn ($permission) => $permission->where('slug', 'support')))->exists();
             if (!$eligible) return $this->fail(['assigned_to' => ['The selected user is not eligible for support assignment.']], 'Validation failed.', 422);
         }
         $ticket->update(['assigned_to' => $data['assigned_to'] ?? null]);

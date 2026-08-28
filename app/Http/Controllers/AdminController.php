@@ -295,6 +295,16 @@ class AdminController extends Controller
     // instead — see AirtimeToCashController / WalletWithdrawalController.
     private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'wallet_withdrawals', 'broadcasts'];
 
+    // Security-sensitive records must go through their dedicated controllers,
+    // where row-level authorization, audit logging, and invariants are enforced.
+    // The generic writer uses forceFill/DB fallback and must never be an
+    // alternate path around role, balance, transaction, session, or audit rules.
+    private const RESTRICTED_WRITE_TABLES = [
+        'users', 'roles', 'permissions', 'permission_role', 'transactions',
+        'audit_logs', 'auth_sessions', 'auth_refresh_tokens',
+        'support_tickets', 'support_ticket_messages', 'support_ticket_notes',
+    ];
+
     // The ONLY tables a non-admin (a logged-in customer) may read through the
     // generic table API — the product catalog the storefront needs to render.
     // Everything else (providers with plaintext api_key/secret_key/password,
@@ -320,7 +330,7 @@ class AdminController extends Controller
         }
 
         // Staff-ness is the role, not user_type (see EnsureUserIsAdmin).
-        if ($request->user()?->role?->is_staff) {
+        if ($request->user()?->role?->is_staff && $request->user()?->role?->is_active) {
             return null;
         }
 
@@ -583,6 +593,10 @@ class AdminController extends Controller
         $hasModel = $modelClass && class_exists($modelClass);
         $realTable = $hasModel ? (new $modelClass)->getTable() : $table;
 
+        if (in_array($realTable, self::RESTRICTED_WRITE_TABLES, true)) {
+            return $self->fail([], 'This resource must be changed through its dedicated API.', 403);
+        }
+
         if (! Schema::hasTable($realTable)) {
             return $self->fail([], 'Table not found', 404);
         }
@@ -752,6 +766,10 @@ class AdminController extends Controller
         $hasModel = $modelClass && class_exists($modelClass);
         $realTable = $hasModel ? (new $modelClass)->getTable() : $table;
 
+        if (in_array($realTable, self::RESTRICTED_WRITE_TABLES, true)) {
+            return $this->fail([], 'This resource must be changed through its dedicated API.', 403);
+        }
+
         if (! Schema::hasTable($realTable)) {
             return $this->fail([], 'Table not found', 404);
         }
@@ -812,6 +830,10 @@ class AdminController extends Controller
         $modelClass = $this->getModelClassFromTable($table);
         $hasModel = $modelClass && class_exists($modelClass);
         $realTable = $hasModel ? (new $modelClass)->getTable() : $table;
+
+        if (in_array($realTable, self::RESTRICTED_WRITE_TABLES, true)) {
+            return $this->fail([], 'This resource must be changed through its dedicated API.', 403);
+        }
 
         if (! Schema::hasTable($realTable)) {
             return $this->fail([], 'Table not found', 404);

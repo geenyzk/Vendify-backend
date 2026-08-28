@@ -28,7 +28,7 @@ class VendorResource extends JsonResource
             'connection' => $this->connection,
             'username' => $this->username,
             'password' => $this->password,
-            'api_key' => $this->when(Auth::user()?->user_type === 'admin', $this->api_key),
+            'api_key' => $this->when((bool) Auth::user()?->role?->is_staff, $this->api_key),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'sub_category' => $this->sub_category,

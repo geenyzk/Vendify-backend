@@ -22,7 +22,7 @@ class AiSweep extends Command
     {
         // The health tool's signature takes the acting user (unused by the
         // read-only sweep itself) — any admin account stands in for "the system".
-        $actor = User::where('user_type', 'admin')->first() ?? User::first();
+        $actor = User::whereHas('role', fn ($role) => $role->where('is_staff', true)->where('is_active', true))->first() ?? User::first();
         if (!$actor) {
             $this->warn('No users exist yet — nothing to monitor.');
             return self::SUCCESS;
