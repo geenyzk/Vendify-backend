@@ -22,6 +22,7 @@ return new class extends Migration
 
             $admin = Role::where('slug', 'admin')->orWhere('name', 'Admin')->first();
             if ($admin) {
+                $admin->forceFill(['is_staff' => true, 'is_active' => true])->save();
                 $admin->permissions()->detach(
                     $permissions->only(['migrations', 'manage_roles'])->pluck('id')
                 );
