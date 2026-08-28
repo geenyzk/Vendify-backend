@@ -66,3 +66,31 @@ test('changing an existing pin still requires and verifies the current pin', fun
 
     expect(Hash::check('5678', $user->fresh()->pin))->toBeTrue();
 });
+
+test('a forgotten pin can be reset without weakening the normal change route', function () {
+    $user = accountPinUser(['pin' => '1234']);
+
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/account/pin/reset', [
+            'pin' => '9876',
+            'pin_confirmation' => '9876',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.user.has_pin', true);
+
+    expect(Hash::check('9876', $user->fresh()->pin))->toBeTrue();
+});
+
+test('a forgotten pin reset requires matching four digit confirmation', function () {
+    $user = accountPinUser(['pin' => '1234']);
+
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/account/pin/reset', [
+            'pin' => '9876',
+            'pin_confirmation' => '9875',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('pin');
+
+    expect(Hash::check('1234', $user->fresh()->pin))->toBeTrue();
+});

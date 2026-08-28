@@ -195,6 +195,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::put('/account/profile', [AccountController::class, 'updateProfile'])->middleware('not.impersonating');
     Route::put('/account/password', [AccountController::class, 'updatePassword'])->middleware(['not.impersonating', 'recent.auth']);
     Route::put('/account/pin', [AccountController::class, 'updatePin'])->middleware(['not.impersonating', 'recent.auth']);
+    Route::post('/account/pin/reset', [AccountController::class, 'resetPin'])->middleware(['not.impersonating', 'recent.auth', 'throttle:sensitive-auth']);
     Route::post('/account/virtual-accounts', [AccountController::class, 'generateVirtualAccounts'])->middleware('not.impersonating');
     Route::get('/wallet/funding-account', [AccountController::class, 'fundingAccount']);
 

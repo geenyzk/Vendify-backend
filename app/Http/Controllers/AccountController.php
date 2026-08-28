@@ -135,6 +135,30 @@ class AccountController extends Controller
         return $this->pinUpdatedResponse($user);
     }
 
+    /**
+     * Reset a forgotten transaction PIN after the account password has been
+     * confirmed by the recent.auth middleware. This deliberately lives on a
+     * separate route so changing a known PIN still requires the current PIN.
+     */
+    public function resetPin(Request $request)
+    {
+        $user = $request->user();
+        $validated = $request->validate([
+            'pin' => ['required', 'digits:4', 'confirmed'],
+        ]);
+
+        $user->update(['pin' => $validated['pin']]);
+
+        AuditLogger::record(
+            'transaction_pin_reset',
+            subject: $user,
+            actor: $user,
+            description: 'A forgotten transaction PIN was reset after password confirmation.',
+        );
+
+        return $this->pinUpdatedResponse($user);
+    }
+
     private function pinUpdatedResponse(User $user): JsonResponse
     {
         // PIN setup is also used immediately after registration, before any
