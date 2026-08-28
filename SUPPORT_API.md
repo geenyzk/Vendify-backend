@@ -163,9 +163,76 @@ Allowed transitions: `open` → `in_review|awaiting_customer|resolved|closed`; `
 
 Use `null` to unassign. The target must be an existing staff user whose role has the `support` permission; otherwise HTTP 422 is returned.
 
-## Notifications and WhatsApp
+## WhatsApp support routing
 
-Ticket creation, customer replies, admin replies, status changes, and resolution use Vendify's existing database-notification channel. Notification data contains only ticket ID/reference, event, subject, and status. The frontend can combine `ticket.reference` and `transaction.reference` with the existing configurable branding phone number to construct a WhatsApp escalation message.
+### Route the authenticated customer
+
+`POST /api/support/whatsapp/route`
+
+Authentication is required. The endpoint is limited to 10 requests per minute and returns one selected destination, never the agent directory.
+
+Optional request body:
+
+```json
+{"ticket_id":42,"transaction_id":1842}
+```
+
+Both IDs are resolved server-side and must belong to the authenticated customer. When a ticket already has a related transaction, a different `transaction_id` is rejected. Omit both fields for generic account support.
+
+```json
+{
+  "success": true,
+  "message": "successful",
+  "data": {
+    "agent": "Support Team 2",
+    "phone": "2348012345678",
+    "whatsapp_url": "https://wa.me/2348012345678?text=Hi%20Vendify%20Support%2C%20I%20need%20help%20with%20ticket%20VEN-4K8P2QZ.",
+    "message": "Hi Vendify Support, I need help with ticket VEN-4K8P2QZ.",
+    "ticket_reference": "VEN-4K8P2QZ",
+    "transaction_reference": null
+  },
+  "type": "success"
+}
+```
+
+The server generates message text only from authoritative references. Ticket-level assignments remain sticky while their agent is eligible. Otherwise a recent customer assignment is reused for `WHATSAPP_SUPPORT_STICKY_MINUTES` (default 60). If neither applies, persisted assignment counts and least-recent timestamps distribute requests across enabled, `available` agents. If there are no eligible agents, configured `General.app_phone` is used as a fallback. Without a valid fallback, HTTP 503 is returned with code `WHATSAPP_SUPPORT_UNAVAILABLE`.
+
+### Admin agent management
+
+All endpoints require authentication, active staff status, and `manage_whatsapp_support`.
+
+- `GET /api/admin/support/whatsapp-agents?per_page=25`
+- `POST /api/admin/support/whatsapp-agents`
+- `PATCH /api/admin/support/whatsapp-agents/{id}`
+- `PATCH /api/admin/support/whatsapp-agents/{id}/availability`
+- `DELETE /api/admin/support/whatsapp-agents/{id}`
+
+Create example:
+
+```json
+{
+  "display_name": "Support Team 2",
+  "phone_number": "+234 801 234 5678",
+  "enabled": true,
+  "availability": "available",
+  "sort_order": 20,
+  "linked_user_id": 12,
+  "department": "Transactions",
+  "notes": "Internal admin-only note"
+}
+```
+
+Phone numbers are normalized to canonical international form such as `+2348012345678` and must be unique. Nigerian local numbers beginning with `0` are normalized with country code `234`. General international input may use `+` or `00`. Allowed availability values are `available`, `unavailable`, and `offline`. A linked user, when supplied, must be active staff. Update accepts the same fields as create, all optional. Availability update accepts only:
+
+```json
+{"availability":"offline"}
+```
+
+Delete safely disables, marks offline, and soft-deletes the agent. Historical assignments are retained. Administrative changes use Vendify's audit log. Assignment records indicate only that a routing link was generated; they are not WhatsApp delivery, reply, or conversation records.
+
+## Notifications
+
+Ticket creation, customer replies, admin replies, status changes, and resolution use Vendify's existing database-notification channel. Notification data contains only ticket ID/reference, event, subject, and status. The frontend should call the WhatsApp routing endpoint instead of constructing a destination from `app_phone`; that setting remains public general-contact data and the routing fallback.
 
 ## Attachments and FAQ
 

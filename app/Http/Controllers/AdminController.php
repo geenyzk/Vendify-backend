@@ -303,6 +303,7 @@ class AdminController extends Controller
         'users', 'roles', 'permissions', 'permission_role', 'transactions',
         'audit_logs', 'auth_sessions', 'auth_refresh_tokens',
         'support_tickets', 'support_ticket_messages', 'support_ticket_notes',
+        'whatsapp_support_agents', 'whatsapp_support_assignments',
     ];
 
     // The ONLY tables a non-admin (a logged-in customer) may read through the

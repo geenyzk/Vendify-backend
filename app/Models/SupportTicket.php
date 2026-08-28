@@ -60,4 +60,5 @@ class SupportTicket extends Model
     public function assignee(): BelongsTo { return $this->belongsTo(User::class, 'assigned_to'); }
     public function messages(): HasMany { return $this->hasMany(SupportTicketMessage::class); }
     public function notes(): HasMany { return $this->hasMany(SupportTicketNote::class); }
+    public function whatsappAssignments(): HasMany { return $this->hasMany(WhatsAppSupportAssignment::class, 'ticket_id'); }
 }

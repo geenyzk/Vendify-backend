@@ -185,6 +185,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(SupportTicket::class);
     }
 
+    public function whatsappSupportAssignments(): HasMany
+    {
+        return $this->hasMany(WhatsAppSupportAssignment::class, 'customer_id');
+    }
+
     /**
      * Whether a transaction PIN has been set — safe to expose even though
      * the hashed `pin` column itself stays hidden, so the frontend can force

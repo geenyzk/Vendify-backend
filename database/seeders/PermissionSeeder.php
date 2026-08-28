@@ -26,6 +26,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'Migrate DB', 'slug' => 'migrations', 'description' => 'Run database migrations from the admin interface'],
             ['name' => 'Manage Roles', 'slug' => 'manage_roles', 'description' => 'Create roles, assign ordinary permissions, and manage staff assignments'],
             ['name' => 'Manage System Roles', 'slug' => 'manage_system_roles', 'description' => 'Manage protected owner-level roles and permissions'],
+            ['name' => 'Manage WhatsApp Support', 'slug' => 'manage_whatsapp_support', 'description' => 'Manage WhatsApp support agents and routing availability'],
         ];
 
         $ids = [];
@@ -47,6 +48,7 @@ class PermissionSeeder extends Seeder
         // admin UI.
         $adminRole = Role::where('slug', 'admin')->first();
         $protectedId = Permission::where('slug', 'manage_system_roles')->value('id');
-        $adminRole?->permissions()->syncWithoutDetaching(array_values(array_diff($ids, [$protectedId])));
+        $whatsAppId = Permission::where('slug', 'manage_whatsapp_support')->value('id');
+        $adminRole?->permissions()->syncWithoutDetaching(array_values(array_diff($ids, [$protectedId, $whatsAppId])));
     }
 }

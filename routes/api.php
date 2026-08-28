@@ -3,6 +3,7 @@
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdminSupportTicketController;
+use App\Http\Controllers\AdminWhatsAppSupportAgentController;
 use App\Http\Controllers\AiManagerController;
 use App\Http\Controllers\AirtimeToCashController;
 use App\Http\Controllers\AnalyticsController;
@@ -43,6 +44,7 @@ use App\Http\Controllers\ResetWebsiteController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SupportTicketController;
+use App\Http\Controllers\WhatsAppSupportController;
 use App\Http\Controllers\ServiceControlController;
 use App\Http\Controllers\ServiceCostMarginController;
 use App\Http\Controllers\ServiceRoutingController;
@@ -229,6 +231,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::get('/tickets/{ticket}', [SupportTicketController::class, 'show'])->whereNumber('ticket');
         Route::post('/tickets/{ticket}/messages', [SupportTicketController::class, 'reply'])->whereNumber('ticket');
         Route::get('/transactions', [SupportTicketController::class, 'transactions']);
+        Route::post('/whatsapp/route', [WhatsAppSupportController::class, 'route'])->middleware('throttle:10,1');
     });
 
     // Promotion routes
@@ -336,6 +339,14 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
             Route::patch('/support/tickets/{ticket}/status', [AdminSupportTicketController::class, 'status']);
             Route::patch('/support/tickets/{ticket}/priority', [AdminSupportTicketController::class, 'priority']);
             Route::patch('/support/tickets/{ticket}/assignment', [AdminSupportTicketController::class, 'assignment']);
+        });
+
+        Route::middleware('permission:manage_whatsapp_support')->prefix('support/whatsapp-agents')->group(function () {
+            Route::get('/', [AdminWhatsAppSupportAgentController::class, 'index']);
+            Route::post('/', [AdminWhatsAppSupportAgentController::class, 'store']);
+            Route::patch('/{agent}', [AdminWhatsAppSupportAgentController::class, 'update']);
+            Route::patch('/{agent}/availability', [AdminWhatsAppSupportAgentController::class, 'availability']);
+            Route::delete('/{agent}', [AdminWhatsAppSupportAgentController::class, 'destroy']);
         });
 
         // AI Manager — in-app assistant that reads live site data and proposes

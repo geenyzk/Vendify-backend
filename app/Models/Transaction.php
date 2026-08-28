@@ -61,6 +61,11 @@ class Transaction extends Model
         return $this->hasMany(SupportTicket::class);
     }
 
+    public function whatsappSupportAssignments(): HasMany
+    {
+        return $this->hasMany(WhatsAppSupportAssignment::class);
+    }
+
     public static function generateTransactionId(): string
     {
         return strtoupper('TXN-' . now()->format('YmdHis') . '-' . Str::random(6));
