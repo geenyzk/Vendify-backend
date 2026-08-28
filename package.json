@@ -1,4 +1,5 @@
 {
+    "name": "vendify-backend",
     "private": true,
     "type": "module",
     "scripts": {

@@ -1,6 +1,7 @@
 <?php
 
 use App\Classes\Vendor\Providers\VTUNg;
+use App\Classes\VTUServices\VTUServiceFactory;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
@@ -95,6 +96,74 @@ it('records an asynchronous acknowledgement as pending without a failed notifica
 
     expect($recorded['status'])->toBe('pending');
     Notification::assertNothingSent();
+});
+
+it('formats electricity purchases for the VTU.ng v2 API', function () {
+    $vendor = new Vendor([
+        'name' => 'VTU.ng', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'token', 'active' => true,
+    ]);
+
+    $payload = (new VTUNg($vendor))->formatPayload('electricity', [
+        'tx_ref' => 'TXN-POWER-1',
+        'meter_number' => '01234567890',
+        'disco' => 'IKEDC (Ikeja Electric)',
+        'meter_type' => 'postpaid',
+        'amount' => 2500,
+        'final_amount' => 2550,
+    ]);
+
+    expect($payload)->toBe([
+        'request_id' => 'vendify_TXN-POWER-1',
+        'customer_id' => '01234567890',
+        'service_id' => 'ikeja-electric',
+        'variation_id' => 'postpaid',
+        'amount' => 2500,
+    ]);
+});
+
+it('verifies electricity meters through VTU.ng', function () {
+    $vendor = new Vendor([
+        'name' => 'VTU.ng', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'token', 'active' => true,
+    ]);
+    Http::fake([
+        'https://vtu.test/api/v2/verify-customer' => Http::response([
+            'code' => 'success',
+            'message' => 'Customer Details Retrieved',
+            'data' => [
+                'customer_name' => 'Ada Customer',
+                'customer_address' => '1 Power Street',
+                'meter_number' => '01234567890',
+                'min_purchase_amount' => 1000,
+                'max_purchase_amount' => 100000,
+            ],
+        ]),
+    ]);
+
+    $response = (new VTUNg($vendor))->verifyUser('electricity', '01234567890', [
+        'disco' => 'AEDC (Abuja Electric)',
+        'meter_type' => 'prepaid',
+    ]);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true)['data']['name'])->toBe('Ada Customer');
+    Http::assertSent(fn ($request) => $request->url() === 'https://vtu.test/api/v2/verify-customer'
+        && $request['customer_id'] === '01234567890'
+        && $request['service_id'] === 'abuja-electric'
+        && $request['variation_id'] === 'prepaid');
+});
+
+it('always routes electricity to the active VTU.ng provider', function () {
+    $provider = Provider::create([
+        'name' => 'VTU.ng', 'category' => 'vendor', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'token', 'active' => true,
+    ]);
+
+    $handler = VTUServiceFactory::make('electricity', 'electricity', null, null, 'IKEDC (Ikeja Electric)');
+
+    expect($handler)->toBeInstanceOf(VTUNg::class)
+        ->and($handler->providerId())->toBe($provider->id);
 });
 
 it('keeps processing pending without refund or failure notification', function () {

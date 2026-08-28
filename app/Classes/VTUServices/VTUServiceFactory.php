@@ -3,6 +3,7 @@
 namespace App\Classes\VTUServices;
 
 use App\Classes\Vendor\Providers\SimVending;
+use App\Classes\Vendor\Providers\VTUNg;
 use App\Classes\Vendor\VendorFactory;
 use App\Models\AirtimePlan;
 use App\Models\CablePlan;
@@ -100,6 +101,14 @@ class VTUServiceFactory
      */
     private static function resolveProvider($service, $sub, $network, $planId = null, $routeKey = null, ?float $amount = null): ?Vendor
     {
+        // Electricity is intentionally single-homed on VTU.ng. Verification
+        // and vending must use the same upstream; allowing a legacy service
+        // route or stock-vending row to win here can verify one provider's
+        // customer and submit the payment to another.
+        if ($service === 'electricity') {
+            return self::usable(VTUNg::activeProvider(), $service, $network, $planId, $amount);
+        }
+
         if ($service === 'airtime' && $network) {
             $vendor = self::usable(self::airtimePlanVendor($network, $sub), $service, $network, $planId, $amount);
             if ($vendor) {

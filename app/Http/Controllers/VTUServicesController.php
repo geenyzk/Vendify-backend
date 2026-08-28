@@ -586,7 +586,13 @@ class VTUServicesController extends Controller
             $payload = $request->validate(array_merge([
                 'identifier' => 'required|string',
             ], $val));
-            $handler = VTUServiceFactory::make($service, $request->cable_network??"");
+            $routeKey = $service === 'electricity'
+                ? ($payload['disco'] ?? $service)
+                : ($payload['cable_network'] ?? '');
+            $handler = VTUServiceFactory::make($service, $routeKey, null, null, $routeKey);
+            if (! $handler) {
+                return $this->fail([], 'Electricity service is not configured.', 503);
+            }
             return $handler->verifyUser($service, $request->identifier, $payload);
         } catch (\Illuminate\Validation\ValidationException $e) {
             // Previously swallowed into a silent null response — the

@@ -59,6 +59,7 @@ class VTUNg extends VendorBase
     {
         return match ($service) {
             'data' => '/data',
+            'electricity' => '/electricity',
             default => throw new \InvalidArgumentException("VTU.ng does not support service [$service] in this integration."),
         };
     }
@@ -70,7 +71,7 @@ class VTUNg extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['data'];
+        return ['data', 'electricity'];
     }
 
     protected function getAuthHeaders(): array
@@ -151,6 +152,18 @@ class VTUNg extends VendorBase
 
     public function formatPayload(string $service, array $payload): array
     {
+        if ($service === 'electricity') {
+            return [
+                'request_id' => substr('vendify_'.$payload['tx_ref'], 0, 50),
+                'customer_id' => (string) $payload['meter_number'],
+                'service_id' => $this->electricityServiceId((string) $payload['disco']),
+                'variation_id' => strtolower((string) ($payload['meter_type'] ?? 'prepaid')),
+                // The upstream receives the value to vend, not Vendify's
+                // separately calculated customer-facing service fee.
+                'amount' => (int) $payload['amount'],
+            ];
+        }
+
         $plan = DataPlan::find($payload['data_plan'] ?? null);
         if (! $plan) {
             throw new \InvalidArgumentException('Data plan not found.');
@@ -191,17 +204,25 @@ class VTUNg extends VendorBase
 
         return [
             'provider' => $this->providerName,
-            'transaction_type' => 'data_subscription',
+            'transaction_type' => $service === 'electricity' ? 'electric_bill' : 'data_subscription',
             'status' => $status,
             // Keep Vendify's reference as the local callback/idempotency key.
             'transaction_reference' => $response['tx_ref'] ?? null,
             'payment_reference' => $data['request_id'] ?? $response['request_id'] ?? null,
             'response_message' => $response['message'] ?? 'VTU.ng order submitted.',
-            'account_or_phone' => $data['phone'] ?? $response['phone'] ?? null,
-            'receiver' => $data['phone'] ?? $response['phone'] ?? null,
+            'account_or_phone' => $service === 'electricity'
+                ? ($data['customer_id'] ?? $response['meter_number'] ?? null)
+                : ($data['phone'] ?? $response['phone'] ?? null),
+            'receiver' => $service === 'electricity'
+                ? ($data['customer_id'] ?? $response['meter_number'] ?? null)
+                : ($data['phone'] ?? $response['phone'] ?? null),
             'amount' => $response['amount'] ?? 0,
             'discount_amount' => $response['discount_amount'] ?? 0,
-            'plan_type' => $response['plan_type'] ?? 'DATA',
+            'service_fee' => (float) ($response['service_fee'] ?? 0),
+            'plan_type' => $service === 'electricity'
+                ? ($response['meter_type'] ?? $data['variation_id'] ?? null)
+                : ($response['plan_type'] ?? 'DATA'),
+            'token' => $data['token'] ?? $response['token'] ?? null,
             'completed_at' => $status === 'success' ? now() : null,
         ];
     }
@@ -427,7 +448,71 @@ class VTUNg extends VendorBase
 
     public function verifyUser(string $service, string $identifier, array $payload): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => []]);
+        if ($service !== 'electricity') {
+            return response()->json(['success' => true, 'data' => []]);
+        }
+
+        try {
+            $response = Http::connectTimeout(8)->timeout(30)
+                ->withHeaders($this->getAuthHeaders())
+                ->post($this->baseUrl().'/verify-customer', [
+                    'customer_id' => $identifier,
+                    'service_id' => $this->electricityServiceId((string) ($payload['disco'] ?? '')),
+                    'variation_id' => strtolower((string) ($payload['meter_type'] ?? 'prepaid')),
+                ]);
+            $body = $response->json();
+            $body = is_array($body) ? $body : [];
+            $data = is_array($body['data'] ?? null) ? $body['data'] : [];
+
+            if ($response->successful() && ($body['code'] ?? null) === 'success') {
+                return $this->success([
+                    'name' => $data['customer_name'] ?? '',
+                    'address' => $data['customer_address'] ?? null,
+                    'meter_number' => $data['meter_number'] ?? $identifier,
+                    'minimum_amount' => $data['min_purchase_amount'] ?? null,
+                    'maximum_amount' => $data['max_purchase_amount'] ?? null,
+                ], 'Electricity verification successful.', 200);
+            }
+
+            return $this->fail([], $body['message'] ?? 'Meter verification failed.', $response->status());
+        } catch (ConnectionException) {
+            return $this->fail([], 'Meter verification is temporarily unavailable.', 503);
+        } catch (\InvalidArgumentException $e) {
+            return $this->fail([], $e->getMessage(), 422);
+        }
+    }
+
+    /** Convert Vendify's display names (and common abbreviations) to v2 IDs. */
+    private function electricityServiceId(string $disco): string
+    {
+        $key = strtolower(preg_replace('/[^a-z0-9]+/i', '', $disco) ?? '');
+        $services = [
+            'ikeja-electric' => ['ikeja', 'ikedc'],
+            'eko-electric' => ['eko', 'ekedc'],
+            'kano-electric' => ['kano', 'kedco'],
+            'portharcourt-electric' => ['portharcourt', 'phed', 'phedc'],
+            'jos-electric' => ['jos', 'jed', 'jedc'],
+            'ibadan-electric' => ['ibadan', 'ibedc'],
+            'kaduna-electric' => ['kaduna', 'kaedco'],
+            'abuja-electric' => ['abuja', 'aedc'],
+            'enugu-electric' => ['enugu', 'eedc'],
+            'benin-electric' => ['benin', 'bedc'],
+            'aba-electric' => ['aba', 'abedc'],
+            'yola-electric' => ['yola', 'yedc'],
+        ];
+
+        foreach ($services as $serviceId => $aliases) {
+            if ($key === str_replace('-', '', $serviceId)) {
+                return $serviceId;
+            }
+            foreach ($aliases as $alias) {
+                if (str_contains($key, $alias)) {
+                    return $serviceId;
+                }
+            }
+        }
+
+        throw new \InvalidArgumentException("The electricity provider [{$disco}] is not supported by VTU.ng.");
     }
 
     public function reconcile(Transaction $transaction, ?array $response = null): bool

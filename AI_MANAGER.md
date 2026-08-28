@@ -72,7 +72,7 @@ manual admin UI.
 - Tools: `app/Services/AiManager/Tools/` (`AiTool` base, `ToolRegistry`)
 - API: `app/Http/Controllers/AiManagerController.php`, routes under `/admin/ai/*`
 - Models: `AiConversation`, `AiMessage`, `AiActionProposal`
-- Frontend: `vtu_2/src/features/admin/pages/ai-manager/`
+- Frontend: `Vendify-frontend/src/features/admin/pages/ai-manager/`
 
 ## Restricted Vendify Data Plans browser
 
