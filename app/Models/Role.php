@@ -25,6 +25,7 @@ class Role extends Model
     ];
 
     protected $casts = [
+        'is_staff' => 'boolean',
         'is_active' => 'boolean',
         'is_default' => 'boolean',
         'upgradable' => 'boolean',
