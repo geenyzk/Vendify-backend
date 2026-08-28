@@ -141,6 +141,14 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function pricingTier(): string
     {
+        // Staff may use the customer-facing platform as themselves. `admin`
+        // is a reporting value, not a product pricing column, so staff use
+        // the ordinary customer price instead of looking for admin_price or
+        // admin_discount fields that do not exist.
+        if ($this->role?->is_staff) {
+            return 'user';
+        }
+
         return $this->user_type ?: 'user';
     }
 
