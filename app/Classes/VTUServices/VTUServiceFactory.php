@@ -6,6 +6,7 @@ use App\Classes\Vendor\Providers\SimVending;
 use App\Classes\Vendor\Providers\VTUNg;
 use App\Classes\Vendor\VendorFactory;
 use App\Models\AirtimePlan;
+use App\Models\BillPlan;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\ServiceRoute;
@@ -102,12 +103,13 @@ class VTUServiceFactory
      */
     private static function resolveProvider($service, $sub, $network, $planId = null, $routeKey = null, ?float $amount = null): ?Vendor
     {
-        // Electricity is intentionally single-homed on VTU.ng. Verification
-        // and vending must use the same upstream; allowing a legacy service
-        // route or stock-vending row to win here can verify one provider's
-        // customer and submit the payment to another.
         if ($service === 'electricity') {
-            return self::usable(VTUNg::activeProvider(), $service, $network, $planId, $amount);
+            $billPlan = BillPlan::where('disco', $routeKey)->where('active', true)->first();
+            $configured = self::usable($billPlan?->resolveVendor(), $service, $network, $planId, $amount);
+
+            // Existing installations without a per-disco provider mapping
+            // retain VTU.ng as their default electricity route.
+            return $configured ?? self::usable(VTUNg::activeProvider(), $service, $network, $planId, $amount);
         }
 
         if ($service === 'airtime') {

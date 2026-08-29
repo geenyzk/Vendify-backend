@@ -4,6 +4,8 @@ namespace App\Classes\Vendor\Providers;
 
 use App\Classes\Vendor\VendorBase;
 use App\Models\DataPlan;
+use App\Models\BillPlan;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -36,6 +38,7 @@ class CheapDataHub extends VendorBase
         return match ($service) {
             'airtime' => '/airtime/purchase/',
             'data' => '/data/purchase/',
+            'electricity' => '/electricity/purchase/',
             default => throw new \InvalidArgumentException("CheapDataHub does not support service [{$service}]."),
         };
     }
@@ -47,7 +50,7 @@ class CheapDataHub extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['airtime', 'data'];
+        return ['airtime', 'data', 'electricity'];
     }
 
     protected function getAuthHeaders(): array
@@ -88,7 +91,8 @@ class CheapDataHub extends VendorBase
 
     public function sendRequest(string $service, array $payload): array
     {
-        Log::info('CheapDataHub data purchase requested', [
+        Log::info('CheapDataHub purchase requested', [
+            'service' => $service,
             'provider_id' => $this->provider->id,
             'data_plan_id' => $payload['_data_plan_id'] ?? null,
             'bundle_id' => $payload['bundle_id'] ?? null,
@@ -102,9 +106,14 @@ class CheapDataHub extends VendorBase
                 ->post($this->baseUrl().$this->endpoint($service), $payload);
             $body = $response->json();
             $body = is_array($body) ? $body : [];
+            if (is_array($body['data'] ?? null)) {
+                $body = array_merge($body, $body['data']);
+                unset($body['data']);
+            }
             $body['_http_status'] = $response->status();
         } catch (ConnectionException $e) {
-            Log::warning('CheapDataHub data purchase network failure', [
+            Log::warning('CheapDataHub purchase network failure', [
+                'service' => $service,
                 'provider_id' => $this->provider->id,
                 'bundle_id' => $payload['bundle_id'] ?? null,
                 'error' => 'network_error',
@@ -115,7 +124,8 @@ class CheapDataHub extends VendorBase
             ];
         }
 
-        Log::log($response->successful() ? 'info' : 'warning', 'CheapDataHub data purchase result', [
+        Log::log($response->successful() ? 'info' : 'warning', 'CheapDataHub purchase result', [
+            'service' => $service,
             'provider_id' => $this->provider->id,
             'bundle_id' => $payload['bundle_id'] ?? null,
             'provider_reference' => $body['reference'] ?? null,
@@ -128,7 +138,7 @@ class CheapDataHub extends VendorBase
 
     public function canServePlan(string $service, $planId): bool
     {
-        if ($service === 'airtime') {
+        if (in_array($service, ['airtime', 'electricity'], true)) {
             return true;
         }
         if ($service !== 'data' || ! $planId) {
@@ -165,6 +175,30 @@ class CheapDataHub extends VendorBase
             ];
         }
 
+        if ($service === 'electricity') {
+            $billPlan = BillPlan::where('disco', (string) ($payload['disco'] ?? ''))
+                ->where('active', true)
+                ->first();
+            $mapping = $billPlan ? DB::table('providerables')
+                ->where('providerable_id', $billPlan->id)
+                ->where('providerable_type', BillPlan::class)
+                ->where('provider_id', $this->provider->id)
+                ->first() : null;
+            $discoId = $mapping->external_plan_id ?? $mapping->server_id ?? null;
+
+            if (! is_numeric($discoId)) {
+                throw new \InvalidArgumentException('This electricity disco has no numeric CheapDataHub disco ID mapping.');
+            }
+
+            return [
+                'disco_id' => (int) $discoId,
+                'meter_number' => (string) $payload['meter_number'],
+                'amount' => (int) $payload['amount'],
+                'meter_type' => strtolower((string) $payload['meter_type']),
+                'phone' => (string) ($payload['phone'] ?? Auth::user()?->phone ?? ''),
+            ];
+        }
+
         $plan = DataPlan::find($payload['data_plan'] ?? null);
         if (! $plan) {
             throw new \InvalidArgumentException('Data plan not found.');
@@ -196,21 +230,32 @@ class CheapDataHub extends VendorBase
         $explicitFailure = array_key_exists('status', $response)
             && in_array(strtolower((string) $response['status']), ['false', 'fail', 'failed', 'failure'], true);
         $message = $success
-            ? ($response['message'] ?? 'Data purchase successful')
+            ? ($response['message'] ?? ($service === 'electricity' ? 'Electricity purchase successful' : 'Data purchase successful'))
             : $this->errorMessage($httpStatus, $response['message'] ?? null);
 
         return [
             'provider' => $this->providerName,
-            'transaction_type' => $service === 'airtime' ? 'airtime_recharge' : 'data_subscription',
+            'transaction_type' => match ($service) {
+                'airtime' => 'airtime_recharge',
+                'electricity' => 'electric_bill',
+                default => 'data_subscription',
+            },
             'status' => $ambiguous ? 'pending' : ($success ? 'success' : 'fail'),
             'transaction_reference' => $response['tx_ref'] ?? null,
             'payment_reference' => $response['reference'] ?? $response['transaction_id'] ?? null,
             'response_message' => $message,
-            'account_or_phone' => $response['phone'] ?? null,
-            'receiver' => $response['phone'] ?? null,
+            'account_or_phone' => $service === 'electricity' ? ($response['meter_number'] ?? null) : ($response['phone'] ?? null),
+            'receiver' => $service === 'electricity' ? ($response['meter_number'] ?? null) : ($response['phone'] ?? null),
             'amount' => $response['amount'] ?? 0,
             'discount_amount' => $response['discount_amount'] ?? 0,
-            'plan_type' => $service === 'airtime' ? ($response['network_type'] ?? 'VTU') : ($response['plan_type'] ?? 'DATA'),
+            'plan_type' => match ($service) {
+                'airtime' => $response['network_type'] ?? 'VTU',
+                'electricity' => $response['meter_type'] ?? null,
+                default => $response['plan_type'] ?? 'DATA',
+            },
+            'token' => $service === 'electricity' && is_scalar($response['token'] ?? null)
+                ? (string) $response['token']
+                : null,
             // Only definitive pre-fulfilment rejections are safe to retry.
             'safe_to_retry' => ! $ambiguous && ! $success && (
                 in_array($httpStatus, [401, 402, 422], true)
@@ -220,6 +265,11 @@ class CheapDataHub extends VendorBase
             'raw_payload' => [
                 'provider_status' => $ambiguous ? 'transport-ambiguous' : ($response['status'] ?? null),
                 'provider_reference' => $response['reference'] ?? $response['transaction_id'] ?? null,
+                'meter_number' => $service === 'electricity' ? ($response['meter_number'] ?? null) : null,
+                'meter_type' => $service === 'electricity' ? ($response['meter_type'] ?? null) : null,
+                'customer_name' => $service === 'electricity' ? ($response['customer_name'] ?? null) : null,
+                'distribution_company' => $service === 'electricity' ? ($response['disco'] ?? null) : null,
+                'units' => $service === 'electricity' ? ($response['units'] ?? null) : null,
             ],
             'completed_at' => $success ? now() : null,
         ];

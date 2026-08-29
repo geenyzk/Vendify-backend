@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use App\Models\Vendor;
 
 class BillPlan extends Model
 {
@@ -51,6 +52,13 @@ class BillPlan extends Model
         }
 
         return $this->providers()->exists();
+    }
+
+    public function resolveVendor(): ?Vendor
+    {
+        $provider = $this->providers()->where('providers.active', true)->first();
+
+        return $provider ? Vendor::find($provider->id) : null;
     }
 
     /**

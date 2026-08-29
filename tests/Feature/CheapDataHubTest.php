@@ -5,6 +5,7 @@ use App\Classes\Vendor\Providers\VTUNg;
 use App\Classes\Vendor\VendorFactory;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Models\DataPlan;
+use App\Models\BillPlan;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Vendor;
@@ -64,6 +65,25 @@ function mapCheapDataHubPlan(DataPlan $plan, Vendor $vendor, string $bundleId = 
         'provider_available' => true,
         'provider_enabled' => true,
         'priority' => $priority,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+function mapCheapDataHubDisco(BillPlan $plan, Vendor $vendor, string $discoId = '7'): void
+{
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id,
+        'providerable_id' => $plan->id,
+        'providerable_type' => BillPlan::class,
+        'external_plan_id' => $discoId,
+        'server_id' => $discoId,
+        'cost_price' => 0,
+        'margin_value' => 0,
+        'margin_type' => 'fiat',
+        'provider_available' => true,
+        'provider_enabled' => true,
+        'priority' => 100,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -177,6 +197,82 @@ test('sends mapped bundle id and normalizes a successful data purchase reference
         'balance_after' => 500,
     ]));
     expect($transaction->fresh()->payment_reference)->toBe('CDH567890');
+});
+
+test('sends the documented CheapDataHub electricity payload and preserves its token', function () {
+    Http::fake(['*/electricity/purchase/' => Http::response([
+        'status' => 'true',
+        'message' => 'Electricity purchase successful',
+        'data' => ['token' => '12345678901234567890', 'units' => '45.67'],
+    ], 200)]);
+    $vendor = cheapDataHubVendor();
+    $billPlan = BillPlan::create([
+        'disco' => 'Ikeja Electric', 'min' => 500, 'max' => 100000, 'active' => true,
+    ]);
+    mapCheapDataHubDisco($billPlan, $vendor, '7');
+    $client = new CheapDataHub($vendor);
+    $payload = $client->formatPayload('electricity', [
+        'disco' => 'Ikeja Electric',
+        'meter_number' => '1111111111111',
+        'meter_type' => 'prepaid',
+        'amount' => 1000,
+        'phone' => '08012345678',
+    ]);
+    $response = $client->sendRequest('electricity', $payload);
+    $normalized = cheapDataHubFormat($client, array_merge($response, [
+        'tx_ref' => 'EL-CDH-1',
+        'disco' => 'Ikeja Electric',
+        'meter_number' => '1111111111111',
+        'meter_type' => 'prepaid',
+        'customer_name' => 'VENDIFY TEST CUSTOMER',
+        'amount' => 1000,
+    ]), 'electricity');
+
+    expect($payload)->toBe([
+        'disco_id' => 7,
+        'meter_number' => '1111111111111',
+        'amount' => 1000,
+        'meter_type' => 'prepaid',
+        'phone' => '08012345678',
+    ]);
+    Http::assertSent(fn ($request) => $request->url() === 'https://cheapdatahub.test/api/v1/resellers/electricity/purchase/'
+        && $request['disco_id'] === 7
+        && $request['meter_number'] === '1111111111111'
+        && $request['meter_type'] === 'prepaid'
+        && $request['phone'] === '08012345678');
+    expect($normalized)->toMatchArray([
+        'status' => 'success',
+        'transaction_type' => 'electric_bill',
+        'transaction_reference' => 'EL-CDH-1',
+        'account_or_phone' => '1111111111111',
+        'plan_type' => 'prepaid',
+        'token' => '12345678901234567890',
+    ])->and($normalized['raw_payload'])->toMatchArray([
+        'meter_number' => '1111111111111',
+        'customer_name' => 'VENDIFY TEST CUSTOMER',
+        'distribution_company' => 'Ikeja Electric',
+        'units' => '45.67',
+    ]);
+
+    $transaction = Transaction::create(array_merge($normalized, [
+        'user_id' => '00000000-0000-0000-0000-000000000001',
+        'balance_before' => 2000,
+        'balance_after' => 1000,
+    ]));
+    expect($transaction->fresh()->token)->toBe('12345678901234567890')
+        ->and($transaction->fresh()->electricity_token)->toBe('12345678901234567890')
+        ->and($transaction->fresh()->customer_name)->toBe('VENDIFY TEST CUSTOMER');
+});
+
+test('routes a disco to its configured CheapDataHub provider', function () {
+    $vendor = cheapDataHubVendor();
+    $billPlan = BillPlan::create([
+        'disco' => 'Ikeja Electric', 'min' => 500, 'max' => 100000, 'active' => true,
+    ]);
+    mapCheapDataHubDisco($billPlan, $vendor, '7');
+
+    expect(VTUServiceFactory::make('electricity', 'electricity', null, null, 'Ikeja Electric'))
+        ->toBeInstanceOf(CheapDataHub::class);
 });
 
 test('a missing CheapDataHub mapping is unavailable and fails safely', function () {

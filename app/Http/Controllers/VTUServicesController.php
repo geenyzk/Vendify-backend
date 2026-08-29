@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Classes\SerivceControl\ServiceControlService;
 use App\Classes\VTUServices\VTUServiceFactory;
+use App\Classes\Vendor\Providers\CheapDataHub;
+use App\Classes\Vendor\Providers\VTUNg;
 use App\Http\Requests\ServiceRequest;
 use App\Models\BillPlan;
 use App\Models\CablePlan;
@@ -627,6 +629,14 @@ class VTUServicesController extends Controller
             $handler = VTUServiceFactory::make($service, $routeKey, null, null, $routeKey);
             if (! $handler) {
                 return $this->fail([], 'Electricity service is not configured.', 503);
+            }
+            // CheapDataHub documents electricity purchase but does not expose
+            // a reseller meter-verification endpoint. Keep the mandatory UI
+            // verification step on VTU.ng when that provider is available;
+            // the confirmed purchase still follows the BillPlan's configured
+            // CheapDataHub route.
+            if ($service === 'electricity' && $handler instanceof CheapDataHub && ($vtu = VTUNg::activeProvider())) {
+                $handler = new VTUNg($vtu);
             }
             return $handler->verifyUser($service, $request->identifier, $payload);
         } catch (\Illuminate\Validation\ValidationException $e) {

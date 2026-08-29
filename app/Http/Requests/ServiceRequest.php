@@ -186,6 +186,7 @@ class ServiceRequest extends FormRequest
                     ],
                     'meter_number' => 'required|string',
                     'meter_type' => 'required|string|in:prepaid,postpaid',
+                    'customer_name' => 'sometimes|nullable|string|max:255',
                     // VTU.ng v2 documents electricity amount as an integer.
                     // Reject decimals instead of charging one value locally
                     // and silently truncating the upstream token value.
