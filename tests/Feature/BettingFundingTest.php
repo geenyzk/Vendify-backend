@@ -130,7 +130,7 @@ test('permission errors are normalized and raw detail stays internal', function 
     fakeVerifiedThen(['code' => 'failure', 'message' => 'Your institution is not allowed to vend for this biller!']);
     $response = $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload());
     $response->assertUnprocessable()
-        ->assertJsonPath('message', 'VTU.ng has not authorised betting funding for this provider. Please choose another provider.')
+        ->assertJsonPath('message', 'This betting provider is temporarily unavailable. Please choose another provider.')
         ->assertJsonMissing(['Your institution is not allowed to vend for this biller!']);
     expect(data_get(Transaction::first()->raw_payload, 'internal_status'))->toBe('provider_permission_denied');
     expect($provider->fresh()->active)->toBeFalse();

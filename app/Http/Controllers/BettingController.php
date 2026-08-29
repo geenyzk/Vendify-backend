@@ -262,7 +262,7 @@ class BettingController extends Controller
             'provider_unavailable' => 'Betting funding is currently unavailable. Please try again later.',
             'customer_not_found' => 'We could not verify that betting account. Check the details and try again.',
             'unsupported_biller' => 'This betting provider is not currently supported.',
-            'provider_permission_denied' => 'VTU.ng has not authorised betting funding for this provider. Please choose another provider.',
+            'provider_permission_denied' => 'This betting provider is temporarily unavailable. Please choose another provider.',
             default => 'We could not complete the betting funding. Please try again later.',
         };
     }
