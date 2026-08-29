@@ -571,6 +571,17 @@ abstract class VendorBase implements VendorInterface
                 fn ($value) => $value !== null,
             );
 
+            if ($transaction->transaction_type === 'electric_bill' && ! empty($callback['token'])) {
+                $updateData['token'] = $callback['token'];
+            }
+
+            if ($transaction->transaction_type === 'electric_bill' && is_array($callback['raw_payload'] ?? null)) {
+                $updateData['raw_payload'] = array_merge(
+                    $transaction->raw_payload ?? [],
+                    array_filter($callback['raw_payload'], fn ($value) => $value !== null && $value !== ''),
+                );
+            }
+
             if (!empty($updateData)) {
                 $transaction->update($updateData);
             }

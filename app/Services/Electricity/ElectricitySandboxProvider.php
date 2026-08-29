@@ -86,7 +86,13 @@ class ElectricitySandboxProvider
             'response_message' => 'Sandbox electricity purchase successful.',
             'completed_at' => now(),
             'is_sandbox' => true,
-            'raw_payload' => ['sandbox' => true, 'meter_type' => $type, 'disco' => $payload['disco']],
+            'raw_payload' => [
+                'sandbox' => true,
+                'meter_number' => $meter,
+                'meter_type' => $type,
+                'customer_name' => $fixture['name'],
+                'distribution_company' => (string) $payload['disco'],
+            ],
         ]);
 
         Log::info('[ELECTRICITY SANDBOX] Purchase simulated', ['transaction_reference' => $payload['tx_ref']]);

@@ -76,8 +76,16 @@ test('sandbox prepaid purchase creates a flagged token transaction without touch
 
     expect($response->json('data.token'))->toMatch('/^\d{4}( \d{4}){4}$/')
         ->and((float) $user->fresh()->wallet_balance)->toBe($before);
+    $originalToken = $response->json('data.token');
     $transaction = Transaction::where('transaction_reference', 'EL-SANDBOX-0001')->firstOrFail();
-    expect($transaction->is_sandbox)->toBeTrue()->and($transaction->provider)->toBe('electricity_sandbox');
+    expect($transaction->is_sandbox)->toBeTrue()
+        ->and($transaction->provider)->toBe('electricity_sandbox')
+        ->and($transaction->token)->toBe($originalToken);
+    $this->actingAs($user->fresh(), 'sanctum')->getJson("/api/transactions/{$transaction->id}/status")
+        ->assertOk()
+        ->assertJsonPath('data.electricity_token', $originalToken)
+        ->assertJsonPath('data.customer_name', 'VENDIFY TEST CUSTOMER')
+        ->assertJsonPath('data.meter_number', '1111111111111');
     Http::assertNothingSent();
 });
 
@@ -89,7 +97,32 @@ test('sandbox postpaid purchase succeeds without generating a token', function (
         'pin' => '1234', 'tx_ref' => 'EL-SANDBOX-0002',
     ])->assertOk()->assertJsonPath('data.token', null);
     expect((float) $user->fresh()->wallet_balance)->toBe(5000.0);
+    expect(Transaction::where('transaction_reference', 'EL-SANDBOX-0002')->firstOrFail()->electricity_token)->toBeNull();
     Http::assertNothingSent();
+});
+
+test('older tokenless electricity transactions remain readable and owner protected', function () {
+    $owner = sandboxElectricityUser();
+    $transaction = Transaction::create([
+        'user_id' => $owner->id, 'transaction_type' => 'electric_bill', 'provider' => 'vtu_ng',
+        'account_or_phone' => '01234567890', 'amount' => 1000, 'status' => 'success',
+        'transaction_reference' => 'EL-LEGACY-1', 'plan_type' => 'prepaid',
+    ]);
+
+    $this->actingAs($owner, 'sanctum')->getJson("/api/transactions/{$transaction->id}/status")
+        ->assertOk()->assertJsonPath('data.electricity_token', null);
+    $other = sandboxElectricityUser('other@example.com');
+    $this->actingAs($other, 'sanctum')->getJson("/api/transactions/{$transaction->id}/status")->assertNotFound();
+});
+
+test('non-electricity transaction resources remain token compatible', function () {
+    $user = sandboxElectricityUser();
+    $transaction = Transaction::create([
+        'user_id' => $user->id, 'transaction_type' => 'exam', 'provider' => 'exam_provider',
+        'amount' => 1000, 'status' => 'success', 'transaction_reference' => 'EXAM-1', 'token' => 'EXAM-PIN-123',
+    ]);
+    $this->actingAs($user, 'sanctum')->getJson("/api/transactions/{$transaction->id}/status")
+        ->assertOk()->assertJsonPath('data.token', 'EXAM-PIN-123')->assertJsonPath('data.electricity_token', null);
 });
 
 test('production permits electricity sandbox only for an allowlisted user', function () {

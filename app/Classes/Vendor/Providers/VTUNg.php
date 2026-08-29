@@ -246,6 +246,7 @@ class VTUNg extends VendorBase
             $httpStatus >= 400 && $httpStatus < 500 => 'fail',
             default => 'pending',
         };
+        $electricityToken = $service === 'electricity' ? $this->electricityToken($response) : null;
 
         return [
             'provider' => $this->providerName,
@@ -273,7 +274,7 @@ class VTUNg extends VendorBase
                 'electricity' => $response['meter_type'] ?? $data['variation_id'] ?? null,
                 default => $response['plan_type'] ?? 'DATA',
             },
-            'token' => $data['token'] ?? $response['token'] ?? null,
+            'token' => $electricityToken,
             'provider_status' => $upstreamStatus ?: ($ambiguous ? 'transport-ambiguous' : (string) $httpStatus),
             'safe_to_retry' => ! $ambiguous && (
                 in_array($upstreamStatus, ['refunded', 'failed', 'failed-api', 'cancelled', 'cancelled-api'], true)
@@ -283,6 +284,10 @@ class VTUNg extends VendorBase
                 'provider_status' => $upstreamStatus ?: null,
                 'request_id' => $data['request_id'] ?? $response['request_id'] ?? null,
                 'provider_reference' => $data['order_id'] ?? $response['order_id'] ?? null,
+                'meter_number' => $service === 'electricity' ? ($data['customer_id'] ?? $response['meter_number'] ?? null) : null,
+                'meter_type' => $service === 'electricity' ? ($response['meter_type'] ?? $data['variation_id'] ?? null) : null,
+                'customer_name' => $service === 'electricity' ? ($data['customer_name'] ?? null) : null,
+                'distribution_company' => $service === 'electricity' ? ($data['service_name'] ?? $response['disco'] ?? null) : null,
             ],
             'completed_at' => $status === 'success' ? now() : null,
         ];
@@ -599,6 +604,13 @@ class VTUNg extends VendorBase
             'tx_ref' => $transaction->transaction_reference,
             'payment_reference' => $transaction->payment_reference,
             'response_message' => $response['message'] ?? null,
+            'token' => $transaction->transaction_type === 'electric_bill' ? $this->electricityToken($response) : null,
+            'raw_payload' => $transaction->transaction_type === 'electric_bill' ? [
+                'meter_number' => $data['customer_id'] ?? null,
+                'meter_type' => $data['variation_id'] ?? $transaction->plan_type,
+                'customer_name' => $data['customer_name'] ?? null,
+                'distribution_company' => $data['service_name'] ?? null,
+            ] : null,
         ]);
 
         return true;
@@ -616,6 +628,27 @@ class VTUNg extends VendorBase
             'request_id' => $request->input('request_id', $request->input('data.request_id')),
             'payment_reference' => $request->input('request_id', $request->input('data.request_id')),
             'response_message' => $request->input('message'),
+            'token' => $this->electricityToken($request->all()),
+            'raw_payload' => [
+                'meter_number' => $request->input('customer_id', $request->input('data.customer_id')),
+                'meter_type' => $request->input('variation_id', $request->input('data.variation_id')),
+                'customer_name' => $request->input('customer_name', $request->input('data.customer_name')),
+                'distribution_company' => $request->input('service_name', $request->input('data.service_name')),
+            ],
         ];
+    }
+
+    private function electricityToken(array $response): ?string
+    {
+        $data = is_array($response['data'] ?? null) ? $response['data'] : $response;
+        $candidate = $data['token']
+            ?? $data['electricity_token']
+            ?? $data['meter_token']
+            ?? $data['pin']
+            ?? data_get($data, 'tokens.0');
+
+        return is_scalar($candidate) && trim((string) $candidate) !== ''
+            ? (string) $candidate
+            : null;
     }
 }

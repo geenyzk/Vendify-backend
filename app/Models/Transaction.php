@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Transaction extends Model
 {
     //
+    protected $appends = ['service', 'meter_type', 'meter_number', 'customer_name', 'distribution_company', 'electricity_token'];
     protected $fillable = [
         'user_id', 'transaction_type', 'provider', 'account_or_phone', 'amount', 'cost',
         'quantity', 'status', 'transaction_reference', 'payment_reference',
@@ -46,6 +47,49 @@ class Transaction extends Model
     public function scopeReal($query)
     {
         return $query->where('is_sandbox', false);
+    }
+
+    public function getServiceAttribute(): ?string
+    {
+        return $this->transaction_type === 'electric_bill' ? 'electricity' : null;
+    }
+
+    public function getMeterTypeAttribute(): ?string
+    {
+        return $this->transaction_type === 'electric_bill'
+            ? ($this->raw_payload['meter_type'] ?? $this->plan_type)
+            : null;
+    }
+
+    public function getMeterNumberAttribute(): ?string
+    {
+        if ($this->transaction_type !== 'electric_bill') {
+            return null;
+        }
+
+        $meter = (string) ($this->raw_payload['meter_number'] ?? $this->account_or_phone ?? $this->receiver ?? '');
+        return $meter !== '' ? $meter : null;
+    }
+
+    public function getCustomerNameAttribute(): ?string
+    {
+        return $this->transaction_type === 'electric_bill'
+            ? ($this->raw_payload['customer_name'] ?? null)
+            : null;
+    }
+
+    public function getDistributionCompanyAttribute(): ?string
+    {
+        return $this->transaction_type === 'electric_bill'
+            ? ($this->raw_payload['distribution_company'] ?? $this->raw_payload['disco'] ?? null)
+            : null;
+    }
+
+    public function getElectricityTokenAttribute(): ?string
+    {
+        return $this->transaction_type === 'electric_bill' && is_string($this->token) && trim($this->token) !== ''
+            ? $this->token
+            : null;
     }
 
     /**

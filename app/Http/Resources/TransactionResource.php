@@ -50,6 +50,12 @@ class TransactionResource extends JsonResource
             'platform' => $this->platform,
             'plan_type' => $this->plan_type,
             'token' => $this->token,
+            'service' => $this->service,
+            'meter_type' => $this->meter_type,
+            'meter_number' => $this->meter_number,
+            'customer_name' => $this->customer_name,
+            'distribution_company' => $this->distribution_company,
+            'electricity_token' => $this->electricity_token,
             'user' => $this->whenLoaded('user', fn () => [
                 'id' => $this->user->id,
                 'fullname' => $this->user->fullname,

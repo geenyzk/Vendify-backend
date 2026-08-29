@@ -44,6 +44,7 @@ beforeEach(function () {
         $t->double('quantity', 8, 2)->default(1); $t->string('account_or_phone')->nullable();
         $t->string('funding_method')->nullable(); $t->string('platform')->nullable();
         $t->string('receiver')->nullable(); $t->string('plan_type')->nullable(); $t->string('token')->nullable();
+        $t->json('raw_payload')->nullable();
         $t->unsignedBigInteger('promotion_id')->nullable(); $t->decimal('cost', 15, 2)->nullable();
         $t->string('related_reference')->nullable(); $t->timestamps();
     });
@@ -181,6 +182,67 @@ it('formats electricity purchases for the VTU.ng v2 API', function () {
         'variation_id' => 'postpaid',
         'amount' => 2500,
     ]);
+});
+
+it('preserves the exact prepaid token returned by VTU.ng', function () {
+    $vendor = new Vendor([
+        'name' => 'VTU.ng', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'token', 'active' => true,
+    ]);
+    $client = new class($vendor) extends VTUNg
+    {
+        public function normalizeElectricity(array $response): array
+        {
+            return $this->formatResponse('electricity', $response);
+        }
+    };
+
+    $normalized = $client->normalizeElectricity([
+        'tx_ref' => 'TXN-POWER-TOKEN',
+        'amount' => 2500,
+        'meter_type' => 'prepaid',
+        'message' => 'ORDER COMPLETED',
+        'data' => [
+            'status' => 'completed-api',
+            'request_id' => 'vendify_TXN-POWER-TOKEN',
+            'customer_id' => '01234567890',
+            'customer_name' => 'Ada Customer',
+            'service_name' => 'IKEDC (Ikeja Electric)',
+            'token' => '1234-5678-9012-3456-7890',
+        ],
+    ]);
+
+    expect($normalized['status'])->toBe('success')
+        ->and($normalized['token'])->toBe('1234-5678-9012-3456-7890')
+        ->and($normalized['raw_payload']['meter_number'])->toBe('01234567890')
+        ->and($normalized['raw_payload']['customer_name'])->toBe('Ada Customer');
+});
+
+it('adds a delayed prepaid token when VTU.ng reconciliation completes', function () {
+    [$user, $transaction, $client] = vtuNgFixture('processing-api');
+    $transaction->update([
+        'transaction_type' => 'electric_bill',
+        'account_or_phone' => '01234567890',
+        'receiver' => '01234567890',
+        'plan_type' => 'prepaid',
+    ]);
+
+    expect($client->reconcile($transaction->fresh(), [
+        'status' => 'completed-api',
+        'request_id' => $transaction->payment_reference,
+        'customer_id' => '01234567890',
+        'customer_name' => 'Ada Customer',
+        'service_name' => 'IKEDC (Ikeja Electric)',
+        'token' => '12345678901234567890',
+    ]))->toBeTrue();
+
+    $stored = $transaction->fresh();
+    expect($stored->status)->toBe('success')
+        ->and($stored->token)->toBe('12345678901234567890')
+        ->and($stored->electricity_token)->toBe('12345678901234567890')
+        ->and($stored->meter_number)->toBe('01234567890')
+        ->and($stored->customer_name)->toBe('Ada Customer')
+        ->and((float) $user->fresh()->wallet_balance)->toBe(201.0);
 });
 
 it('verifies electricity meters through VTU.ng', function () {
