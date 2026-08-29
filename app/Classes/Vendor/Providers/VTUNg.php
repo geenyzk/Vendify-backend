@@ -58,6 +58,7 @@ class VTUNg extends VendorBase
     protected function endpoint(string $service): string
     {
         return match ($service) {
+            'airtime' => '/airtime',
             'data' => '/data',
             'electricity' => '/electricity',
             default => throw new \InvalidArgumentException("VTU.ng does not support service [$service] in this integration."),
@@ -71,7 +72,7 @@ class VTUNg extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['data', 'electricity'];
+        return ['airtime', 'data', 'electricity'];
     }
 
     protected function getAuthHeaders(): array
@@ -152,6 +153,15 @@ class VTUNg extends VendorBase
 
     public function formatPayload(string $service, array $payload): array
     {
+        if ($service === 'airtime') {
+            return [
+                'request_id' => substr('vendify_'.$payload['tx_ref'], 0, 50),
+                'phone' => (string) $payload['phone'],
+                'service_id' => strtolower((string) $payload['network']),
+                'amount' => (int) $payload['amount'],
+            ];
+        }
+
         if ($service === 'electricity') {
             return [
                 'request_id' => substr('vendify_'.$payload['tx_ref'], 0, 50),
@@ -204,7 +214,11 @@ class VTUNg extends VendorBase
 
         return [
             'provider' => $this->providerName,
-            'transaction_type' => $service === 'electricity' ? 'electric_bill' : 'data_subscription',
+            'transaction_type' => match ($service) {
+                'airtime' => 'airtime_recharge',
+                'electricity' => 'electric_bill',
+                default => 'data_subscription',
+            },
             'status' => $status,
             // Keep Vendify's reference as the local callback/idempotency key.
             'transaction_reference' => $response['tx_ref'] ?? null,
@@ -219,9 +233,11 @@ class VTUNg extends VendorBase
             'amount' => $response['amount'] ?? 0,
             'discount_amount' => $response['discount_amount'] ?? 0,
             'service_fee' => (float) ($response['service_fee'] ?? 0),
-            'plan_type' => $service === 'electricity'
-                ? ($response['meter_type'] ?? $data['variation_id'] ?? null)
-                : ($response['plan_type'] ?? 'DATA'),
+            'plan_type' => match ($service) {
+                'airtime' => $response['network_type'] ?? 'VTU',
+                'electricity' => $response['meter_type'] ?? $data['variation_id'] ?? null,
+                default => $response['plan_type'] ?? 'DATA',
+            },
             'token' => $data['token'] ?? $response['token'] ?? null,
             'completed_at' => $status === 'success' ? now() : null,
         ];

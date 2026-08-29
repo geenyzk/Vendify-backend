@@ -171,3 +171,30 @@ test('synced vtu ng glo and mtn plans resolve the adapter and provider payload',
 test('a genuinely unsupported service still has no purchase adapter', function () {
     expect(VTUServiceFactory::make('unsupported-service'))->toBeNull();
 });
+
+test('vtu ng is accepted for airtime and formats the documented v2 payload', function () {
+    $vendor = fallbackVendor('Vtu.ng', 'vtu_ng');
+    $plan = AirtimePlan::create([
+        'name' => 'mtn', 'category' => 'vtu', 'type' => 'airtime', 'active' => true,
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id, 'providerable_id' => $plan->id,
+        'providerable_type' => AirtimePlan::class, 'cost_price' => 0,
+        'margin_value' => 0, 'margin_type' => 'fiat', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $handler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 100);
+
+    expect($handler)->toBeInstanceOf(VTUNg::class)
+        ->and($handler->supportsService('airtime'))->toBeTrue()
+        ->and($handler->formatPayload('airtime', [
+            'tx_ref' => 'AIRTIME-ROUTING-TEST',
+            'phone' => '08000000000',
+            'network' => 'mtn',
+            'amount' => 100,
+        ]))->toMatchArray([
+            'phone' => '08000000000',
+            'service_id' => 'mtn',
+            'amount' => 100,
+        ]);
+});
