@@ -63,7 +63,7 @@ class ServiceRequest extends FormRequest
             'product'          => 'sometimes|nullable|string',
             'discount_amount'  => 'sometimes|numeric',
             'simulate_status'  => 'sometimes|string',
-            'tx_ref'           => 'required|unique:transactions,transaction_reference',
+            'tx_ref'           => ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9_-]+$/'],
         ];
     }
 
@@ -186,7 +186,10 @@ class ServiceRequest extends FormRequest
                     ],
                     'meter_number' => 'required|string',
                     'meter_type' => 'required|string|in:prepaid,postpaid',
-                    'amount' => 'required|numeric|min:' . ($billPlan->min ?? 500) . '|max:' . ($billPlan->max ?? 100000),
+                    // VTU.ng v2 documents electricity amount as an integer.
+                    // Reject decimals instead of charging one value locally
+                    // and silently truncating the upstream token value.
+                    'amount' => 'required|integer|min:' . ($billPlan->min ?? 500) . '|max:' . ($billPlan->max ?? 100000),
                 ];
             case "exam":
                 return [

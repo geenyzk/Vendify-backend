@@ -87,23 +87,32 @@ class VtuNgBettingProvider implements BettingProviderInterface
             throw new \RuntimeException('VTU.ng username/password is required to refresh an invalidated API token.');
         }
 
-        $response = Http::connectTimeout(5)->timeout(15)->acceptJson()->post(
-            $this->rootUrl() . '/jwt-auth/v1/token',
-            ['username' => $username, 'password' => $password],
-        );
-        $token = $response->json('token');
-        if (! $response->successful() || ! is_string($token) || $token === '') {
-            throw new \RuntimeException('VTU.ng authentication failed.');
-        }
+        $cacheKey = $this->tokenCacheKey();
+        return Cache::lock("{$cacheKey}:refresh", 30)->block(10, function () use ($cacheKey, $username, $password) {
+            // Another electricity/betting worker may have refreshed the
+            // latest-only-valid JWT while this request waited for the lock.
+            if ($cached = Cache::get($cacheKey)) return (string) $cached;
 
-        Cache::put($this->tokenCacheKey(), $token, now()->addDays(6));
-        return $token;
+            $response = Http::connectTimeout(5)->timeout(15)->acceptJson()->post(
+                $this->rootUrl() . '/jwt-auth/v1/token',
+                ['username' => $username, 'password' => $password],
+            );
+            $token = $response->json('token');
+            if (! $response->successful() || ! is_string($token) || $token === '') {
+                throw new \RuntimeException('VTU.ng authentication failed.');
+            }
+
+            Cache::put($cacheKey, $token, now()->addDays(6));
+            return $token;
+        });
     }
 
     private function tokenCacheKey(): string
     {
-        $username = $this->vendor->username ?: config('services.vtu_ng.username');
-        return 'vtu-ng:betting-token:' . ($this->vendor->id ?: hash('sha256', (string) $username));
+        // Share the JWT with the main VTU.ng adapter. VTU.ng permits only the
+        // newest token, so separate caches make betting and electricity
+        // invalidate each other whenever either flow refreshes credentials.
+        return 'vtu-ng:token:' . $this->vendor->id;
     }
 
     private function post(string $path, array $payload)

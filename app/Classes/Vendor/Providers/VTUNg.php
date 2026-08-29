@@ -134,8 +134,12 @@ class VTUNg extends VendorBase
         $response = $send($this->token());
         $body = $response->json();
         $code = strtolower((string) (is_array($body) ? ($body['code'] ?? '') : ''));
+        $message = (string) (is_array($body) ? ($body['message'] ?? '') : '');
         $invalidToken = $response->status() === 401
-            || str_contains($code, 'jwt') || str_contains($code, 'token');
+            || str_contains($code, 'jwt')
+            || str_contains($code, 'token')
+            || ($response->status() === 403
+                && (bool) preg_match('/token has been invalidated|invalid (?:jwt|token)|token (?:is )?expired/i', $message));
 
         return $invalidToken ? $send($this->token(true)) : $response;
     }

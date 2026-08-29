@@ -215,6 +215,37 @@ it('verifies electricity meters through VTU.ng', function () {
         && $request['variation_id'] === 'prepaid');
 });
 
+it('refreshes an invalidated JWT and retries electricity verification once', function () {
+    $vendor = new Vendor([
+        'name' => 'VTU.ng', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.test/api/v2', 'api_key' => 'stale-token',
+        'username' => 'reseller@example.com', 'password' => 'secret', 'active' => true,
+    ]);
+    $vendor->id = 91;
+    Cache::forget('vtu-ng:token:91');
+    Http::fakeSequence()
+        ->push([
+            'code' => 'rest_forbidden',
+            'message' => 'Token has been invalidated. Please generate a new JWT.',
+            'data' => ['status' => 403],
+        ], 403)
+        ->push(['token' => 'fresh-token'])
+        ->push([
+            'code' => 'success',
+            'message' => 'Customer Details Retrieved',
+            'data' => ['customer_name' => 'Ada Customer'],
+        ]);
+
+    $response = (new VTUNg($vendor))->verifyUser('electricity', '01234567890', [
+        'disco' => 'AEDC (Abuja Electric)',
+        'meter_type' => 'prepaid',
+    ]);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true)['data']['name'])->toBe('Ada Customer');
+    Http::assertSentCount(3);
+});
+
 it('always routes electricity to the active VTU.ng provider', function () {
     $provider = Provider::create([
         'name' => 'VTU.ng', 'category' => 'vendor', 'sub_category' => 'vtu_ng',

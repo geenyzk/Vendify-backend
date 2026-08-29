@@ -197,6 +197,20 @@ class VTUServicesController extends Controller
             return $pinFailure;
         }
 
+        // A network retry must never create a second upstream order. Return
+        // the transaction already created for this user's idempotency key.
+        $existing = Transaction::where('transaction_reference', $validated['tx_ref'])->first();
+        if ($existing) {
+            if ((int) $existing->user_id !== (int) $request->user()->id) {
+                return $this->fail([], 'Invalid transaction reference.', 422);
+            }
+
+            $code = $existing->status === 'pending' ? 202 : ($existing->status === 'success' ? 200 : 422);
+            return $existing->status === 'fail'
+                ? $this->fail(['transaction' => $existing], $existing->response_message ?: 'This transaction failed.', $code)
+                : $this->success($existing, $existing->response_message, $code, $existing->status);
+        }
+
         // Amount validation now done in ServiceRequest rules for airtime (min:50, max:5000)
 
         // Data and Cable are both fixed-price catalog items — the vendor
@@ -227,10 +241,9 @@ class VTUServicesController extends Controller
             }
         }
 
-        // Generate the reference server-side before the request reaches a
-        // vendor. Providers use this as their idempotency/callback key, and
-        // some asynchronous responses do not echo it back.
-        $validated['tx_ref'] = Transaction::generateTransactionId();
+        // Keep the validated client-generated idempotency reference. Replacing
+        // it here allowed two retries carrying the same key to become two
+        // different upstream electricity orders.
 
         $user = Auth::user();
 
@@ -370,7 +383,13 @@ class VTUServicesController extends Controller
             }
 
             try {
-                Log::info(["validated" => $validated]);
+                // Never log the validated payload: it contains the customer's
+                // transaction PIN and service identifiers. Keep only the
+                // non-sensitive correlation fields needed for diagnostics.
+                Log::info('Processing VTU request', [
+                    'service' => $service,
+                    'transaction_reference' => $validated['tx_ref'],
+                ]);
                 $result = $handler->process($service, $validated);
 
                 // Only an immediate, confirmed failure is eligible for a
