@@ -17,7 +17,11 @@ class CheapDataHub extends VendorBase
 
     protected function baseUrl(): string
     {
-        return rtrim((string) ($this->provider->base_url ?: config('services.cheapdatahub.base_url')), '/');
+        $base = rtrim((string) ($this->provider->base_url ?: config('services.cheapdatahub.base_url')), '/');
+        if (! preg_match('#/api/v1/resellers$#', $base)) {
+            throw new \InvalidArgumentException('CheapDataHub base URL must end with /api/v1/resellers.');
+        }
+        return $base;
     }
 
     private function apiKey(): string
@@ -189,6 +193,8 @@ class CheapDataHub extends VendorBase
         $httpStatus = (int) ($response['_http_status'] ?? 0);
         $ambiguous = (bool) ($response['_transport_ambiguous'] ?? false);
         $success = ! $ambiguous && $httpStatus >= 200 && $httpStatus < 300 && $this->truthy($response['status'] ?? false);
+        $explicitFailure = array_key_exists('status', $response)
+            && in_array(strtolower((string) $response['status']), ['false', 'fail', 'failed', 'failure'], true);
         $message = $success
             ? ($response['message'] ?? 'Data purchase successful')
             : $this->errorMessage($httpStatus, $response['message'] ?? null);
@@ -206,7 +212,10 @@ class CheapDataHub extends VendorBase
             'discount_amount' => $response['discount_amount'] ?? 0,
             'plan_type' => $service === 'airtime' ? ($response['network_type'] ?? 'VTU') : ($response['plan_type'] ?? 'DATA'),
             // Only definitive pre-fulfilment rejections are safe to retry.
-            'safe_to_retry' => ! $ambiguous && ! $success && in_array($httpStatus, [401, 402, 422], true),
+            'safe_to_retry' => ! $ambiguous && ! $success && (
+                in_array($httpStatus, [401, 402, 422], true)
+                || ($explicitFailure && $httpStatus < 500 && $httpStatus !== 409)
+            ),
             'provider_status' => $ambiguous ? 'transport-ambiguous' : (string) ($response['status'] ?? $httpStatus),
             'raw_payload' => [
                 'provider_status' => $ambiguous ? 'transport-ambiguous' : ($response['status'] ?? null),

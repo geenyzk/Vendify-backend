@@ -47,7 +47,13 @@ class VTUNg extends VendorBase
 
     protected function baseUrl(): string
     {
-        return rtrim($this->provider->base_url ?: 'https://vtu.ng/wp-json/api/v2', '/');
+        $configured = rtrim((string) ($this->provider->base_url ?: config('services.vtu_ng.base_url')), '/');
+
+        // Accept either documented root form (/wp-json) or API-base form
+        // (/wp-json/api/v2), but always vend against the v2 API base.
+        return preg_match('#/api/v2$#', $configured)
+            ? $configured
+            : $configured.'/api/v2';
     }
 
     protected function rootUrl(): string

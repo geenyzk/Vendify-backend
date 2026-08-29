@@ -421,6 +421,8 @@ class VTUServicesController extends Controller
                         $fallbackBody = $fallbackResult->getData(true);
                         $fallbackFailedImmediately = $fallbackResult->getStatusCode() >= 500
                             && ($fallbackBody['success'] ?? false) === false;
+                        $fallbackSafeToRetry = $fallbackFailedImmediately
+                            && data_get($fallbackBody, 'errors.safe_to_retry') === true;
 
                         if (! $fallbackFailedImmediately) {
                             return $fallbackResult;
@@ -428,6 +430,9 @@ class VTUServicesController extends Controller
 
                         $failedReference = $validated['tx_ref'];
                         $result = $fallbackResult;
+                        if (! $fallbackSafeToRetry) {
+                            break;
+                        }
                     }
                 }
 

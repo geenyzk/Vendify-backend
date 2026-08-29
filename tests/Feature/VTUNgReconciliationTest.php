@@ -112,6 +112,25 @@ it('refreshes an invalid VTU.ng token once and retries airtime once', function (
         && $request->hasHeader('Authorization', 'Bearer fresh-token'));
 });
 
+it('normalizes both documented-root and api-base VTU.ng URLs', function (string $configuredBase) {
+    $vendor = Vendor::create([
+        'name' => 'VTU.ng', 'category' => 'vendor', 'sub_category' => 'vtu_ng',
+        'base_url' => $configuredBase, 'api_key' => 'managed-token', 'active' => true,
+    ]);
+    Http::fake(['https://vtu.test/wp-json/api/v2/airtime' => Http::response([
+        'code' => 'success', 'data' => ['status' => 'completed-api'],
+    ])]);
+
+    (new VTUNg($vendor))->sendRequest('airtime', [
+        'request_id' => 'vendify_URL', 'phone' => '08012345678', 'service_id' => 'mtn', 'amount' => 100,
+    ]);
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://vtu.test/wp-json/api/v2/airtime');
+})->with([
+    'documented root' => 'https://vtu.test/wp-json',
+    'v2 API base' => 'https://vtu.test/wp-json/api/v2',
+]);
+
 function vtuNgFixture(string $status): array
 {
     $user = User::create([

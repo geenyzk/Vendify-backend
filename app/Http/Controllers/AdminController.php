@@ -613,11 +613,14 @@ class AdminController extends Controller
         $results = [];
 
         try {
-            Log::info('universalBulkCreateOrUpdate incoming items', ['table' => $table, 'items_sample' => $request->all()['items'] ?? null]);
+            Log::info('universalBulkCreateOrUpdate incoming items', [
+                'table' => $table,
+                'items_sample' => self::redactSensitive((array) ($request->all()['items'] ?? [])),
+            ]);
             DB::beginTransaction();
 
             foreach ($items as $item) {
-                Log::info($item);
+                Log::info(self::redactSensitive($item));
                 if (! is_array($item)) {
                     continue;
                 }
@@ -944,6 +947,19 @@ class AdminController extends Controller
         }
 
         return is_numeric($value) ? (float) $value : null;
+    }
+
+    private static function redactSensitive(array $data): array
+    {
+        $sensitive = ['password', 'api_key', 'secret_key', 'encryption_key', 'authorization', 'webhook_pin'];
+        foreach ($data as $key => $value) {
+            if (in_array(strtolower((string) $key), $sensitive, true)) {
+                $data[$key] = '[REDACTED]';
+            } elseif (is_array($value)) {
+                $data[$key] = self::redactSensitive($value);
+            }
+        }
+        return $data;
     }
 
     /**

@@ -16,6 +16,8 @@ class Vendor extends Model
 
     protected $appends = ['connection', 'balance', 'webhook'];
 
+    protected $hidden = ['password', 'api_key', 'secret_key', 'encryption_key'];
+
     protected $fillable = [
         'name', 'code', 'base_url', 'username', 'password', 'api_key', 'public_key',
         'auth_type', 'identifier', 'category', 'sub_category',

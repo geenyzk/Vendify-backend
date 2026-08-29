@@ -121,6 +121,18 @@ test('CheapDataHub provider record key takes precedence over stale environment c
     Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer new-admin-key'));
 });
 
+test('confirmed CheapDataHub airtime network catalogue is complete', function () {
+    config()->set('services.cheapdatahub.airtime_network_ids', [
+        'mtn' => 1, 'glo' => 2, 'airtel' => 3, '9mobile' => 4,
+    ]);
+    $client = new CheapDataHub(cheapDataHubVendor());
+    foreach (['mtn' => 1, 'glo' => 2, 'airtel' => 3, '9mobile' => 4] as $network => $expectedId) {
+        expect($client->formatPayload('airtime', [
+            'network' => $network, 'phone' => '08012345678', 'amount' => 100,
+        ])['provider_id'])->toBe($expectedId);
+    }
+});
+
 test('normalizes CheapDataHub wallet balance', function () {
     Http::fake(['*/wallet/balance/' => Http::response([
         'status' => 'true',

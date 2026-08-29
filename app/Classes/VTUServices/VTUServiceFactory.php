@@ -167,10 +167,11 @@ class VTUServiceFactory
             return null;
         }
 
-        if ($vendor && $planId) {
+        if ($vendor) {
             try {
                 $handler = VendorFactory::make($vendor);
-                if (! $handler->supportsService($service) || ! $handler->canServePlan($service, $planId)) {
+                if (! $handler->supportsService($service)
+                    || ($planId && ! $handler->canServePlan($service, $planId))) {
                     Log::info('Configured vendor cannot serve the selected plan', [
                         'service' => $service,
                         'provider_id' => $vendor->id,
