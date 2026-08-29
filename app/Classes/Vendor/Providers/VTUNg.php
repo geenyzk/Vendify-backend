@@ -84,18 +84,31 @@ class VTUNg extends VendorBase
         ];
     }
 
-    private function token(): string
+    private function token(bool $forceRefresh = false): string
     {
-        // api_key may hold a deliberately managed JWT. Otherwise cache a
-        // username/password login for less than VTU.ng's documented 7 days.
-        if ($this->provider->api_key) {
-            return (string) $this->provider->api_key;
+        $cacheKey = "vtu-ng:token:{$this->provider->id}";
+        if ($forceRefresh) {
+            Cache::forget($cacheKey);
         }
 
-        return Cache::remember("vtu-ng:token:{$this->provider->id}", now()->addDays(6), function () {
+        if (! $forceRefresh && ($cached = Cache::get($cacheKey))) {
+            return (string) $cached;
+        }
+
+        $username = $this->provider->username ?: config('services.vtu_ng.username');
+        $password = $this->provider->password ?: config('services.vtu_ng.password');
+        if (! $username || ! $password) {
+            $managedToken = $this->provider->api_key ?: config('services.vtu_ng.api_token');
+            if ($managedToken) return (string) $managedToken;
+            throw new \RuntimeException('VTU.ng credentials are not configured.');
+        }
+
+        // Only one worker may generate the latest-only-valid JWT at a time.
+        return Cache::lock("{$cacheKey}:refresh", 30)->block(10, function () use ($cacheKey, $username, $password) {
+            if ($cached = Cache::get($cacheKey)) return (string) $cached;
             $response = Http::connectTimeout(5)->timeout(15)->acceptJson()->post(
                 $this->rootUrl().'/jwt-auth/v1/token',
-                ['username' => $this->provider->username, 'password' => $this->provider->password]
+                ['username' => $username, 'password' => $password]
             );
 
             $token = $response->json('token');
@@ -103,8 +116,22 @@ class VTUNg extends VendorBase
                 throw new \RuntimeException('VTU.ng authentication failed.');
             }
 
+            Cache::put($cacheKey, $token, now()->addDays(6));
             return $token;
         });
+    }
+
+    private function authenticatedPost(string $url, array $payload)
+    {
+        $send = fn (string $token) => Http::connectTimeout(8)->timeout(45)
+            ->withToken($token)->acceptJson()->post($url, $payload);
+        $response = $send($this->token());
+        $body = $response->json();
+        $code = strtolower((string) (is_array($body) ? ($body['code'] ?? '') : ''));
+        $invalidToken = $response->status() === 401
+            || str_contains($code, 'jwt') || str_contains($code, 'token');
+
+        return $invalidToken ? $send($this->token(true)) : $response;
     }
 
     public function login(): array
@@ -125,9 +152,7 @@ class VTUNg extends VendorBase
     public function sendRequest(string $service, array $payload): array
     {
         try {
-            $response = Http::connectTimeout(8)->timeout(45)
-                ->withHeaders($this->getAuthHeaders())
-                ->post($this->baseUrl().$this->endpoint($service), $payload);
+            $response = $this->authenticatedPost($this->baseUrl().$this->endpoint($service), $payload);
         } catch (ConnectionException $e) {
             // The request may have reached VTU.ng. Recording pending prevents
             // unsafe provider failover; reconciliation can use /requery.
@@ -239,6 +264,16 @@ class VTUNg extends VendorBase
                 default => $response['plan_type'] ?? 'DATA',
             },
             'token' => $data['token'] ?? $response['token'] ?? null,
+            'provider_status' => $upstreamStatus ?: ($ambiguous ? 'transport-ambiguous' : (string) $httpStatus),
+            'safe_to_retry' => ! $ambiguous && (
+                in_array($upstreamStatus, ['refunded', 'failed', 'failed-api', 'cancelled', 'cancelled-api'], true)
+                || in_array($httpStatus, [401, 402, 422], true)
+            ),
+            'raw_payload' => [
+                'provider_status' => $upstreamStatus ?: null,
+                'request_id' => $data['request_id'] ?? $response['request_id'] ?? null,
+                'provider_reference' => $data['order_id'] ?? $response['order_id'] ?? null,
+            ],
             'completed_at' => $status === 'success' ? now() : null,
         ];
     }
@@ -247,8 +282,7 @@ class VTUNg extends VendorBase
     {
         $requestId = str_starts_with($tx_ref, 'vendify_') ? $tx_ref : substr('vendify_'.$tx_ref, 0, 50);
         try {
-            $response = Http::connectTimeout(8)->timeout(30)->withHeaders($this->getAuthHeaders())
-                ->post($this->baseUrl().'/requery', ['request_id' => $requestId]);
+            $response = $this->authenticatedPost($this->baseUrl().'/requery', ['request_id' => $requestId]);
             return $response->json() ?: [];
         } catch (ConnectionException) {
             return [];
@@ -469,9 +503,7 @@ class VTUNg extends VendorBase
         }
 
         try {
-            $response = Http::connectTimeout(8)->timeout(30)
-                ->withHeaders($this->getAuthHeaders())
-                ->post($this->baseUrl().'/verify-customer', [
+            $response = $this->authenticatedPost($this->baseUrl().'/verify-customer', [
                     'customer_id' => $identifier,
                     'service_id' => $this->electricityServiceId((string) ($payload['disco'] ?? '')),
                     'variation_id' => strtolower((string) ($payload['meter_type'] ?? 'prepaid')),

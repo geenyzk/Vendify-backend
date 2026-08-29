@@ -17,8 +17,10 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Cache;
 
 beforeEach(function () {
+    Cache::flush();
     foreach (['event_awards', 'events', 'cashback_rates', 'settings', 'transactions', 'users', 'providers'] as $table) {
         Schema::dropIfExists($table);
     }
@@ -68,6 +70,46 @@ beforeEach(function () {
     });
     Notification::fake();
     Queue::fake();
+});
+
+it('reuses one cached VTU.ng jwt for multiple airtime requests', function () {
+    $vendor = Vendor::create([
+        'name' => 'VTU.ng', 'category' => 'vendor', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.test/api/v2', 'username' => 'user', 'password' => 'pass', 'active' => true,
+    ]);
+    Http::fake([
+        'https://vtu.test/jwt-auth/v1/token' => Http::response(['token' => 'jwt-one']),
+        'https://vtu.test/api/v2/airtime' => Http::response(['code' => 'success', 'data' => ['status' => 'completed-api']]),
+    ]);
+    $client = new VTUNg($vendor);
+    $payload = $client->formatPayload('airtime', ['tx_ref' => 'JWT-1', 'phone' => '08012345678', 'network' => 'mtn', 'amount' => 100]);
+    $client->sendRequest('airtime', $payload);
+    $client->sendRequest('airtime', $payload);
+
+    Http::assertSentCount(3);
+    Http::assertSent(fn ($request) => $request->url() === 'https://vtu.test/api/v2/airtime'
+        && $request->hasHeader('Authorization', 'Bearer jwt-one'));
+});
+
+it('refreshes an invalid VTU.ng token once and retries airtime once', function () {
+    $vendor = Vendor::create([
+        'name' => 'VTU.ng', 'category' => 'vendor', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.test/api/v2', 'username' => 'user', 'password' => 'pass', 'active' => true,
+    ]);
+    Cache::put("vtu-ng:token:{$vendor->id}", 'expired-token', now()->addHour());
+    Http::fake([
+        'https://vtu.test/api/v2/airtime' => Http::sequence()
+            ->push(['code' => 'jwt_auth_invalid_token'], 401)
+            ->push(['code' => 'success', 'data' => ['status' => 'completed-api']], 200),
+        'https://vtu.test/jwt-auth/v1/token' => Http::response(['token' => 'fresh-token']),
+    ]);
+
+    (new VTUNg($vendor))->sendRequest('airtime', [
+        'request_id' => 'vendify_REFRESH', 'phone' => '08012345678', 'service_id' => 'mtn', 'amount' => 100,
+    ]);
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://vtu.test/api/v2/airtime'
+        && $request->hasHeader('Authorization', 'Bearer fresh-token'));
 });
 
 function vtuNgFixture(string $status): array

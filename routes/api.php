@@ -432,6 +432,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::get('/analytics', [AnalyticsController::class, 'index']);
         Route::get('/provider-types', [AdminController::class, 'providerTypes'])->middleware('permission:settings');
+        Route::get('/airtime-providers', [AdminController::class, 'airtimeProviders'])->middleware('permission:settings');
         Route::get('/gateway-types', [AdminController::class, 'gatewayTypes'])->middleware('permission:settings');
         Route::get('/vendor/{id}/refresh-token', [AdminController::class, 'refreshToken'])->middleware('permission:settings');
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks'])->middleware('permission:settings');

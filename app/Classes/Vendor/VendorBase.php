@@ -151,7 +151,10 @@ abstract class VendorBase implements VendorInterface
                 $transaction['response_message'] = $publicMessage;
                 return $this->success($transaction, $publicMessage, 202);
             } else {
-                return $this->fail([], VendorErrorMessage::forCurrentUser($responseMessage, 'fail', false), 500);
+                return $this->fail([
+                    'safe_to_retry' => (bool) ($formattedResponse['safe_to_retry'] ?? false),
+                    'provider_status' => $formattedResponse['provider_status'] ?? null,
+                ], VendorErrorMessage::forCurrentUser($responseMessage, 'fail', false), 500);
             }
         } catch (\Throwable $e) {
             // Vendor call blew up after we reserved (e.g. a null/non-JSON

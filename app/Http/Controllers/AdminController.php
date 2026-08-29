@@ -1253,6 +1253,11 @@ class AdminController extends Controller
         return $this->success(VendorFactory::availableProviders());
     }
 
+    public function airtimeProviders(): JsonResponse
+    {
+        return $this->success(app(AirtimeRoutingService::class)->providers());
+    }
+
     /**
      * The payment gateways the "add gateway" form can offer, each with its
      * credential-field schema — sourced from PaymentFactory so the form always

@@ -3,6 +3,7 @@
 use App\Classes\Vendor\Providers\Adex;
 use App\Classes\Vendor\Providers\Ogdams;
 use App\Classes\Vendor\Providers\VTUNg;
+use App\Classes\Vendor\Providers\CheapDataHub;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Models\AirtimePlan;
 use App\Models\CablePlan;
@@ -198,3 +199,18 @@ test('vtu ng is accepted for airtime and formats the documented v2 payload', fun
             'amount' => 100,
         ]);
 });
+
+test('CheapDataHub and VTU.ng can be primary and fallback in either direction', function (string $primaryType) {
+    $cheap = fallbackVendor('CheapDataHub', 'cheapdatahub');
+    $vtu = fallbackVendor('VTU.ng', 'vtu_ng');
+    $primary = $primaryType === 'cheapdatahub' ? $cheap : $vtu;
+    $fallback = $primaryType === 'cheapdatahub' ? $vtu : $cheap;
+    $plan = AirtimePlan::create(['name' => 'mtn', 'category' => 'vtu', 'type' => 'airtime', 'active' => true]);
+    attachFallback($plan, $primary, $fallback);
+
+    $primaryHandler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 100);
+    $fallbackHandler = VTUServiceFactory::makeFallback('airtime', 'vtu', 'mtn', null, 100, [$primary->id]);
+
+    expect($primaryHandler)->toBeInstanceOf($primaryType === 'cheapdatahub' ? CheapDataHub::class : VTUNg::class)
+        ->and($fallbackHandler)->toBeInstanceOf($primaryType === 'cheapdatahub' ? VTUNg::class : CheapDataHub::class);
+})->with(['CheapDataHub primary' => 'cheapdatahub', 'VTU.ng primary' => 'vtu_ng']);

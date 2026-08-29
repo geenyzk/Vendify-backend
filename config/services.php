@@ -41,6 +41,10 @@ return [
     'cheapdatahub' => [
         'api_key' => env('CHEAPDATAHUB_API_KEY'),
         'base_url' => env('CHEAPDATAHUB_BASE_URL', 'https://www.cheapdatahub.ng/api/v1/resellers'),
+        // JSON object supplied by CheapDataHub, e.g. {"mtn":1}. IDs are
+        // intentionally not guessed because their public docs do not list all
+        // network identifiers.
+        'airtime_network_ids' => json_decode(env('CHEAPDATAHUB_AIRTIME_NETWORK_IDS', '{}'), true) ?: [],
     ],
 
     'slack' => [

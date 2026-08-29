@@ -69,18 +69,56 @@ function mapCheapDataHubPlan(DataPlan $plan, Vendor $vendor, string $bundleId = 
     ]);
 }
 
-function cheapDataHubFormat(CheapDataHub $client, array $response): array
+function cheapDataHubFormat(CheapDataHub $client, array $response, string $service = 'data'): array
 {
     $method = new ReflectionMethod($client, 'formatResponse');
     $method->setAccessible(true);
-    return $method->invoke($client, 'data', $response);
+    return $method->invoke($client, $service, $response);
 }
 
 beforeEach(function () {
     config()->set('services.cheapdatahub', [
         'api_key' => 'environment-key',
         'base_url' => 'https://cheapdatahub.test/api/v1/resellers',
+        'airtime_network_ids' => ['mtn' => 17],
     ]);
+});
+
+test('sends CheapDataHub airtime with bearer api key and configured network id', function () {
+    Http::fake(['*/airtime/purchase/' => Http::response([
+        'status' => 'true', 'transaction_id' => 449, 'message' => 'Airtime purchase successful',
+    ])]);
+    $vendor = cheapDataHubVendor(['api_key' => 'provider-record-key']);
+    $client = new CheapDataHub($vendor);
+    $payload = $client->formatPayload('airtime', [
+        'network' => 'mtn', 'phone' => '08012345678', 'amount' => 100,
+    ]);
+    $response = $client->sendRequest('airtime', $payload);
+    $normalized = cheapDataHubFormat($client, array_merge($response, [
+        'tx_ref' => 'TXN-AIRTIME-CDH', 'network' => 'mtn', 'phone' => '08012345678', 'amount' => 100,
+    ]), 'airtime');
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://cheapdatahub.test/api/v1/resellers/airtime/purchase/'
+        && $request->hasHeader('Authorization', 'Bearer provider-record-key')
+        && $request['provider_id'] === 17
+        && $request['phone_number'] === '08012345678'
+        && $request['amount'] === 100);
+    expect($normalized)->toMatchArray([
+        'status' => 'success', 'transaction_type' => 'airtime_recharge', 'payment_reference' => 449,
+    ]);
+});
+
+test('CheapDataHub airtime refuses to invent a missing network mapping', function () {
+    config()->set('services.cheapdatahub.airtime_network_ids', []);
+    expect(fn () => (new CheapDataHub(cheapDataHubVendor()))->formatPayload('airtime', [
+        'network' => 'mtn', 'phone' => '08012345678', 'amount' => 100,
+    ]))->toThrow(InvalidArgumentException::class, 'network mapping is not configured');
+});
+
+test('CheapDataHub provider record key takes precedence over stale environment config', function () {
+    Http::fake(['*/wallet/balance/' => Http::response(['status' => 'true', 'data' => ['balance' => 1]])]);
+    (new CheapDataHub(cheapDataHubVendor(['api_key' => 'new-admin-key'])))->checkBalance();
+    Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer new-admin-key'));
 });
 
 test('normalizes CheapDataHub wallet balance', function () {

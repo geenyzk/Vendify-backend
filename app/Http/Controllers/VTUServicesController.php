@@ -378,7 +378,8 @@ class VTUServicesController extends Controller
                 // delivered or queued value and must never be sent twice.
                 $resultBody = $result->getData(true);
                 $shouldFailOver = $result->getStatusCode() >= 500
-                    && ($resultBody['success'] ?? false) === false;
+                    && ($resultBody['success'] ?? false) === false
+                    && data_get($resultBody, 'errors.safe_to_retry') === true;
 
                 if ($shouldFailOver && in_array($serviceType, ['data', 'airtime', 'cable'], true)) {
                     $failedReference = $validated['tx_ref'];

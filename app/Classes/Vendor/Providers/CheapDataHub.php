@@ -17,17 +17,20 @@ class CheapDataHub extends VendorBase
 
     protected function baseUrl(): string
     {
-        return rtrim((string) (config('services.cheapdatahub.base_url') ?: $this->provider->base_url), '/');
+        return rtrim((string) ($this->provider->base_url ?: config('services.cheapdatahub.base_url')), '/');
     }
 
     private function apiKey(): string
     {
-        return (string) (config('services.cheapdatahub.api_key') ?: $this->provider->api_key);
+        // The provider record is the admin-managed credential source. Env is
+        // only a deployment fallback; it must not override a replaced key.
+        return (string) ($this->provider->api_key ?: config('services.cheapdatahub.api_key'));
     }
 
     protected function endpoint(string $service): string
     {
         return match ($service) {
+            'airtime' => '/airtime/purchase/',
             'data' => '/data/purchase/',
             default => throw new \InvalidArgumentException("CheapDataHub does not support service [{$service}]."),
         };
@@ -40,7 +43,7 @@ class CheapDataHub extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['data'];
+        return ['airtime', 'data'];
     }
 
     protected function getAuthHeaders(): array
@@ -102,7 +105,10 @@ class CheapDataHub extends VendorBase
                 'bundle_id' => $payload['bundle_id'] ?? null,
                 'error' => 'network_error',
             ]);
-            throw new \RuntimeException('CheapDataHub is temporarily unavailable.', 0, $e);
+            return [
+                '_transport_ambiguous' => true,
+                'message' => 'CheapDataHub request outcome is unknown and requires provider review.',
+            ];
         }
 
         Log::log($response->successful() ? 'info' : 'warning', 'CheapDataHub data purchase result', [
@@ -118,6 +124,9 @@ class CheapDataHub extends VendorBase
 
     public function canServePlan(string $service, $planId): bool
     {
+        if ($service === 'airtime') {
+            return true;
+        }
         if ($service !== 'data' || ! $planId) {
             return false;
         }
@@ -136,6 +145,22 @@ class CheapDataHub extends VendorBase
 
     public function formatPayload(string $service, array $payload): array
     {
+        if ($service === 'airtime') {
+            $network = strtolower(trim((string) ($payload['network'] ?? '')));
+            $cheapDataHubNetworkProviderId = config("services.cheapdatahub.airtime_network_ids.{$network}");
+            if (! is_numeric($cheapDataHubNetworkProviderId)) {
+                throw new \InvalidArgumentException("CheapDataHub airtime network mapping is not configured for [{$network}].");
+            }
+
+            return [
+                // This is CheapDataHub's network identifier, never Vendify's
+                // internal providers.id value.
+                'provider_id' => (int) $cheapDataHubNetworkProviderId,
+                'phone_number' => (string) $payload['phone'],
+                'amount' => (int) $payload['amount'],
+            ];
+        }
+
         $plan = DataPlan::find($payload['data_plan'] ?? null);
         if (! $plan) {
             throw new \InvalidArgumentException('Data plan not found.');
@@ -162,23 +187,31 @@ class CheapDataHub extends VendorBase
     protected function formatResponse(string $service, array $response): array
     {
         $httpStatus = (int) ($response['_http_status'] ?? 0);
-        $success = $httpStatus >= 200 && $httpStatus < 300 && $this->truthy($response['status'] ?? false);
+        $ambiguous = (bool) ($response['_transport_ambiguous'] ?? false);
+        $success = ! $ambiguous && $httpStatus >= 200 && $httpStatus < 300 && $this->truthy($response['status'] ?? false);
         $message = $success
             ? ($response['message'] ?? 'Data purchase successful')
             : $this->errorMessage($httpStatus, $response['message'] ?? null);
 
         return [
             'provider' => $this->providerName,
-            'transaction_type' => 'data_subscription',
-            'status' => $success ? 'success' : 'fail',
+            'transaction_type' => $service === 'airtime' ? 'airtime_recharge' : 'data_subscription',
+            'status' => $ambiguous ? 'pending' : ($success ? 'success' : 'fail'),
             'transaction_reference' => $response['tx_ref'] ?? null,
-            'payment_reference' => $response['reference'] ?? null,
+            'payment_reference' => $response['reference'] ?? $response['transaction_id'] ?? null,
             'response_message' => $message,
             'account_or_phone' => $response['phone'] ?? null,
             'receiver' => $response['phone'] ?? null,
             'amount' => $response['amount'] ?? 0,
             'discount_amount' => $response['discount_amount'] ?? 0,
-            'plan_type' => $response['plan_type'] ?? 'DATA',
+            'plan_type' => $service === 'airtime' ? ($response['network_type'] ?? 'VTU') : ($response['plan_type'] ?? 'DATA'),
+            // Only definitive pre-fulfilment rejections are safe to retry.
+            'safe_to_retry' => ! $ambiguous && ! $success && in_array($httpStatus, [401, 402, 422], true),
+            'provider_status' => $ambiguous ? 'transport-ambiguous' : (string) ($response['status'] ?? $httpStatus),
+            'raw_payload' => [
+                'provider_status' => $ambiguous ? 'transport-ambiguous' : ($response['status'] ?? null),
+                'provider_reference' => $response['reference'] ?? $response['transaction_id'] ?? null,
+            ],
             'completed_at' => $success ? now() : null,
         ];
     }
