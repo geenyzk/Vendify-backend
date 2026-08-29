@@ -26,7 +26,12 @@ class TransactionResource extends JsonResource
             'promotion_id' => $this->promotion_id,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
-            "provider" => $this->provider,
+            // Provider adapter keys are operational details. Electricity
+            // receipts should name the disco that supplied the meter instead.
+            "provider" => $this->transaction_type === 'electric_bill'
+                ? ($this->distribution_company ?? $this->electricityProviderLabel())
+                : $this->provider,
+            'provider_key' => $this->provider,
             'network' => $this->network,
             'airtime_plan_id' => $this->airtime_plan_id,
             'primary_provider_id' => $this->primary_provider_id,
@@ -62,5 +67,10 @@ class TransactionResource extends JsonResource
                 'email' => $this->user->email,
             ]),
         ];
+    }
+
+    private function electricityProviderLabel(): ?string
+    {
+        return $this->provider === 'electricity_sandbox' ? 'Ikeja Electric' : $this->provider;
     }
 }

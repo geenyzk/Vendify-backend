@@ -91,7 +91,7 @@ class ElectricitySandboxProvider
                 'meter_number' => $meter,
                 'meter_type' => $type,
                 'customer_name' => $fixture['name'],
-                'distribution_company' => (string) $payload['disco'],
+                'distribution_company' => $this->distributionCompany((string) $payload['disco']),
             ],
         ]);
 
@@ -109,6 +109,15 @@ class ElectricitySandboxProvider
     {
         $digits = substr(preg_replace('/\D/', '', hash('sha256', $reference)) ?: '12345678901234567890', 0, 20);
         return implode(' ', str_split(str_pad($digits, 20, '0'), 4));
+    }
+
+    private function distributionCompany(string $disco): string
+    {
+        if (preg_match('/\(([^)]+)\)/', $disco, $match)) {
+            return trim($match[1]);
+        }
+
+        return strcasecmp($disco, 'electricity_sandbox') === 0 ? 'Ikeja Electric' : $disco;
     }
 
     private function assertAllowed(User $user): void

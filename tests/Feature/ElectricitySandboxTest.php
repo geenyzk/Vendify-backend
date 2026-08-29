@@ -78,14 +78,31 @@ test('sandbox prepaid purchase creates a flagged token transaction without touch
         ->and((float) $user->fresh()->wallet_balance)->toBe($before);
     $originalToken = $response->json('data.token');
     $transaction = Transaction::where('transaction_reference', 'EL-SANDBOX-0001')->firstOrFail();
+    $transaction->refresh();
     expect($transaction->is_sandbox)->toBeTrue()
         ->and($transaction->provider)->toBe('electricity_sandbox')
-        ->and($transaction->token)->toBe($originalToken);
+        ->and($transaction->token)->not->toBeNull()
+        ->and($transaction->token)->toBe($originalToken)
+        ->and($transaction->customer_name)->toBe('VENDIFY TEST CUSTOMER')
+        ->and($transaction->meter_number)->toBe('1111111111111');
     $this->actingAs($user->fresh(), 'sanctum')->getJson("/api/transactions/{$transaction->id}/status")
         ->assertOk()
+        ->assertJsonPath('data.token', $originalToken)
         ->assertJsonPath('data.electricity_token', $originalToken)
         ->assertJsonPath('data.customer_name', 'VENDIFY TEST CUSTOMER')
-        ->assertJsonPath('data.meter_number', '1111111111111');
+        ->assertJsonPath('data.meter_number', '1111111111111')
+        ->assertJsonPath('data.meter_type', 'prepaid')
+        ->assertJsonPath('data.provider', 'Ikeja Electric')
+        ->assertJsonPath('data.provider_key', 'electricity_sandbox');
+    $this->actingAs($user->fresh(), 'sanctum')->getJson('/api/customer/dashboard')
+        ->assertOk()
+        ->assertJsonPath('data.transactions.0.token', $originalToken)
+        ->assertJsonPath('data.transactions.0.electricity_token', $originalToken)
+        ->assertJsonPath('data.transactions.0.customer_name', 'VENDIFY TEST CUSTOMER')
+        ->assertJsonPath('data.transactions.0.distribution_company', 'Ikeja Electric')
+        ->assertJsonPath('data.transactions.0.provider', 'Ikeja Electric')
+        ->assertJsonPath('data.transactions.0.provider_key', 'electricity_sandbox')
+        ->assertJsonMissingPath('data.transactions.0.raw_payload');
     Http::assertNothingSent();
 });
 

@@ -13,6 +13,7 @@ class Transaction extends Model
 {
     //
     protected $appends = ['service', 'meter_type', 'meter_number', 'customer_name', 'distribution_company', 'electricity_token'];
+    protected $hidden = ['idempotency_key', 'raw_payload'];
     protected $fillable = [
         'user_id', 'transaction_type', 'provider', 'account_or_phone', 'amount', 'cost',
         'quantity', 'status', 'transaction_reference', 'payment_reference',
@@ -80,9 +81,20 @@ class Transaction extends Model
 
     public function getDistributionCompanyAttribute(): ?string
     {
-        return $this->transaction_type === 'electric_bill'
-            ? ($this->raw_payload['distribution_company'] ?? $this->raw_payload['disco'] ?? null)
-            : null;
+        if ($this->transaction_type !== 'electric_bill') {
+            return null;
+        }
+
+        $company = $this->raw_payload['distribution_company'] ?? $this->raw_payload['disco'] ?? null;
+        if (is_string($company) && preg_match('/\(([^)]+)\)/', $company, $match)) {
+            return trim($match[1]);
+        }
+
+        if ((! is_string($company) || trim($company) === '') && $this->provider === 'electricity_sandbox') {
+            return 'Ikeja Electric';
+        }
+
+        return is_string($company) && trim($company) !== '' ? $company : null;
     }
 
     public function getElectricityTokenAttribute(): ?string

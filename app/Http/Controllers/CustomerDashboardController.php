@@ -54,8 +54,23 @@ class CustomerDashboardController extends Controller
         $transactions = Transaction::where('user_id', $user->id)->latest()->limit(6)->get([
             'id', 'user_id', 'transaction_type', 'provider', 'amount', 'status',
             'transaction_reference', 'receiver', 'account_or_phone', 'plan_type',
-            'quantity', 'created_at',
+            'quantity', 'service_fee', 'discount_amount', 'funding_method', 'token',
+            'raw_payload', 'response_message', 'completed_at', 'refunded_at',
+            'refund_reason', 'is_sandbox', 'created_at',
         ]);
+        $transactions->each(function (Transaction $transaction) {
+            if ($transaction->transaction_type !== 'electric_bill') {
+                return;
+            }
+
+            $providerKey = $transaction->provider;
+            $transaction->setAttribute('provider_key', $providerKey);
+            $transaction->setAttribute(
+                'provider',
+                $transaction->distribution_company
+                    ?? ($providerKey === 'electricity_sandbox' ? 'Ikeja Electric' : $providerKey),
+            );
+        });
 
         $user->load('role.permissions');
         $user->setAppends(['has_pin']);
