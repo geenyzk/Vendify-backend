@@ -10,6 +10,7 @@ use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\ServiceRoute;
 use App\Models\Vendor;
+use App\Services\AirtimeRoutingService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -109,11 +110,11 @@ class VTUServiceFactory
             return self::usable(VTUNg::activeProvider(), $service, $network, $planId, $amount);
         }
 
-        if ($service === 'airtime' && $network) {
-            $vendor = self::usable(self::airtimePlanVendor($network, $sub), $service, $network, $planId, $amount);
-            if ($vendor) {
-                return $vendor;
-            }
+        if ($service === 'airtime') {
+            // Airtime is deliberately single-source: an exact active plan and
+            // its explicit providerables mapping. Never continue into generic
+            // Service Routing or the legacy stock-vending default.
+            return self::usable(self::airtimePlanVendor($network, $sub), $service, $network, $planId, $amount);
         }
 
         // Data mirrors airtime: prefer the provider explicitly attached to the
@@ -199,14 +200,7 @@ class VTUServiceFactory
      */
     private static function airtimePlanVendor($network, $category): ?Vendor
     {
-        $plans = AirtimePlan::where('name', $network)->where('active', true)->get();
-        if ($plans->isEmpty()) {
-            return null;
-        }
-
-        $plan = $plans->first(fn ($p) => ($p->category ?: 'vtu') === $category)
-            ?? $plans->first();
-
-        return $plan?->resolveVendor();
+        $plan = app(AirtimeRoutingService::class)->plan((string) $network, $category);
+        return $plan ? app(AirtimeRoutingService::class)->primary($plan) : null;
     }
 }

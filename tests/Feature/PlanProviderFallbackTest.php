@@ -8,6 +8,7 @@ use App\Models\AirtimePlan;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\Vendor;
+use App\Models\ServiceRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -92,6 +93,31 @@ test('airtime and cable expose their configured fallback handlers', function () 
         ->and($airtimeHandler->providerId())->toBe($fallback->id)
         ->and($cablePrimary->providerId())->toBe($primary->id)
         ->and($cableFallback->providerId())->toBe($fallback->id);
+});
+
+test('airtime plan provider is authoritative over generic service routing', function () {
+    $primary = fallbackVendor('CHEAP DTA', 'adex');
+    $global = fallbackVendor('Quickly Sim', 'adex');
+    $plan = AirtimePlan::create(['name' => 'mtn', 'category' => 'vtu', 'type' => 'airtime', 'active' => true]);
+    DB::table('providerables')->insert([
+        'provider_id' => $primary->id, 'providerable_id' => $plan->id,
+        'providerable_type' => AirtimePlan::class, 'cost_price' => 0,
+        'margin_value' => 0, 'margin_type' => 'fiat', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    ServiceRoute::create(['service_type' => 'airtime', 'route_key' => 'vtu', 'provider_id' => $global->id]);
+
+    $handler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 100);
+
+    expect($handler)->toBeInstanceOf(Adex::class)
+        ->and($handler->providerId())->toBe($primary->id);
+});
+
+test('missing airtime primary fails closed instead of using generic routing', function () {
+    $global = fallbackVendor('Legacy Global', 'adex');
+    AirtimePlan::create(['name' => 'mtn', 'category' => 'vtu', 'type' => 'airtime', 'active' => true]);
+    ServiceRoute::create(['service_type' => 'airtime', 'route_key' => 'vtu', 'provider_id' => $global->id]);
+
+    expect(VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 100))->toBeNull();
 });
 
 test('synced vtu ng glo and mtn plans resolve the adapter and provider payload', function (string $network, string $serviceId, string $variationId) {

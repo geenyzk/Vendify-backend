@@ -1,21 +1,19 @@
 <?php
 
-use App\Classes\Vendor\Providers\Adex;
 use App\Classes\Vendor\Providers\SimVending;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Models\ServiceRoute;
+use App\Models\AirtimePlan;
 use App\Models\Sim;
 use App\Models\SimDevice;
 use App\Models\Vendor;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 /**
- * The default-with-failover routing contract: the Service Routing table
- * points airtime/data at the SIM vendor, but resolution only lands there
- * when a SIM can actually serve the vend RIGHT NOW — otherwise it falls
- * through (before any funds are reserved) to the next provider layer, here
- * the legacy stock_vendings assignment.
+ * Airtime SIM vending is explicit plan routing. An unavailable configured SIM
+ * route fails closed; it never falls through to generic or legacy routing.
  */
 
 function createSimFailoverTables(): void
@@ -58,6 +56,16 @@ function createSimFailoverTables(): void
         $table->boolean('active')->default(false);
         $table->timestamps();
     });
+    Schema::create('providerables', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('provider_id')->nullable();
+        $table->unsignedBigInteger('providerable_id');
+        $table->string('providerable_type');
+        $table->decimal('cost_price')->default(0);
+        $table->decimal('margin_value')->default(0);
+        $table->string('margin_type')->default('fiat');
+        $table->timestamps();
+    });
 
     Schema::create('sim_devices', function (Blueprint $table) {
         $table->id();
@@ -96,7 +104,7 @@ function createSimFailoverTables(): void
 function dropSimFailoverTables(): void
 {
     foreach ([
-        'sims', 'sim_devices', 'airtime_plans', 'stock_vendings',
+        'sims', 'sim_devices', 'providerables', 'airtime_plans', 'stock_vendings',
         'service_routes', 'providers',
     ] as $table) {
         Schema::dropIfExists($table);
@@ -124,6 +132,14 @@ function seedSimFailoverRouting(): Vendor
         'service_type' => 'airtime',
         'route_key' => 'vtu',
         'provider_id' => $simVendor->id,
+    ]);
+
+    $plan = AirtimePlan::create(['name' => 'mtn', 'category' => 'vtu', 'active' => true]);
+    DB::table('providerables')->insert([
+        'provider_id' => $simVendor->id,
+        'providerable_id' => $plan->id,
+        'providerable_type' => AirtimePlan::class,
+        'created_at' => now(), 'updated_at' => now(),
     ]);
 
     \Illuminate\Support\Facades\DB::table('stock_vendings')->insert([
@@ -174,7 +190,7 @@ test('an online funded sim resolves the simvend provider', function () {
     expect($handler)->toBeInstanceOf(SimVending::class);
 });
 
-test('with no online device the purchase falls through to the stock-vending fallback', function () {
+test('with no online device explicit airtime routing fails closed', function () {
     seedSimFailoverRouting();
     // Device exists but hasn't checked in within the online window.
     $sim = makeOnlineSimForFailover();
@@ -184,26 +200,26 @@ test('with no online device the purchase falls through to the stock-vending fall
 
     $handler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 500.0);
 
-    expect($handler)->toBeInstanceOf(Adex::class);
+    expect($handler)->toBeNull();
 });
 
-test('a sim whose balance cannot cover the vend plus reserve falls through', function () {
+test('a sim whose balance cannot cover the vend plus reserve fails closed', function () {
     seedSimFailoverRouting();
     // 500 vend + airtime_reserve headroom > 550 balance.
     makeOnlineSimForFailover(550);
 
     $handler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 500.0);
 
-    expect($handler)->toBeInstanceOf(Adex::class);
+    expect($handler)->toBeNull();
 });
 
-test('a wrong-network sim falls through', function () {
+test('a wrong-network sim fails closed', function () {
     seedSimFailoverRouting();
     makeOnlineSimForFailover()->update(['network' => 'airtel']);
 
     $handler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 500.0);
 
-    expect($handler)->toBeInstanceOf(Adex::class);
+    expect($handler)->toBeNull();
 });
 
 test('the master switch disables SIM vending entirely', function () {
@@ -213,5 +229,5 @@ test('the master switch disables SIM vending entirely', function () {
 
     $handler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 500.0);
 
-    expect($handler)->toBeInstanceOf(Adex::class);
+    expect($handler)->toBeNull();
 });

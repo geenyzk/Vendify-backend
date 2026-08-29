@@ -19,7 +19,7 @@ class AirtimePlan extends Model
 
     // Expose the attached provider (and whether one is set) so the admin form
     // can pre-fill the provider picker on edit — mirrors DataPlan.
-    protected $appends = ["provider", "use_provider_as_providerable", "fallbacks", "fallback_provider", "fallback_provider_id", "fallback_server_id", "fallback_cost_price", "provider_discount", "fallback_provider_discount"];
+    protected $appends = ["provider", "primary_provider", "routing_status", "fallbacks", "fallback_provider", "fallback_provider_id", "fallback_server_id", "fallback_cost_price", "provider_discount", "fallback_provider_discount"];
 
     public function toArray()
     {
@@ -42,40 +42,20 @@ class AirtimePlan extends Model
             ->withTimestamps();
     }
 
-    /**
-     * The single provider attached to this airtime plan, if any — falls back
-     * to the network's default provider (via its active network type), same
-     * as DataPlan.
-     */
+    /** The explicitly assigned primary provider. No implicit routing source. */
     public function getProviderAttribute()
     {
-        $provider = $this->providers()->first();
-        if ($provider) {
-            return $provider;
-        }
-
-        try {
-            $network = Network::where('name', $this->name)->first();
-            if ($network) {
-                $networkType = $network->networkTypes()->wherePivot('active', 1)->first();
-                if ($networkType && method_exists($networkType, 'provider')) {
-                    return $networkType->provider;
-                }
-            }
-        } catch (\Throwable $e) {
-            // swallow and return null on error
-        }
-
-        return null;
+        return $this->providers()->whereNotNull('providers.id')->first();
     }
 
-    public function getUseProviderAsProviderableAttribute()
+    public function getPrimaryProviderAttribute()
     {
-        if ($this->relationLoaded('providers')) {
-            return !empty($this->getRelation('providers'));
-        }
+        return $this->provider;
+    }
 
-        return $this->providers()->exists();
+    public function getRoutingStatusAttribute(): string
+    {
+        return $this->provider ? 'active' : 'not_configured';
     }
 
     /**
@@ -90,7 +70,7 @@ class AirtimePlan extends Model
      */
     public function resolveVendor(): ?Vendor
     {
-        $provider = $this->providers()->first();
+        $provider = $this->provider;
         if (!$provider) {
             return null;
         }

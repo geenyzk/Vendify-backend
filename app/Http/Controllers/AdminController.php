@@ -10,6 +10,7 @@ use App\Models\ChildDirective;
 use App\Models\ChildInstance;
 use App\Models\ChildTransaction;
 use App\Models\DataPlan;
+use App\Models\AirtimePlan;
 use App\Models\Discount;
 use App\Models\General;
 use App\Models\NetworkType;
@@ -22,6 +23,7 @@ use App\Support\AuditLogger;
 use App\Support\ErrorMessage;
 use App\Support\PerformanceCache;
 use App\Support\ProviderPlanPresentation;
+use App\Services\AirtimeRoutingService;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
@@ -618,6 +620,22 @@ class AdminController extends Controller
                 Log::info($item);
                 if (! is_array($item)) {
                     continue;
+                }
+
+                if ($modelClass === AirtimePlan::class && (! isset($item['id']) || array_key_exists('providerable', $item))) {
+                    $providerable = is_array($item['providerable'] ?? null) ? $item['providerable'] : [];
+                    $primaryId = $providerable['provider_id'] ?? null;
+                    if (! $primaryId) {
+                        throw ValidationException::withMessages(['providerable.provider_id' => 'Primary provider is required for airtime.']);
+                    }
+                    $routing = app(AirtimeRoutingService::class);
+                    $routing->assertProvider($primaryId);
+                    foreach (self::normalizeProviderFallbacks($providerable, $primaryId) as $fallback) {
+                        $routing->assertProvider($fallback['provider_id'], 'providerable.fallback_provider_id');
+                    }
+                    // The old toggle is ignored for airtime. Its plan mapping
+                    // is always authoritative; other product behavior remains.
+                    $item['use_provider_as_providerable'] = true;
                 }
 
                 // Provider and gateway management use the user-facing

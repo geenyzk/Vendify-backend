@@ -363,8 +363,10 @@ class VTUServicesController extends Controller
             if (!$handler) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Unsupported or unconfigured service.',
-                ], 400);
+                    'message' => $serviceType === 'airtime'
+                        ? 'Airtime routing is not configured for this network and type.'
+                        : 'Unsupported or unconfigured service.',
+                ], $serviceType === 'airtime' ? 500 : 400);
             }
 
             try {
