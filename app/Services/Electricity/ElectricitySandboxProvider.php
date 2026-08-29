@@ -18,14 +18,16 @@ class ElectricitySandboxProvider
         '2222222222222' => ['name' => 'VENDIFY POSTPAID TEST', 'type' => 'postpaid'],
     ];
 
-    public function enabled(): bool
+    public function __construct(private readonly ElectricitySandboxAccess $access) {}
+
+    public function enabledFor(?User $user): bool
     {
-        return ! app()->environment('production') && (bool) config('electricity.sandbox_enabled', false);
+        return $this->access->allowedFor($user);
     }
 
-    public function verify(string $meter, string $meterType): JsonResponse
+    public function verify(User $user, string $meter, string $meterType): JsonResponse
     {
-        $this->assertEnabled();
+        $this->assertAllowed($user);
         Log::info('[ELECTRICITY SANDBOX] Meter verification', ['meter_number' => $meter]);
 
         if ($meter === '3000000000000') return $this->fail([], 'Meter verification timed out.', 504, 'provider_timeout');
@@ -51,7 +53,7 @@ class ElectricitySandboxProvider
 
     public function purchase(User $user, array $payload): JsonResponse
     {
-        $this->assertEnabled();
+        $this->assertAllowed($user);
         $meter = (string) $payload['meter_number'];
         $type = (string) $payload['meter_type'];
         if ($meter === '3000000000000') return $this->fail([], 'Electricity purchase timed out.', 504, 'provider_timeout');
@@ -97,14 +99,16 @@ class ElectricitySandboxProvider
         return $this->success($data, 'Sandbox electricity purchase successful.');
     }
 
-    private function assertEnabled(): void
-    {
-        if (! $this->enabled()) throw new \LogicException('Electricity sandbox is disabled.');
-    }
-
     private function token(string $reference): string
     {
         $digits = substr(preg_replace('/\D/', '', hash('sha256', $reference)) ?: '12345678901234567890', 0, 20);
         return implode(' ', str_split(str_pad($digits, 20, '0'), 4));
+    }
+
+    private function assertAllowed(User $user): void
+    {
+        if (! $this->enabledFor($user)) {
+            throw new \LogicException('Electricity sandbox access denied.');
+        }
     }
 }

@@ -212,7 +212,7 @@ class VTUServicesController extends Controller
                 : $this->success($existing, $existing->response_message, $code, $existing->status);
         }
 
-        if ($service === 'electricity' && $electricitySandbox->enabled()) {
+        if ($service === 'electricity' && $electricitySandbox->enabledFor($request->user())) {
             return $electricitySandbox->purchase($request->user(), $validated);
         }
 
@@ -618,8 +618,8 @@ class VTUServicesController extends Controller
             $payload = $request->validate(array_merge([
                 'identifier' => 'required|string',
             ], $val));
-            if ($service === 'electricity' && $electricitySandbox->enabled()) {
-                return $electricitySandbox->verify($payload['identifier'], $payload['meter_type']);
+            if ($service === 'electricity' && $electricitySandbox->enabledFor($request->user())) {
+                return $electricitySandbox->verify($request->user(), $payload['identifier'], $payload['meter_type']);
             }
             $routeKey = $service === 'electricity'
                 ? ($payload['disco'] ?? $service)
@@ -646,7 +646,7 @@ class VTUServicesController extends Controller
 
     public function electricitySandboxStatus(ElectricitySandboxProvider $sandbox): JsonResponse
     {
-        $enabled = $sandbox->enabled();
+        $enabled = $sandbox->enabledFor(request()->user());
         return $this->success([
             'enabled' => $enabled,
             'test_prepaid_meter' => $enabled ? '1111111111111' : null,

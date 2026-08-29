@@ -11,17 +11,21 @@ use Illuminate\Support\Facades\Notification;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    config(['app.env' => 'testing', 'electricity.sandbox_enabled' => true]);
+    config([
+        'app.env' => 'testing',
+        'electricity.sandbox_enabled' => true,
+        'electricity.sandbox_allowed_emails' => [' SANDBOX@EXAMPLE.COM '],
+    ]);
     BillPlan::create(['disco' => 'IKEDC (Ikeja Electric)', 'min' => 500, 'max' => 100000, 'active' => true]);
     Http::fake();
     Notification::fake();
 });
 
-function sandboxElectricityUser(): User
+function sandboxElectricityUser(string $email = 'sandbox@example.com'): User
 {
     return User::create([
         'username' => uniqid('power_'), 'fullname' => 'Power Tester',
-        'email' => uniqid().'@example.com', 'phone' => '08000000001',
+        'email' => $email, 'phone' => '08000000001',
         'password' => 'password', 'pin' => '1234', 'wallet_balance' => 5000,
         'status' => 'active',
     ]);
@@ -60,6 +64,7 @@ test('timeout sandbox meter produces timeout handling', function () {
 });
 
 test('sandbox prepaid purchase creates a flagged token transaction without touching wallet or VTU.ng', function () {
+    config(['app.env' => 'production']);
     $user = sandboxElectricityUser();
     $before = (float) $user->wallet_balance;
 
@@ -87,10 +92,39 @@ test('sandbox postpaid purchase succeeds without generating a token', function (
     Http::assertNothingSent();
 });
 
-test('production environment cannot activate electricity sandbox', function () {
+test('production permits electricity sandbox only for an allowlisted user', function () {
     config(['app.env' => 'production', 'electricity.sandbox_enabled' => true]);
     $this->actingAs(sandboxElectricityUser(), 'sanctum')->getJson('/api/vtu/electricity/sandbox-status')
-        ->assertOk()->assertJsonPath('data.enabled', false)->assertJsonPath('data.test_prepaid_meter', null);
+        ->assertOk()->assertJsonPath('data.enabled', true)->assertJsonPath('data.test_prepaid_meter', '1111111111111');
+});
+
+test('empty allowlist and disabled flag deny sandbox access', function () {
+    $user = sandboxElectricityUser();
+    config(['electricity.sandbox_allowed_emails' => []]);
+    $this->actingAs($user, 'sanctum')->getJson('/api/vtu/electricity/sandbox-status')
+        ->assertOk()->assertJsonPath('data.enabled', false);
+
+    config(['electricity.sandbox_allowed_emails' => ['sandbox@example.com'], 'electricity.sandbox_enabled' => false]);
+    $this->getJson('/api/vtu/electricity/sandbox-status')
+        ->assertOk()->assertJsonPath('data.enabled', false);
+});
+
+test('non-allowlisted production user stays on the real VTU.ng flow', function () {
+    config(['app.env' => 'production']);
+    Provider::create([
+        'name' => 'VTU.ng', 'category' => 'vendor', 'sub_category' => 'vtu_ng',
+        'base_url' => 'https://vtu.test/wp-json/api/v2', 'api_key' => 'live-test-token', 'active' => true,
+    ]);
+    Http::fake(['https://vtu.test/wp-json/api/v2/verify-customer' => Http::response([
+        'code' => 'failure', 'message' => 'Live provider rejected the meter.', 'data' => ['status' => 400],
+    ], 400)]);
+
+    $user = sandboxElectricityUser('normal-customer@example.com');
+    $this->actingAs($user, 'sanctum')->getJson('/api/vtu/electricity/sandbox-status')
+        ->assertOk()->assertJsonPath('data.enabled', false);
+    verifySandboxMeter($this, $user, '1111111111111')->assertStatus(400)
+        ->assertJsonPath('message', 'Live provider rejected the meter.');
+    Http::assertSent(fn ($request) => $request->url() === 'https://vtu.test/wp-json/api/v2/verify-customer');
 });
 
 test('disabled sandbox keeps the existing VTU.ng electricity verification flow', function () {
