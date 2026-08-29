@@ -136,6 +136,34 @@ test('permission errors are normalized and raw detail stays internal', function 
     expect($provider->fresh()->active)->toBeFalse();
 });
 
+test('an invalidated VTU token is refreshed once without disabling the betting provider', function () {
+    [$user, $provider] = bettingFixture();
+    Vendor::where('sub_category', 'vtu_ng')->update([
+        'username' => 'reseller@example.com',
+        'password' => 'secret-password',
+    ]);
+    Http::fakeSequence()
+        ->push([
+            'code' => 'rest_forbidden',
+            'message' => 'Token has been invalidated. Please generate a new JWT.',
+            'data' => ['status' => 403],
+        ], 403)
+        ->push(['token' => 'fresh-jwt-token'])
+        ->push([
+            'code' => 'success',
+            'message' => 'Customer Details Retrieved',
+            'data' => ['customer_name' => 'TEST USER'],
+        ]);
+
+    $this->actingAs($user, 'sanctum')->postJson('/api/betting/verify', [
+        'provider' => 'bet9ja',
+        'customer_id' => 'BET12345',
+    ])->assertOk()->assertJsonPath('data.verified', true);
+
+    expect($provider->fresh()->active)->toBeTrue();
+    Http::assertSentCount(3);
+});
+
 test('server error after funding submission remains pending to prevent an unsafe refund', function () {
     [$user] = bettingFixture();
     Http::fakeSequence()
