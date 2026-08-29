@@ -15,8 +15,9 @@ use Illuminate\Support\Carbon;
  * with "3 things need attention" instead of a wall of metrics.
  *
  * Deliberately DB-only — no live vendor HTTP pings — so it always returns in
- * milliseconds. Vendor connectivity is read from the stored `connection`
- * flag, which the existing health checks maintain.
+ * milliseconds. A vendor's active switch is configuration, not proof that a
+ * provider-specific health endpoint succeeded. Purchase adapters remain the
+ * authority for transaction outcomes.
  */
 class GetSystemHealthTool extends AiTool
 {
@@ -77,12 +78,9 @@ class GetSystemHealthTool extends AiTool
             $vendorRows[] = [
                 'name' => $vendor->name,
                 'balance' => $balance,
-                'connected' => (bool) $vendor->connection,
+                'enabled' => true,
                 'below_auto_fund_threshold' => $belowThreshold,
             ];
-            if (!$vendor->connection) {
-                $issues[] = "Vendor \"{$vendor->name}\" is flagged as disconnected — purchases routed to it will fail.";
-            }
             if ($belowThreshold) {
                 $issues[] = "Vendor \"{$vendor->name}\" balance (" . number_format($balance, 2) . ") is below its auto-fund threshold (" . number_format((float) $threshold, 2) . ').';
             }
