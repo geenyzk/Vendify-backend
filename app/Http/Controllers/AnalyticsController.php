@@ -148,7 +148,7 @@ class AnalyticsController extends Controller
 
     private function buildTransactionsOverTime(Carbon $start, Carbon $end): array
     {
-        $rows = Transaction::selectRaw('DATE(created_at) as date, status, COUNT(*) as total')
+        $rows = Transaction::real()->selectRaw('DATE(created_at) as date, status, COUNT(*) as total')
             ->whereBetween('created_at', [$start, $end])
             ->groupBy(DB::raw('DATE(created_at)'), 'status')
             ->get()
@@ -170,7 +170,7 @@ class AnalyticsController extends Controller
 
     private function buildByServiceType(Carbon $start, Carbon $end): array
     {
-        $rows = Transaction::selectRaw('transaction_type, SUM(amount) as revenue, COUNT(*) as count')
+        $rows = Transaction::real()->selectRaw('transaction_type, SUM(amount) as revenue, COUNT(*) as count')
             ->whereBetween('created_at', [$start, $end])
             ->where('status', 'success')
             ->groupBy('transaction_type')
@@ -193,7 +193,7 @@ class AnalyticsController extends Controller
 
     private function buildByProvider(Carbon $start, Carbon $end): array
     {
-        return Transaction::selectRaw('provider, SUM(amount) as revenue, COUNT(*) as count')
+        return Transaction::real()->selectRaw('provider, SUM(amount) as revenue, COUNT(*) as count')
             ->whereBetween('created_at', [$start, $end])
             ->where('status', 'success')
             ->whereNotNull('provider')
@@ -225,7 +225,7 @@ class AnalyticsController extends Controller
 
     private function buildFundingVsSpend(Carbon $start, Carbon $end): array
     {
-        $base = Transaction::whereBetween('created_at', [$start, $end])->where('status', 'success');
+        $base = Transaction::real()->whereBetween('created_at', [$start, $end])->where('status', 'success');
 
         return [
             'total_funding' => (float) (clone $base)->whereIn('transaction_type', self::FUNDING_TYPES)->sum('amount'),
@@ -235,7 +235,7 @@ class AnalyticsController extends Controller
 
     private function buildTopCustomers(Carbon $start, Carbon $end, int $limit = 10): array
     {
-        $rows = Transaction::selectRaw('user_id, SUM(amount) as total_spent, COUNT(*) as transaction_count')
+        $rows = Transaction::real()->selectRaw('user_id, SUM(amount) as total_spent, COUNT(*) as transaction_count')
             ->whereBetween('created_at', [$start, $end])
             ->where('status', 'success')
             ->whereNotIn('transaction_type', self::FUNDING_TYPES)

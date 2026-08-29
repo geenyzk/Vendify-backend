@@ -121,6 +121,9 @@ class TransactionController extends Controller
         if (!$transaction->user) {
             return $this->fail([], 'This transaction has no associated user to refund.', 422);
         }
+        if ($transaction->is_sandbox) {
+            return $this->fail([], 'Sandbox transactions do not move wallet funds and cannot be refunded.', 422);
+        }
 
         if (!in_array($transaction->transaction_type, Transaction::REFUNDABLE_TYPES, true)) {
             return $this->fail([], 'This transaction type cannot be refunded.', 422);

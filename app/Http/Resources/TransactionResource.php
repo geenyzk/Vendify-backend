@@ -32,6 +32,7 @@ class TransactionResource extends JsonResource
             'primary_provider_id' => $this->primary_provider_id,
             'final_provider_id' => $this->final_provider_id,
             'fallback_used' => (bool) $this->fallback_used,
+            'is_sandbox' => (bool) $this->is_sandbox,
             'recipient' => $this->receiver ?? $this->account_or_phone ?? "Anonymous",
             'account_or_phone' => $this->account_or_phone,
             'quantity' => $this->quantity,

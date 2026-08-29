@@ -32,7 +32,7 @@ class GetSiteStatsTool extends AiTool
     {
         $startOfToday = Carbon::today();
 
-        $todayByStatus = Transaction::query()
+        $todayByStatus = Transaction::real()
             ->where('created_at', '>=', $startOfToday)
             ->selectRaw('status, COUNT(*) as count, COALESCE(SUM(amount), 0) as volume')
             ->groupBy('status')

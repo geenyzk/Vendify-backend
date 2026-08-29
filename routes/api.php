@@ -204,6 +204,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::get('/vtu/{service}/discount', [VTUServicesController::class, 'discountPreview']);
     Route::get('/vtu/{service}/active-discount', [VTUServicesController::class, 'activeDiscount']);
+    Route::get('/vtu/electricity/sandbox-status', [VTUServicesController::class, 'electricitySandboxStatus']);
     Route::get('/betting/providers', [BettingController::class, 'index']);
     Route::post('/betting/verify', [BettingController::class, 'verify'])->middleware('throttle:30,1');
     Route::post('/betting/fund', [BettingController::class, 'fund'])->middleware(['not.impersonating', 'throttle:10,1']);

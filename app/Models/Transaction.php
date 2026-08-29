@@ -20,7 +20,7 @@ class Transaction extends Model
         'promotion_id', 'discount_amount', 'refunded_at', 'refund_reason',
         'related_reference',
         'idempotency_key', 'raw_payload',
-        'network', 'airtime_plan_id', 'primary_provider_id', 'final_provider_id', 'fallback_used',
+        'network', 'airtime_plan_id', 'primary_provider_id', 'final_provider_id', 'fallback_used', 'is_sandbox',
     ];
 
     protected $casts = [
@@ -28,6 +28,7 @@ class Transaction extends Model
         'refunded_at' => 'datetime',
         'raw_payload' => 'array',
         'fallback_used' => 'boolean',
+        'is_sandbox' => 'boolean',
     ];
 
     // Transaction types where the wallet was actually charged, and a
@@ -41,6 +42,11 @@ class Transaction extends Model
         'airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill',
         'exam', 'betting_funding', 'airtime_pin', 'data_pin', 'bulksms', 'wallet_withdrawal',
     ];
+
+    public function scopeReal($query)
+    {
+        return $query->where('is_sandbox', false);
+    }
 
     /**
      * Get the promotion associated with this transaction.
@@ -89,6 +95,7 @@ class Transaction extends Model
 
         // Build the base query
         $query = self::whereBetween('created_at', [$startDate, $endDate])
+            ->where('is_sandbox', false)
             ->where('status', 'success');
 
         // Filter by user if provided

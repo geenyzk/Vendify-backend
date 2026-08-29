@@ -11,6 +11,7 @@ use App\Models\DataPlan;
 use App\Models\Discount;
 use App\Models\Transaction;
 use App\Services\PromotionService;
+use App\Services\Electricity\ElectricitySandboxProvider;
 use App\Support\PerformanceCache;
 use App\Support\VendorErrorMessage;
 use Illuminate\Http\Request;
@@ -189,7 +190,7 @@ class VTUServicesController extends Controller
      */
 
 
-    public function handle(ServiceRequest $request, string $service): JsonResponse
+    public function handle(ServiceRequest $request, string $service, ElectricitySandboxProvider $electricitySandbox): JsonResponse
     {
 
         $validated = $request->validated();
@@ -209,6 +210,10 @@ class VTUServicesController extends Controller
             return $existing->status === 'fail'
                 ? $this->fail(['transaction' => $existing], $existing->response_message ?: 'This transaction failed.', $code)
                 : $this->success($existing, $existing->response_message, $code, $existing->status);
+        }
+
+        if ($service === 'electricity' && $electricitySandbox->enabled()) {
+            return $electricitySandbox->purchase($request->user(), $validated);
         }
 
         // Amount validation now done in ServiceRequest rules for airtime (min:50, max:5000)
@@ -597,7 +602,7 @@ class VTUServicesController extends Controller
      *    "data": {...}
      * }
      */
-    function verify(Request $request, string $service){
+    function verify(Request $request, string $service, ElectricitySandboxProvider $electricitySandbox){
         try {
             $val = [];
             if($service == "cable"){
@@ -613,6 +618,9 @@ class VTUServicesController extends Controller
             $payload = $request->validate(array_merge([
                 'identifier' => 'required|string',
             ], $val));
+            if ($service === 'electricity' && $electricitySandbox->enabled()) {
+                return $electricitySandbox->verify($payload['identifier'], $payload['meter_type']);
+            }
             $routeKey = $service === 'electricity'
                 ? ($payload['disco'] ?? $service)
                 : ($payload['cable_network'] ?? '');
@@ -634,5 +642,14 @@ class VTUServicesController extends Controller
         // }Except(e){
 
         // }
+    }
+
+    public function electricitySandboxStatus(ElectricitySandboxProvider $sandbox): JsonResponse
+    {
+        $enabled = $sandbox->enabled();
+        return $this->success([
+            'enabled' => $enabled,
+            'test_prepaid_meter' => $enabled ? '1111111111111' : null,
+        ]);
     }
 }

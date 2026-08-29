@@ -103,13 +103,13 @@ class AdminController extends Controller
     {
         $now = Carbon::now();
 
-        return Transaction::whereYear('created_at', $now->year)->whereMonth('created_at', $now->month)->count();
+        return Transaction::real()->whereYear('created_at', $now->year)->whereMonth('created_at', $now->month)->count();
     }
 
     private function getTransactionStatus(): array
     {
         $now = Carbon::now();
-        $baseQuery = Transaction::whereYear('created_at', $now->year)->whereMonth('created_at', $now->month);
+        $baseQuery = Transaction::real()->whereYear('created_at', $now->year)->whereMonth('created_at', $now->month);
 
         return [
             'successful' => (clone $baseQuery)->where('status', 'success')->count(),
@@ -120,7 +120,7 @@ class AdminController extends Controller
 
     private function getTodayFundingTotal(): float
     {
-        return Transaction::where('transaction_type', 'funding')->whereDate('created_at', Carbon::today())->sum('amount');
+        return Transaction::real()->where('transaction_type', 'funding')->whereDate('created_at', Carbon::today())->sum('amount');
     }
 
     private function getTodaySignupsCount(): int
@@ -131,7 +131,7 @@ class AdminController extends Controller
     private function buildTransactionChart(): array
     {
         $days = $this->getLast7Days();
-        $txData = Transaction::select(DB::raw('DATE(created_at) as date'), DB::raw('count(*) as total'))
+        $txData = Transaction::real()->select(DB::raw('DATE(created_at) as date'), DB::raw('count(*) as total'))
             ->whereDate('created_at', '>=', $days->first())
             ->groupBy(DB::raw('DATE(created_at)'))->orderBy('date')->get()->keyBy('date');
 
