@@ -363,8 +363,10 @@ class VTUServicesController extends Controller
             if (!$handler) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Unsupported or unconfigured service.',
-                ], 400);
+                    'message' => $serviceType === 'airtime'
+                        ? 'Airtime routing is not configured for this network and type.'
+                        : 'Unsupported or unconfigured service.',
+                ], $serviceType === 'airtime' ? 500 : 400);
             }
 
             try {
@@ -376,7 +378,8 @@ class VTUServicesController extends Controller
                 // delivered or queued value and must never be sent twice.
                 $resultBody = $result->getData(true);
                 $shouldFailOver = $result->getStatusCode() >= 500
-                    && ($resultBody['success'] ?? false) === false;
+                    && ($resultBody['success'] ?? false) === false
+                    && data_get($resultBody, 'errors.safe_to_retry') === true;
 
                 if ($shouldFailOver && in_array($serviceType, ['data', 'airtime', 'cable'], true)) {
                     $failedReference = $validated['tx_ref'];
@@ -418,6 +421,8 @@ class VTUServicesController extends Controller
                         $fallbackBody = $fallbackResult->getData(true);
                         $fallbackFailedImmediately = $fallbackResult->getStatusCode() >= 500
                             && ($fallbackBody['success'] ?? false) === false;
+                        $fallbackSafeToRetry = $fallbackFailedImmediately
+                            && data_get($fallbackBody, 'errors.safe_to_retry') === true;
 
                         if (! $fallbackFailedImmediately) {
                             return $fallbackResult;
@@ -425,6 +430,9 @@ class VTUServicesController extends Controller
 
                         $failedReference = $validated['tx_ref'];
                         $result = $fallbackResult;
+                        if (! $fallbackSafeToRetry) {
+                            break;
+                        }
                     }
                 }
 

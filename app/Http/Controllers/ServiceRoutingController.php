@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AirtimePlan;
 use App\Models\BillPlan;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
@@ -50,7 +49,6 @@ class ServiceRoutingController extends Controller
 
         $groups = [
             $this->buildGroup('data', 'Data', $this->dataKeys(), $assignments),
-            $this->buildGroup('airtime', 'Airtime', $this->airtimeKeys(), $assignments),
             $this->buildGroup('cable', 'Cable TV', $this->cableKeys(), $assignments),
             $this->buildGroup('electricity', 'Electricity', $this->electricityKeys(), $assignments),
             $this->buildGroup('exam', 'Exam', [['key' => 'exam', 'label' => self::LABELS['exam']]], $assignments),
@@ -70,6 +68,10 @@ class ServiceRoutingController extends Controller
             'routes.*.route_key' => 'nullable|string',
             'routes.*.provider_id' => 'nullable|integer|exists:providers,id',
         ]);
+
+        if (collect($data['routes'])->contains(fn ($route) => strtolower($route['service_type']) === 'airtime')) {
+            return response()->json(['message' => 'Airtime routing is configured in Airtime & Data.'], 422);
+        }
 
         foreach ($data['routes'] as $route) {
             ServiceRoute::updateOrCreate(
@@ -123,15 +125,6 @@ class ServiceRoutingController extends Controller
         $raw = collect()
             ->merge(NetworkType::where('service_type', 'data')->pluck('name'))
             ->merge(DataPlan::query()->whereNotNull('plan_type')->distinct()->pluck('plan_type'));
-
-        return $this->dedupe($raw);
-    }
-
-    private function airtimeKeys(): array
-    {
-        $raw = collect()
-            ->merge(NetworkType::where('service_type', 'airtime')->pluck('name'))
-            ->merge(AirtimePlan::query()->pluck('category')->map(fn ($c) => $c ?: 'vtu'));
 
         return $this->dedupe($raw);
     }

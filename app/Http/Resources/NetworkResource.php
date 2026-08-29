@@ -17,6 +17,8 @@ class NetworkResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'active' => (bool) $this->active,
+            'status' => $this->status,
             'airtime_api_id' => $this->airtime_api_id,
             'data_api_id' => $this->data_api_id,
             'airtime_recharge_api_id' => $this->airtime_recharge_api_id,

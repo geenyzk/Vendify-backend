@@ -41,6 +41,12 @@ return [
     'cheapdatahub' => [
         'api_key' => env('CHEAPDATAHUB_API_KEY'),
         'base_url' => env('CHEAPDATAHUB_BASE_URL', 'https://www.cheapdatahub.ng/api/v1/resellers'),
+        // Confirmed by CheapDataHub's provider catalogue. Deployments may
+        // override individual values without changing AirtimePlan routing.
+        'airtime_network_ids' => array_replace(
+            ['mtn' => 1, 'glo' => 2, 'airtel' => 3, '9mobile' => 4],
+            json_decode(env('CHEAPDATAHUB_AIRTIME_NETWORK_IDS', '{}'), true) ?: [],
+        ),
     ],
 
     'slack' => [

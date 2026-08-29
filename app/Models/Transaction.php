@@ -20,12 +20,14 @@ class Transaction extends Model
         'promotion_id', 'discount_amount', 'refunded_at', 'refund_reason',
         'related_reference',
         'idempotency_key', 'raw_payload',
+        'network', 'airtime_plan_id', 'primary_provider_id', 'final_provider_id', 'fallback_used',
     ];
 
     protected $casts = [
         'completed_at' => 'datetime',
         'refunded_at' => 'datetime',
         'raw_payload' => 'array',
+        'fallback_used' => 'boolean',
     ];
 
     // Transaction types where the wallet was actually charged, and a

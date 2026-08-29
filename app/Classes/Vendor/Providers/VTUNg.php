@@ -47,7 +47,13 @@ class VTUNg extends VendorBase
 
     protected function baseUrl(): string
     {
-        return rtrim($this->provider->base_url ?: 'https://vtu.ng/wp-json/api/v2', '/');
+        $configured = rtrim((string) ($this->provider->base_url ?: config('services.vtu_ng.base_url')), '/');
+
+        // Accept either documented root form (/wp-json) or API-base form
+        // (/wp-json/api/v2), but always vend against the v2 API base.
+        return preg_match('#/api/v2$#', $configured)
+            ? $configured
+            : $configured.'/api/v2';
     }
 
     protected function rootUrl(): string
@@ -58,6 +64,7 @@ class VTUNg extends VendorBase
     protected function endpoint(string $service): string
     {
         return match ($service) {
+            'airtime' => '/airtime',
             'data' => '/data',
             'electricity' => '/electricity',
             default => throw new \InvalidArgumentException("VTU.ng does not support service [$service] in this integration."),
@@ -71,7 +78,7 @@ class VTUNg extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['data', 'electricity'];
+        return ['airtime', 'data', 'electricity'];
     }
 
     protected function getAuthHeaders(): array
@@ -83,18 +90,31 @@ class VTUNg extends VendorBase
         ];
     }
 
-    private function token(): string
+    private function token(bool $forceRefresh = false): string
     {
-        // api_key may hold a deliberately managed JWT. Otherwise cache a
-        // username/password login for less than VTU.ng's documented 7 days.
-        if ($this->provider->api_key) {
-            return (string) $this->provider->api_key;
+        $cacheKey = "vtu-ng:token:{$this->provider->id}";
+        if ($forceRefresh) {
+            Cache::forget($cacheKey);
         }
 
-        return Cache::remember("vtu-ng:token:{$this->provider->id}", now()->addDays(6), function () {
+        if (! $forceRefresh && ($cached = Cache::get($cacheKey))) {
+            return (string) $cached;
+        }
+
+        $username = $this->provider->username ?: config('services.vtu_ng.username');
+        $password = $this->provider->password ?: config('services.vtu_ng.password');
+        if (! $username || ! $password) {
+            $managedToken = $this->provider->api_key ?: config('services.vtu_ng.api_token');
+            if ($managedToken) return (string) $managedToken;
+            throw new \RuntimeException('VTU.ng credentials are not configured.');
+        }
+
+        // Only one worker may generate the latest-only-valid JWT at a time.
+        return Cache::lock("{$cacheKey}:refresh", 30)->block(10, function () use ($cacheKey, $username, $password) {
+            if ($cached = Cache::get($cacheKey)) return (string) $cached;
             $response = Http::connectTimeout(5)->timeout(15)->acceptJson()->post(
                 $this->rootUrl().'/jwt-auth/v1/token',
-                ['username' => $this->provider->username, 'password' => $this->provider->password]
+                ['username' => $username, 'password' => $password]
             );
 
             $token = $response->json('token');
@@ -102,8 +122,22 @@ class VTUNg extends VendorBase
                 throw new \RuntimeException('VTU.ng authentication failed.');
             }
 
+            Cache::put($cacheKey, $token, now()->addDays(6));
             return $token;
         });
+    }
+
+    private function authenticatedPost(string $url, array $payload)
+    {
+        $send = fn (string $token) => Http::connectTimeout(8)->timeout(45)
+            ->withToken($token)->acceptJson()->post($url, $payload);
+        $response = $send($this->token());
+        $body = $response->json();
+        $code = strtolower((string) (is_array($body) ? ($body['code'] ?? '') : ''));
+        $invalidToken = $response->status() === 401
+            || str_contains($code, 'jwt') || str_contains($code, 'token');
+
+        return $invalidToken ? $send($this->token(true)) : $response;
     }
 
     public function login(): array
@@ -124,9 +158,7 @@ class VTUNg extends VendorBase
     public function sendRequest(string $service, array $payload): array
     {
         try {
-            $response = Http::connectTimeout(8)->timeout(45)
-                ->withHeaders($this->getAuthHeaders())
-                ->post($this->baseUrl().$this->endpoint($service), $payload);
+            $response = $this->authenticatedPost($this->baseUrl().$this->endpoint($service), $payload);
         } catch (ConnectionException $e) {
             // The request may have reached VTU.ng. Recording pending prevents
             // unsafe provider failover; reconciliation can use /requery.
@@ -152,6 +184,15 @@ class VTUNg extends VendorBase
 
     public function formatPayload(string $service, array $payload): array
     {
+        if ($service === 'airtime') {
+            return [
+                'request_id' => substr('vendify_'.$payload['tx_ref'], 0, 50),
+                'phone' => (string) $payload['phone'],
+                'service_id' => strtolower((string) $payload['network']),
+                'amount' => (int) $payload['amount'],
+            ];
+        }
+
         if ($service === 'electricity') {
             return [
                 'request_id' => substr('vendify_'.$payload['tx_ref'], 0, 50),
@@ -204,7 +245,11 @@ class VTUNg extends VendorBase
 
         return [
             'provider' => $this->providerName,
-            'transaction_type' => $service === 'electricity' ? 'electric_bill' : 'data_subscription',
+            'transaction_type' => match ($service) {
+                'airtime' => 'airtime_recharge',
+                'electricity' => 'electric_bill',
+                default => 'data_subscription',
+            },
             'status' => $status,
             // Keep Vendify's reference as the local callback/idempotency key.
             'transaction_reference' => $response['tx_ref'] ?? null,
@@ -219,10 +264,22 @@ class VTUNg extends VendorBase
             'amount' => $response['amount'] ?? 0,
             'discount_amount' => $response['discount_amount'] ?? 0,
             'service_fee' => (float) ($response['service_fee'] ?? 0),
-            'plan_type' => $service === 'electricity'
-                ? ($response['meter_type'] ?? $data['variation_id'] ?? null)
-                : ($response['plan_type'] ?? 'DATA'),
+            'plan_type' => match ($service) {
+                'airtime' => $response['network_type'] ?? 'VTU',
+                'electricity' => $response['meter_type'] ?? $data['variation_id'] ?? null,
+                default => $response['plan_type'] ?? 'DATA',
+            },
             'token' => $data['token'] ?? $response['token'] ?? null,
+            'provider_status' => $upstreamStatus ?: ($ambiguous ? 'transport-ambiguous' : (string) $httpStatus),
+            'safe_to_retry' => ! $ambiguous && (
+                in_array($upstreamStatus, ['refunded', 'failed', 'failed-api', 'cancelled', 'cancelled-api'], true)
+                || in_array($httpStatus, [401, 402, 422], true)
+            ),
+            'raw_payload' => [
+                'provider_status' => $upstreamStatus ?: null,
+                'request_id' => $data['request_id'] ?? $response['request_id'] ?? null,
+                'provider_reference' => $data['order_id'] ?? $response['order_id'] ?? null,
+            ],
             'completed_at' => $status === 'success' ? now() : null,
         ];
     }
@@ -231,8 +288,7 @@ class VTUNg extends VendorBase
     {
         $requestId = str_starts_with($tx_ref, 'vendify_') ? $tx_ref : substr('vendify_'.$tx_ref, 0, 50);
         try {
-            $response = Http::connectTimeout(8)->timeout(30)->withHeaders($this->getAuthHeaders())
-                ->post($this->baseUrl().'/requery', ['request_id' => $requestId]);
+            $response = $this->authenticatedPost($this->baseUrl().'/requery', ['request_id' => $requestId]);
             return $response->json() ?: [];
         } catch (ConnectionException) {
             return [];
@@ -453,9 +509,7 @@ class VTUNg extends VendorBase
         }
 
         try {
-            $response = Http::connectTimeout(8)->timeout(30)
-                ->withHeaders($this->getAuthHeaders())
-                ->post($this->baseUrl().'/verify-customer', [
+            $response = $this->authenticatedPost($this->baseUrl().'/verify-customer', [
                     'customer_id' => $identifier,
                     'service_id' => $this->electricityServiceId((string) ($payload['disco'] ?? '')),
                     'variation_id' => strtolower((string) ($payload['meter_type'] ?? 'prepaid')),

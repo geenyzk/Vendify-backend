@@ -10,6 +10,7 @@ use App\Models\ChildDirective;
 use App\Models\ChildInstance;
 use App\Models\ChildTransaction;
 use App\Models\DataPlan;
+use App\Models\AirtimePlan;
 use App\Models\Discount;
 use App\Models\General;
 use App\Models\NetworkType;
@@ -22,6 +23,7 @@ use App\Support\AuditLogger;
 use App\Support\ErrorMessage;
 use App\Support\PerformanceCache;
 use App\Support\ProviderPlanPresentation;
+use App\Services\AirtimeRoutingService;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
@@ -611,13 +613,32 @@ class AdminController extends Controller
         $results = [];
 
         try {
-            Log::info('universalBulkCreateOrUpdate incoming items', ['table' => $table, 'items_sample' => $request->all()['items'] ?? null]);
+            Log::info('universalBulkCreateOrUpdate incoming items', [
+                'table' => $table,
+                'items_sample' => self::redactSensitive((array) ($request->all()['items'] ?? [])),
+            ]);
             DB::beginTransaction();
 
             foreach ($items as $item) {
-                Log::info($item);
+                Log::info(self::redactSensitive($item));
                 if (! is_array($item)) {
                     continue;
+                }
+
+                if ($modelClass === AirtimePlan::class && (! isset($item['id']) || array_key_exists('providerable', $item))) {
+                    $providerable = is_array($item['providerable'] ?? null) ? $item['providerable'] : [];
+                    $primaryId = $providerable['provider_id'] ?? null;
+                    if (! $primaryId) {
+                        throw ValidationException::withMessages(['providerable.provider_id' => 'Primary provider is required for airtime.']);
+                    }
+                    $routing = app(AirtimeRoutingService::class);
+                    $routing->assertProvider($primaryId);
+                    foreach (self::normalizeProviderFallbacks($providerable, $primaryId) as $fallback) {
+                        $routing->assertProvider($fallback['provider_id'], 'providerable.fallback_provider_id');
+                    }
+                    // The old toggle is ignored for airtime. Its plan mapping
+                    // is always authoritative; other product behavior remains.
+                    $item['use_provider_as_providerable'] = true;
                 }
 
                 // Provider and gateway management use the user-facing
@@ -928,6 +949,19 @@ class AdminController extends Controller
         return is_numeric($value) ? (float) $value : null;
     }
 
+    private static function redactSensitive(array $data): array
+    {
+        $sensitive = ['password', 'api_key', 'secret_key', 'encryption_key', 'authorization', 'webhook_pin'];
+        foreach ($data as $key => $value) {
+            if (in_array(strtolower((string) $key), $sensitive, true)) {
+                $data[$key] = '[REDACTED]';
+            } elseif (is_array($value)) {
+                $data[$key] = self::redactSensitive($value);
+            }
+        }
+        return $data;
+    }
+
     /**
      * Normalize the ordered provider fallback list sent by plan forms. Legacy
      * single-fallback fields are still accepted and mirrored into the first
@@ -1233,6 +1267,11 @@ class AdminController extends Controller
     public function providerTypes()
     {
         return $this->success(VendorFactory::availableProviders());
+    }
+
+    public function airtimeProviders(): JsonResponse
+    {
+        return $this->success(app(AirtimeRoutingService::class)->providers());
     }
 
     /**

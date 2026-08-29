@@ -77,6 +77,21 @@ abstract class VendorBase implements VendorInterface
             $response = $this->sendRequest($service, $formattedPayload) ?? [];
             // Merge API response with original payload to preserve discount/promotion data
             $formattedResponse = $this->formatResponse($service, array_merge($response['data'] ?? $response ?? [], $payload));
+            if ($service === 'airtime') {
+                $plan = app(\App\Services\AirtimeRoutingService::class)->plan(
+                    (string) ($payload['network'] ?? ''),
+                    $payload['network_type'] ?? 'vtu'
+                );
+                $primaryId = $plan?->resolveVendor()?->id;
+                $formattedResponse['network'] = $payload['network'] ?? null;
+                $formattedResponse['airtime_plan_id'] = $plan?->id;
+                $formattedResponse['primary_provider_id'] = $primaryId;
+                $formattedResponse['final_provider_id'] = $this->provider->id;
+                $formattedResponse['fallback_used'] = $primaryId !== null && (int) $primaryId !== (int) $this->provider->id;
+                // Provider means the serving vendor. Network is stored in its
+                // own field so transaction screens cannot label MTN a provider.
+                $formattedResponse['provider'] = $this->provider->name;
+            }
             // Record the vendor cost of goods for this sale (formatResponse drops
             // the plan ids, so compute it here where $payload is still intact) —
             // profit = amount − cost on the admin dashboard.
@@ -136,7 +151,10 @@ abstract class VendorBase implements VendorInterface
                 $transaction['response_message'] = $publicMessage;
                 return $this->success($transaction, $publicMessage, 202);
             } else {
-                return $this->fail([], VendorErrorMessage::forCurrentUser($responseMessage, 'fail', false), 500);
+                return $this->fail([
+                    'safe_to_retry' => (bool) ($formattedResponse['safe_to_retry'] ?? false),
+                    'provider_status' => $formattedResponse['provider_status'] ?? null,
+                ], VendorErrorMessage::forCurrentUser($responseMessage, 'fail', false), 500);
             }
         } catch (\Throwable $e) {
             // Vendor call blew up after we reserved (e.g. a null/non-JSON

@@ -38,7 +38,7 @@ class UpdateServiceRoutingTool extends AiTool
         return [
             'type' => 'object',
             'properties' => [
-                'service_type' => ['type' => 'string', 'description' => 'One of: data, airtime, cable, electricity, exam.'],
+                'service_type' => ['type' => 'string', 'description' => 'One of: data, cable, electricity, exam. Airtime is configured on its plan.'],
                 'route_key' => ['type' => 'string', 'description' => 'The specific route key within the service (e.g. a network, plan type, cable network, or disco). Use the exact key from get_service_routing.'],
                 'provider_id' => ['type' => 'integer', 'description' => 'Vendor/provider id to route to, or null to clear to default.'],
             ],

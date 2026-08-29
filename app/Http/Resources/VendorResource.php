@@ -4,7 +4,6 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Auth;
 
 class VendorResource extends JsonResource
 {
@@ -27,8 +26,7 @@ class VendorResource extends JsonResource
             'active' => (bool) $this->active,
             'connection' => $this->connection,
             'username' => $this->username,
-            'password' => $this->password,
-            'api_key' => $this->when((bool) Auth::user()?->role?->is_staff, $this->api_key),
+            'credentials_configured' => (bool) ($this->password || $this->api_key),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'sub_category' => $this->sub_category,

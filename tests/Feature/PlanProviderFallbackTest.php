@@ -3,11 +3,13 @@
 use App\Classes\Vendor\Providers\Adex;
 use App\Classes\Vendor\Providers\Ogdams;
 use App\Classes\Vendor\Providers\VTUNg;
+use App\Classes\Vendor\Providers\CheapDataHub;
 use App\Classes\VTUServices\VTUServiceFactory;
 use App\Models\AirtimePlan;
 use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\Vendor;
+use App\Models\ServiceRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -94,6 +96,31 @@ test('airtime and cable expose their configured fallback handlers', function () 
         ->and($cableFallback->providerId())->toBe($fallback->id);
 });
 
+test('airtime plan provider is authoritative over generic service routing', function () {
+    $primary = fallbackVendor('CHEAP DTA', 'adex');
+    $global = fallbackVendor('Quickly Sim', 'adex');
+    $plan = AirtimePlan::create(['name' => 'mtn', 'category' => 'vtu', 'type' => 'airtime', 'active' => true]);
+    DB::table('providerables')->insert([
+        'provider_id' => $primary->id, 'providerable_id' => $plan->id,
+        'providerable_type' => AirtimePlan::class, 'cost_price' => 0,
+        'margin_value' => 0, 'margin_type' => 'fiat', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    ServiceRoute::create(['service_type' => 'airtime', 'route_key' => 'vtu', 'provider_id' => $global->id]);
+
+    $handler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 100);
+
+    expect($handler)->toBeInstanceOf(Adex::class)
+        ->and($handler->providerId())->toBe($primary->id);
+});
+
+test('missing airtime primary fails closed instead of using generic routing', function () {
+    $global = fallbackVendor('Legacy Global', 'adex');
+    AirtimePlan::create(['name' => 'mtn', 'category' => 'vtu', 'type' => 'airtime', 'active' => true]);
+    ServiceRoute::create(['service_type' => 'airtime', 'route_key' => 'vtu', 'provider_id' => $global->id]);
+
+    expect(VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 100))->toBeNull();
+});
+
 test('synced vtu ng glo and mtn plans resolve the adapter and provider payload', function (string $network, string $serviceId, string $variationId) {
     $vendor = fallbackVendor('VTU.ng', 'vtu_ng');
     $plan = DataPlan::create([
@@ -145,3 +172,45 @@ test('synced vtu ng glo and mtn plans resolve the adapter and provider payload',
 test('a genuinely unsupported service still has no purchase adapter', function () {
     expect(VTUServiceFactory::make('unsupported-service'))->toBeNull();
 });
+
+test('vtu ng is accepted for airtime and formats the documented v2 payload', function () {
+    $vendor = fallbackVendor('Vtu.ng', 'vtu_ng');
+    $plan = AirtimePlan::create([
+        'name' => 'mtn', 'category' => 'vtu', 'type' => 'airtime', 'active' => true,
+    ]);
+    DB::table('providerables')->insert([
+        'provider_id' => $vendor->id, 'providerable_id' => $plan->id,
+        'providerable_type' => AirtimePlan::class, 'cost_price' => 0,
+        'margin_value' => 0, 'margin_type' => 'fiat', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $handler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 100);
+
+    expect($handler)->toBeInstanceOf(VTUNg::class)
+        ->and($handler->supportsService('airtime'))->toBeTrue()
+        ->and($handler->formatPayload('airtime', [
+            'tx_ref' => 'AIRTIME-ROUTING-TEST',
+            'phone' => '08000000000',
+            'network' => 'mtn',
+            'amount' => 100,
+        ]))->toMatchArray([
+            'phone' => '08000000000',
+            'service_id' => 'mtn',
+            'amount' => 100,
+        ]);
+});
+
+test('CheapDataHub and VTU.ng can be primary and fallback in either direction', function (string $primaryType) {
+    $cheap = fallbackVendor('CheapDataHub', 'cheapdatahub');
+    $vtu = fallbackVendor('VTU.ng', 'vtu_ng');
+    $primary = $primaryType === 'cheapdatahub' ? $cheap : $vtu;
+    $fallback = $primaryType === 'cheapdatahub' ? $vtu : $cheap;
+    $plan = AirtimePlan::create(['name' => 'mtn', 'category' => 'vtu', 'type' => 'airtime', 'active' => true]);
+    attachFallback($plan, $primary, $fallback);
+
+    $primaryHandler = VTUServiceFactory::make('airtime', 'vtu', 'mtn', null, 'vtu', 100);
+    $fallbackHandler = VTUServiceFactory::makeFallback('airtime', 'vtu', 'mtn', null, 100, [$primary->id]);
+
+    expect($primaryHandler)->toBeInstanceOf($primaryType === 'cheapdatahub' ? CheapDataHub::class : VTUNg::class)
+        ->and($fallbackHandler)->toBeInstanceOf($primaryType === 'cheapdatahub' ? VTUNg::class : CheapDataHub::class);
+})->with(['CheapDataHub primary' => 'cheapdatahub', 'VTU.ng primary' => 'vtu_ng']);
