@@ -22,7 +22,12 @@ class ReconcileVTUNgTransactions extends Command
         $client = new VTUNg($vendor);
         $settled = 0;
         Transaction::query()
-            ->where('provider', 'vtu_ng')
+            ->where(function ($query) {
+                $query->where('provider', 'vtu_ng')
+                    // Betting rows retain the sportsbook name for customer
+                    // history, so identify their gateway by transaction type.
+                    ->orWhere('transaction_type', 'betting_funding');
+            })
             ->where('status', 'pending')
             ->oldest()
             ->limit(max(1, min(1000, (int) $this->option('limit'))))

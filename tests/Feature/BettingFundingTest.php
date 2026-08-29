@@ -126,13 +126,55 @@ test('provider timeout remains pending for safe reconciliation', function () {
 });
 
 test('permission errors are normalized and raw detail stays internal', function () {
-    [$user] = bettingFixture();
+    [$user, $provider] = bettingFixture();
     fakeVerifiedThen(['code' => 'failure', 'message' => 'Your institution is not allowed to vend for this biller!']);
     $response = $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload());
     $response->assertUnprocessable()
         ->assertJsonPath('message', 'VTU.ng has not authorised betting funding for this provider. Please choose another provider.')
         ->assertJsonMissing(['Your institution is not allowed to vend for this biller!']);
     expect(data_get(Transaction::first()->raw_payload, 'internal_status'))->toBe('provider_permission_denied');
+    expect($provider->fresh()->active)->toBeFalse();
+});
+
+test('server error after funding submission remains pending to prevent an unsafe refund', function () {
+    [$user] = bettingFixture();
+    Http::fakeSequence()
+        ->push(['code' => 'success', 'data' => ['customer_name' => 'TEST USER']])
+        ->push(['code' => 'wallet_error', 'message' => 'Unexpected upstream error'], 500);
+
+    $this->actingAs($user, 'sanctum')->postJson('/api/betting/fund', bettingPayload())
+        ->assertStatus(202)
+        ->assertJsonPath('data.status', 'pending');
+
+    expect(Transaction::first()->status)->toBe('pending')
+        ->and((float) $user->fresh()->wallet_balance)->toBe(4000.0);
+});
+
+test('pending betting funding is included in VTU.ng reconciliation', function () {
+    [$user] = bettingFixture(4000);
+    $transaction = Transaction::create([
+        'user_id' => $user->id,
+        'transaction_type' => 'betting_funding',
+        'provider' => 'Bet9ja',
+        'account_or_phone' => 'BET12345',
+        'receiver' => 'BET12345',
+        'amount' => 1000,
+        'cost' => 1000,
+        'status' => 'pending',
+        'transaction_reference' => 'TXN-BET-RECONCILE-1',
+        'payment_reference' => 'vendify_TXN-BET-RECONCILE-1',
+        'balance_before' => 5000,
+        'balance_after' => 4000,
+    ]);
+    Http::fake(['*' => Http::response([
+        'code' => 'success',
+        'message' => 'ORDER COMPLETED',
+        'data' => ['status' => 'completed-api', 'request_id' => $transaction->payment_reference],
+    ])]);
+
+    $this->artisan('vtu-ng:reconcile')->assertSuccessful();
+
+    expect($transaction->fresh()->status)->toBe('success');
 });
 
 test('duplicate submissions return the original transaction without a second vend', function () {

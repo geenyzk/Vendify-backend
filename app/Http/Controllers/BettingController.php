@@ -54,6 +54,7 @@ class BettingController extends Controller
         }
 
         if ($result['status'] !== 'success') {
+            $this->quarantineDeniedProvider($provider, $result['internal_status']);
             Log::warning('Betting account verification failed', [
                 'provider_id' => $provider->id,
                 'internal_status' => $result['internal_status'],
@@ -106,6 +107,7 @@ class BettingController extends Controller
             if ($provider->verification_supported) {
                 $verification = $gateway->verifyCustomer($provider, $validated['customer_id']);
                 if ($verification['status'] !== 'success') {
+                    $this->quarantineDeniedProvider($provider, $verification['internal_status']);
                     Log::warning('Betting funding blocked by account verification', [
                         'provider_id' => $provider->id,
                         'internal_status' => $verification['internal_status'],
@@ -197,6 +199,8 @@ class BettingController extends Controller
             ];
         }
 
+        $this->quarantineDeniedProvider($provider, $result['internal_status']);
+
         DB::transaction(function () use ($transaction, $user, $charge, $result) {
             $locked = Transaction::whereKey($transaction->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== 'pending') {
@@ -261,5 +265,19 @@ class BettingController extends Controller
             'provider_permission_denied' => 'VTU.ng has not authorised betting funding for this provider. Please choose another provider.',
             default => 'We could not complete the betting funding. Please try again later.',
         };
+    }
+
+    /** Stop advertising a biller that this gateway account cannot vend. */
+    private function quarantineDeniedProvider(BettingProvider $provider, string $status): void
+    {
+        if ($status !== 'provider_permission_denied') {
+            return;
+        }
+
+        $provider->update(['active' => false]);
+        Log::notice('Betting provider automatically deactivated after gateway permission denial', [
+            'provider_id' => $provider->id,
+            'biller_id' => $provider->biller_id,
+        ]);
     }
 }

@@ -125,6 +125,7 @@ class VtuNgBettingProvider implements BettingProviderInterface
         elseif ($pending) [$status, $internal] = ['pending', 'pending'];
         elseif ($code === 'success' && $upstreamStatus === 'completed-api') [$status, $internal] = ['success', 'success'];
         elseif (in_array($upstreamStatus, ['refunded', 'failed', 'failed-api', 'cancelled', 'cancelled-api'], true)) [$status, $internal] = ['failed', 'failed'];
+        elseif (! $verification && $httpStatus >= 500) [$status, $internal] = ['pending', 'provider_unavailable'];
         elseif (in_array($code, ['insufficient_funds', 'wallet_busy', 'wallet_error'], true) || $httpStatus >= 500) [$status, $internal] = ['failed', 'provider_unavailable'];
         else [$status, $internal] = ['failed', $verification ? 'customer_not_found' : 'failed'];
 
