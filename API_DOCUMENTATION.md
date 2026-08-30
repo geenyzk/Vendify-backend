@@ -1,4 +1,4 @@
-# VTU Backend — API Documentation
+# Vendify — API Documentation
 
 > **Base URL:** `https://<your-domain>/api`
 > All requests must include `Accept: application/json` and `Content-Type: application/json` headers.
@@ -10,7 +10,7 @@
 
 1. [Authentication](#1-authentication)
 2. [Email Verification](#2-email-verification)
-3. [VTU Services](#3-vtu-services)
+3. [Vendify Services](#3-vendify-services)
 4. [Transactions](#4-transactions)
 5. [Customer](#5-customer)
 6. [Promotions](#6-promotions)
@@ -285,13 +285,13 @@ Verifies the user's email using a 6-character code received in their email.
 
 ---
 
-## 3. VTU Services
+## 3. Vendify Services
 
-### 3.1 Purchase a VTU Service
+### 3.1 Purchase a Vendify Service
 
 **`POST /vtu/{service}`** `🔒 Auth Required`
 
-Processes a VTU transaction — airtime, data, cable, electricity, or exam PIN.
+Processes a Vendify transaction — airtime, data, cable, electricity, or exam PIN.
 
 **URL Parameters**
 
@@ -352,7 +352,7 @@ Processes a VTU transaction — airtime, data, cable, electricity, or exam PIN.
 | 402 | Insufficient wallet balance |
 | 422 | Invalid PIN or promo code |
 | 400 | Unsupported or unconfigured service |
-| 500 | Failed to process VTU request |
+| 500 | Failed to process Vendify request |
 
 ---
 
@@ -439,7 +439,7 @@ Returns general system configuration.
   "data": {
     "general": {
       "id": 1,
-      "site_name": "VTU Platform",
+      "site_name": "Vendify",
       "support_email": "support@example.com"
     }
   }
@@ -726,7 +726,7 @@ Returns comprehensive dashboard statistics.
     "total_funding_today": 15000.00,
     "total_signups_today": 7,
     "sales_chart": [
-      { "name": "Airtime VTU", "value": 8000, "fill": "#36A2EB" },
+      { "name": "Vendify Airtime", "value": 8000, "fill": "#36A2EB" },
       { "name": "Data Bundle", "value": 5000, "fill": "#FF6384" },
       { "name": "Cable Sales", "value": 2000, "fill": "#FFCE56" },
       { "name": "Bill Sales", "value": 1000, "fill": "#9966FF" }
@@ -1173,7 +1173,7 @@ Updates user information.
 
 > Routes prefixed with `/admin/controls`.
 
-Service controls allow toggling on/off individual VTU services (airtime, data, cable, etc.) per network.
+Service controls allow toggling on/off individual Vendify services (airtime, data, cable, etc.) per network.
 
 ### 9.1 List Service Controls
 
@@ -1798,7 +1798,7 @@ Updates the `sort_order` (or a custom column) for multiple records at once.
 
 **`ANY /webhook/{type}/{identifier}`**
 
-Handles incoming webhook events from third-party payment/VTU providers.
+Handles incoming webhook events from third-party payment/service providers.
 
 | Param | Description |
 |---|---|
@@ -1811,7 +1811,7 @@ This endpoint accepts any HTTP method (`GET`, `POST`, `PUT`, etc.) and is handle
 
 ## 14. Vendor Auto-Funding
 
-The auto-funding system monitors VTU vendor balances on a schedule and automatically initiates a bank transfer from the configured payment gateway (e.g. Flutterwave) to the vendor's bank account when the balance drops below a set threshold. Every transfer attempt — success or failure — is recorded in the `vendor_fundings` audit table and an in-app notification is sent to all admin users.
+The auto-funding system monitors Vendify vendor balances on a schedule and automatically initiates a bank transfer from the configured payment gateway (e.g. Flutterwave) to the vendor's bank account when the balance drops below a set threshold. Every transfer attempt — success or failure — is recorded in the `vendor_fundings` audit table and an in-app notification is sent to all admin users.
 
 > **No new API routes are introduced.** Configuration and history are managed entirely through the [Universal Table API](#12-universal-table-api) against the `providers` and `vendor_fundings` tables.
 
@@ -1865,7 +1865,7 @@ Example request:
   "auto_fund_threshold": 5000,
   "auto_fund_amount": 50000,
   "account_number": "0123456789",
-  "account_name": "Adex VTU Nigeria",
+  "account_name": "Vendify",
   "bank_code": "044",
   "bank_name": "Access Bank",
   "funding_provider_id": 3
@@ -1885,7 +1885,7 @@ Response — 200 OK:
     "auto_fund_threshold": "5000.00",
     "auto_fund_amount": "50000.00",
     "account_number": "0123456789",
-    "account_name": "Adex VTU Nigeria",
+    "account_name": "Vendify",
     "bank_code": "044",
     "bank_name": "Access Bank",
     "funding_provider_id": 3
@@ -1926,7 +1926,7 @@ Returns all vendor records. Filter to only auto-fund-enabled ones using a query 
       "auto_fund_threshold": "5000.00",
       "auto_fund_amount": "50000.00",
       "account_number": "0123456789",
-      "account_name": "Adex VTU Nigeria",
+      "account_name": "Vendify",
       "bank_code": "044",
       "bank_name": "Access Bank",
       "funding_provider_id": 3,
@@ -1998,7 +1998,7 @@ GET /table/vendor_fundings?with=vendor,paymentProvider
 | Field | Type | Description |
 |---|---|---|
 | `id` | integer | Auto-increment primary key |
-| `vendor_id` | integer | FK → providers (the VTU vendor) |
+| `vendor_id` | integer | FK → providers (the Vendify vendor) |
 | `payment_provider_id` | integer | FK → providers (the payment gateway used) |
 | `amount` | decimal | Amount transferred in NGN |
 | `reference` | string | Unique transaction reference sent to the gateway |
@@ -2238,7 +2238,7 @@ or it's turned off, `welcome_message` is `null`.
   "data": {
     "welcome_message": {
       "id": 1,
-      "title": "Welcome to Laravel VTU!",
+      "title": "Welcome to Vendify!",
       "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
       "active": true,
       "created_at": "2026-07-04T11:45:34.000000Z",
@@ -2268,7 +2268,7 @@ exists yet), so the admin UI can load and edit a currently-disabled message.
   "data": {
     "welcome_message": {
       "id": 1,
-      "title": "Welcome to Laravel VTU!",
+      "title": "Welcome to Vendify!",
       "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
       "active": true,
       "created_at": "2026-07-04T11:45:34.000000Z",
@@ -2305,7 +2305,7 @@ for users who'd already marked the previous version as seen.
   "data": {
     "welcome_message": {
       "id": 1,
-      "title": "Welcome to Laravel VTU!",
+      "title": "Welcome to Vendify!",
       "body": "Top up your wallet to get started with airtime, data, cable, and bill payments.",
       "active": true,
       "created_at": "2026-07-04T11:45:34.000000Z",
@@ -2385,7 +2385,7 @@ pop up again for them on other devices/browsers — this is server-tracked, not
 | POST | `/logout` | Yes | Logout |
 | POST | `/email/verification-notification` | Yes | Resend verification email |
 | POST | `/verify-email-code` | Yes | Verify email via code |
-| POST | `/vtu/{service}` | Yes | Purchase VTU service |
+| POST | `/vtu/{service}` | Yes | Purchase Vendify service |
 | GET | `/vtu/{service}/plans` | Yes | Get service plans |
 | GET | `/vtu/{service}/verify` | Yes | Verify customer identifier |
 | GET | `/system-information-get` | Yes | Get system information |

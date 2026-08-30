@@ -27,7 +27,7 @@ Starting customer impersonation requires:
 
 Owner and co-owner may target customer or staff accounts. Self-impersonation and nested impersonation are rejected. Start and end events use the existing audit log with actor, actor role, target account, time, IP, user agent, and auth-session context.
 
-While impersonating, the backend blocks profile/password/PIN changes, virtual-account generation, VTU purchases, betting funding, airtime-to-cash submission, wallet transfers, and withdrawal submission. Ending impersonation remains available even if `switch_account` is subsequently removed, provided the original account remains active staff.
+While impersonating, the backend blocks profile/password/PIN changes, virtual-account generation, Vendify purchases, betting funding, airtime-to-cash submission, wallet transfers, and withdrawal submission. Ending impersonation remains available even if `switch_account` is subsequently removed, provided the original account remains active staff.
 
 ## Seeded switch-account access
 
