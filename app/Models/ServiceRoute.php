@@ -53,6 +53,6 @@ class ServiceRoute extends Model
             return null;
         }
 
-        return Vendor::find($route->provider_id);
+        return Vendor::whereKey($route->provider_id)->where('active', true)->first();
     }
 }

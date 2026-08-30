@@ -14,7 +14,7 @@ class Provider extends Model
     //
     protected $fillable = ["id", "name", "code", "base_url", "username", "password", "identifier", "sub_category", "category", "api_key", "public_key", "secret_key", "encryption_key", "webhook_access", "charge_fee", "charge_fee_cap", "charge_type", "withdrawal_fee", "withdrawal_fee_type", "active",
         "auto_fund_enabled", "auto_fund_threshold", "auto_fund_amount", "account_number", "account_name", "bank_code", "bank_name", "funding_provider_id"];
-    protected $appends = ["webhook", "connection", "balance"];
+    protected $appends = ["webhook", "connection", "balance", "plans_count", "active_plans_count"];
     protected $hidden = ['password', 'api_key', 'secret_key', 'encryption_key'];
     protected $casts = ["active" => "boolean", "auto_fund_enabled" => "boolean"];
 
@@ -123,4 +123,7 @@ class Provider extends Model
             ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id', 'external_plan_id'])
             ->withTimestamps();
     }
+
+    public function getPlansCountAttribute(): int { return $this->dataPlans()->count(); }
+    public function getActivePlansCountAttribute(): int { return $this->dataPlans()->where('data_plans.active', true)->count(); }
 }

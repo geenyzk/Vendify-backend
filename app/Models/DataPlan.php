@@ -17,7 +17,7 @@ class DataPlan extends Model
     /** Neutral catalogue metadata for providers that do not classify a bundle. */
     public const STANDARD_TYPE = 'STANDARD';
 
-    protected $appends = ['price_ngn', 'plan', 'status', 'price', 'provider', 'use_provider_as_providerable', 'fallbacks', 'fallback_provider', 'fallback_provider_id', 'fallback_server_id', 'fallback_cost_price'];
+    protected $appends = ['price_ngn', 'plan', 'status', 'price', 'provider', 'use_provider_as_providerable', 'fallbacks', 'fallback_provider', 'fallback_provider_id', 'fallback_server_id', 'fallback_cost_price', 'effective_category'];
 
     protected $fillable = [
         'id',
@@ -25,10 +25,13 @@ class DataPlan extends Model
         'plan_size',
         'plan_type',
         'network_type_id',
+        'auto_category_id',
+        'manual_category_id',
         'server_id',
         'network',
         'active',
         'is_draft',
+        'is_featured',
         'validity',
         'sort_order',
         'pricing',
@@ -37,6 +40,7 @@ class DataPlan extends Model
     protected $casts = [
         'active' => 'boolean',
         'is_draft' => 'boolean',
+        'is_featured' => 'boolean',
         'pricing' => 'array',
     ];
 
@@ -101,6 +105,30 @@ class DataPlan extends Model
     public function networkType()
     {
         return $this->belongsTo(NetworkType::class, 'network_type_id');
+    }
+
+    public function autoCategory()
+    {
+        return $this->belongsTo(DataCategory::class, 'auto_category_id');
+    }
+
+    public function manualCategory()
+    {
+        return $this->belongsTo(DataCategory::class, 'manual_category_id');
+    }
+
+    public function getEffectiveCategoryAttribute(): ?DataCategory
+    {
+        return $this->manualCategory ?? $this->autoCategory;
+    }
+
+    public function scopeCustomerVisible($query)
+    {
+        return $query->where('active', true)
+            ->where(function ($query) {
+                $query->whereNull('is_draft')->orWhere('is_draft', false);
+            })
+            ->whereHas('providers', fn ($query) => $query->where('providers.active', true));
     }
 
     public function getPlanAttribute()

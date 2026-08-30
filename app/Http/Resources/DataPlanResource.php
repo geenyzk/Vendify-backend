@@ -36,6 +36,11 @@ class DataPlanResource extends JsonResource
             'provider_plan_description' => $presentation['description'],
             'provider_plan_parse_confident' => $presentation['confident'],
             'active' => $this->active,
+            'is_featured' => (bool) $this->is_featured,
+            'auto_category' => $this->autoCategory ? ['id' => $this->autoCategory->id, 'name' => $this->autoCategory->name, 'slug' => $this->autoCategory->slug] : null,
+            'manual_category' => $this->manualCategory ? ['id' => $this->manualCategory->id, 'name' => $this->manualCategory->name, 'slug' => $this->manualCategory->slug] : null,
+            'category' => $this->effective_category?->name,
+            'category_slug' => $this->effective_category?->slug,
             'status' => $this->status,
 
             // Pricing

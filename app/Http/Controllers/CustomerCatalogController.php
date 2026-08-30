@@ -68,7 +68,7 @@ class CustomerCatalogController extends Controller
         $plans = Cache::get($key);
         $cacheHit = $plans !== null;
         if (! $cacheHit) {
-            $columns = ['id', 'network', 'plan_name', 'plan_size', 'plan_type', 'network_type_id', 'validity', 'active', 'pricing'];
+            $columns = ['id', 'network', 'plan_name', 'plan_size', 'plan_type', 'network_type_id', 'auto_category_id', 'manual_category_id', 'validity', 'active', 'is_featured', 'pricing'];
             $legacyPriceColumn = $role.'_price';
             if (Schema::hasColumn('data_plans', $legacyPriceColumn)) {
                 $columns[] = $legacyPriceColumn;
@@ -76,14 +76,11 @@ class CustomerCatalogController extends Controller
 
             $plans = DataPlan::query()
                 ->select($columns)
-                ->where('active', true)
+                ->customerVisible()
                 ->whereHas('networkType', fn ($query) => $query
                     ->where('service_type', 'data')
                     ->where('active', true))
-                ->where(function ($query) {
-                    $query->whereNull('is_draft')->orWhere('is_draft', false);
-                })
-                ->with(['providers:id,name', 'networkType:id,name,service_type,active'])
+                ->with(['providers:id,name', 'networkType:id,name,service_type,active', 'autoCategory:id,name,slug,is_active', 'manualCategory:id,name,slug,is_active'])
                 ->orderBy('network')->orderBy('sort_order')->orderBy('plan_name')
                 ->get()
                 ->map(function (DataPlan $plan) {
@@ -102,6 +99,9 @@ class CustomerCatalogController extends Controller
                         'provider_plan_description' => $presentation['description'],
                         'provider_plan_parse_confident' => $presentation['confident'],
                         'active' => true,
+                        'category' => $plan->effective_category?->name,
+                        'category_slug' => $plan->effective_category?->slug,
+                        'is_featured' => (bool) $plan->is_featured,
                         'price' => $plan->price === null ? null : (float) $plan->price,
                     ];
                 })->values()->all();

@@ -159,6 +159,9 @@ class VTUServiceFactory
      */
     private static function usable(?Vendor $vendor, string $service, ?string $network, $planId, ?float $amount): ?Vendor
     {
+        if ($vendor && ! $vendor->active) {
+            return null;
+        }
         if ($vendor
             && $vendor->sub_category === 'simvend'
             && !SimVending::canServe($service, $network, $amount, $planId)) {

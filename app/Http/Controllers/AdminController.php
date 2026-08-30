@@ -358,6 +358,9 @@ class AdminController extends Controller
         try {
             $query = $modelClass::query();
             $table = (new $modelClass)->getTable();
+            if ($modelSlug === 'data_plans' && ! $request->user()?->role?->is_staff) {
+                $query->customerVisible();
+            }
             $isCompactDataPlanList = $modelSlug === 'data_plans'
                 && $request->get('view') === 'list';
 
@@ -369,7 +372,7 @@ class AdminController extends Controller
                 // to avoid pulling for every row.
                 $query->select([
                     'id', 'network', 'plan_name', 'plan_size', 'plan_type', 'network_type_id',
-                    'validity', 'active', 'is_draft', 'sort_order',
+                    'auto_category_id', 'manual_category_id', 'validity', 'active', 'is_draft', 'is_featured', 'sort_order',
                     'pricing', 'user_price', 'agent_price', 'bonanza_price', 'api_price',
                 ]);
             }
@@ -435,6 +438,7 @@ class AdminController extends Controller
                     ? 'providers:id'
                     : 'providers:id,name,code,sub_category,category');
                 $query->with('networkType:id,name,service_type,active');
+                $query->with(['autoCategory:id,name,slug,is_active', 'manualCategory:id,name,slug,is_active']);
             }
 
             $this->handleEagerLoading($query, $request);
@@ -528,6 +532,11 @@ class AdminController extends Controller
                 'provider_plan_parse_confident' => $presentation['confident'],
                 'active' => (bool) $plan->active,
                 'is_draft' => (bool) $plan->is_draft,
+                'is_featured' => (bool) $plan->is_featured,
+                'auto_category' => $plan->autoCategory ? ['id' => $plan->autoCategory->id, 'name' => $plan->autoCategory->name, 'slug' => $plan->autoCategory->slug] : null,
+                'manual_category' => $plan->manualCategory ? ['id' => $plan->manualCategory->id, 'name' => $plan->manualCategory->name, 'slug' => $plan->manualCategory->slug] : null,
+                'category' => $plan->effective_category?->name,
+                'category_slug' => $plan->effective_category?->slug,
                 'status' => $plan->is_draft ? 'draft' : ($plan->active ? 'active' : 'inactive'),
                 'sort_order' => $plan->sort_order,
                 'price' => $plan->price,
@@ -736,6 +745,13 @@ class AdminController extends Controller
                             Cache::forget("payment_provider_connection_{$model->id}");
                             Cache::forget("payment_provider_balance_{$model->id}");
                         }
+                        if ($model instanceof \App\Models\Provider || $model instanceof \App\Models\Vendor) {
+                            // Provider availability is part of every customer
+                            // data-plan catalogue query, so a disable/re-enable
+                            // must become visible immediately rather than after
+                            // the ten-minute catalogue cache expires.
+                            PerformanceCache::clearCatalog();
+                        }
                         $results[] = $model;
                     }
 
@@ -852,6 +868,10 @@ class AdminController extends Controller
         $modelClass = $this->getModelClassFromTable($table);
         $hasModel = $modelClass && class_exists($modelClass);
         $realTable = $hasModel ? (new $modelClass)->getTable() : $table;
+
+        if ($realTable === 'providers') {
+            return $this->fail([], 'Providers cannot be deleted. Disable the provider instead to preserve transaction history.', 422);
+        }
 
         if (in_array($realTable, self::RESTRICTED_WRITE_TABLES, true)) {
             return $this->fail([], 'This resource must be changed through its dedicated API.', 403);

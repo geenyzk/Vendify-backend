@@ -14,7 +14,7 @@ class Vendor extends Model
     //
     protected $table = 'providers';
 
-    protected $appends = ['connection', 'balance', 'webhook'];
+    protected $appends = ['connection', 'balance', 'webhook', 'plans_count', 'active_plans_count'];
 
     protected $hidden = ['password', 'api_key', 'secret_key', 'encryption_key'];
 
@@ -244,4 +244,7 @@ class Vendor extends Model
             ? $relation->orderBy('providerables.priority')
             : $relation;
     }
+
+    public function getPlansCountAttribute(): int { return $this->dataPlans()->count(); }
+    public function getActivePlansCountAttribute(): int { return $this->dataPlans()->where('data_plans.active', true)->count(); }
 }

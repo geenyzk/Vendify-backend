@@ -35,7 +35,7 @@ class PublicCatalogController extends Controller
 
             $columns = [
                 'id', 'network', 'plan_name', 'plan_size', 'plan_type',
-                'network_type_id', 'validity', 'active', 'pricing',
+                'network_type_id', 'auto_category_id', 'manual_category_id', 'validity', 'active', 'is_featured', 'pricing',
             ];
             foreach (['basic_price', 'user_price'] as $legacyColumn) {
                 if (Schema::hasColumn('data_plans', $legacyColumn)) {
@@ -45,14 +45,11 @@ class PublicCatalogController extends Controller
 
             $plans = DataPlan::query()
                 ->select($columns)
-                ->where('active', true)
-                ->where(function ($query) {
-                    $query->whereNull('is_draft')->orWhere('is_draft', false);
-                })
+                ->customerVisible()
                 ->whereHas('networkType', fn ($query) => $query
                     ->where('service_type', 'data')
                     ->where('active', true))
-                ->with(['providers:id', 'networkType:id,name,service_type,active'])
+                ->with(['providers:id', 'networkType:id,name,service_type,active', 'autoCategory:id,name,slug,is_active', 'manualCategory:id,name,slug,is_active'])
                 ->orderBy('network')
                 ->orderBy('sort_order')
                 ->orderBy('plan_name')
@@ -71,12 +68,16 @@ class PublicCatalogController extends Controller
                     }
 
                     return [
+                        'id' => $plan->id,
                         'network' => $plan->network,
                         'plan_name' => $plan->plan_name.$plan->plan_size,
                         'amount' => (string) $plan->plan_name,
                         'unit' => strtoupper((string) $plan->plan_size),
                         'validity' => $plan->validity,
                         'plan_type' => strtoupper(trim((string) ($plan->networkType?->name ?? $plan->plan_type))),
+                        'category' => $plan->effective_category?->name,
+                        'category_slug' => $plan->effective_category?->slug,
+                        'is_featured' => (bool) $plan->is_featured,
                         // Decimal string avoids leaking PHP's binary float
                         // representation (e.g. 1246.960000000000036...) into
                         // this customer-facing money API.

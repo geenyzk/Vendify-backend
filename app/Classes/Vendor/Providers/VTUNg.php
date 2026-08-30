@@ -357,6 +357,10 @@ class VTUNg extends VendorBase
 
     public function syncPlans(): array
     {
+        if (! $this->provider->active) {
+            return ['fetched' => 0, 'created' => 0, 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'conflicts' => 0, 'unavailable' => 0, 'disabled' => true];
+        }
+
         $remotePlans = $this->fetchRemotePlans();
         $summary = [
             'fetched' => count($remotePlans),
@@ -389,7 +393,7 @@ class VTUNg extends VendorBase
 
             $amount = rtrim(rtrim(number_format((float) $size[1], 4, '.', ''), '0'), '.');
             $unit = strtoupper($size[2]);
-            preg_match('/(?:-|\bfor\b)\s*(\d+)\s*(day|days|hour|hours|week|weeks)/i', $remote['name'], $validityMatch);
+            preg_match('/(?:-|\bfor\b)\s*(\d+)\s*(day|days|hour|hours|week|weeks|month|months|year|years)/i', $remote['name'], $validityMatch);
             $validity = isset($validityMatch[1]) ? $validityMatch[1].' '.ucfirst(strtolower($validityMatch[2])) : '';
 
             $link = DB::table('providerables')
@@ -448,15 +452,18 @@ class VTUNg extends VendorBase
                     'plan_name' => $amount, 'plan_size' => $unit, 'validity' => $validity,
                     'active' => $remote['available'], 'is_draft' => ! $remote['available'],
                     'sort_order' => 0, 'pricing' => $defaultPricing,
+                    'auto_category_id' => app(\App\Services\DataPlanCategoryClassifier::class)
+                        ->categoryId($remote['name'], $validity, $managedTypeName),
                 ]);
                 $summary['created']++;
             } else {
                 // A plan first discovered while unavailable is held as a
                 // draft. Publish it automatically once VTU.ng makes it
                 // available; never reactivate a plan an admin later disabled.
-                if ($standardTypeId && ! $plan->network_type_id) {
-                    $plan->update(['network_type_id' => $standardTypeId]);
-                }
+                $updates = ['auto_category_id' => app(\App\Services\DataPlanCategoryClassifier::class)
+                    ->categoryId($remote['name'], $validity, (string) $plan->plan_type)];
+                if ($standardTypeId && ! $plan->network_type_id) $updates['network_type_id'] = $standardTypeId;
+                $plan->update($updates);
                 if ($link && $plan->is_draft && (int) $plan->network_type_id === (int) $standardTypeId && $remote['available']) {
                     $plan->update(['active' => true, 'is_draft' => false]);
                 }

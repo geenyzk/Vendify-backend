@@ -75,17 +75,35 @@ class VTUServicesController extends Controller
 
     public function getNetworkPlans()
     {
-        return $this->makeRequest('get', 'network/', [], 10);
+        return app(PublicCatalogController::class)->dataPlans();
     }
 
     public function getDataPlans()
     {
-        return $this->makeRequest('get', 'data/', [], 10);
+        return app(PublicCatalogController::class)->dataPlans();
     }
 
     public function getDataPlanById($id)
     {
-        return $this->makeRequest('get', "data/{$id}", [], 10);
+        $plan = DataPlan::query()
+            ->customerVisible()
+            ->with(['autoCategory:id,name,slug', 'manualCategory:id,name,slug'])
+            ->find($id);
+        if (! $plan) {
+            return $this->fail([], 'Selected plan is currently unavailable.', 404);
+        }
+
+        $price = $plan->priceForRoleKeys(['basic', 'user']);
+        return $this->success([
+            'id' => $plan->id, 'network' => $plan->network,
+            'plan_name' => $plan->plan_name.$plan->plan_size,
+            'amount' => (string) $plan->plan_name, 'unit' => strtoupper((string) $plan->plan_size),
+            'validity' => $plan->validity,
+            'category' => $plan->effective_category?->name,
+            'category_slug' => $plan->effective_category?->slug,
+            'is_featured' => (bool) $plan->is_featured,
+            'selling_price' => $price === null ? null : number_format($price, 2, '.', ''),
+        ]);
     }
 
     public function validateIUC(Request $request)
@@ -127,9 +145,14 @@ class VTUServicesController extends Controller
 
     public function dataPurchase(Request $request)
     {
-        $request->validate(['pin' => 'required|string']);
+        $request->validate(['pin' => 'required|string', 'data_plan' => 'required|integer']);
         if ($pinFailure = $this->transactionPinFailure($request)) {
             return $pinFailure;
+        }
+
+        $plan = DataPlan::query()->customerVisible()->find($request->integer('data_plan'));
+        if (! $plan) {
+            return $this->fail([], 'Selected plan is currently unavailable.', 422);
         }
 
         return $this->makeRequest('post', 'data/', $request->except('pin'));

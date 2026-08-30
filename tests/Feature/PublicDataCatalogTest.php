@@ -18,6 +18,7 @@ class PublicDataCatalogTest extends TestCase
     private Network $network;
 
     private NetworkType $type;
+    private Vendor $vendor;
 
     protected function setUp(): void
     {
@@ -34,11 +35,12 @@ class PublicDataCatalogTest extends TestCase
             'service_type' => 'data',
             'active' => true,
         ]);
+        $this->vendor = Vendor::create(['name' => 'Catalogue Vendor', 'sub_category' => 'adex', 'active' => true]);
     }
 
     private function createPlan(array $attributes = []): DataPlan
     {
-        return DataPlan::create(array_merge([
+        $plan = DataPlan::create(array_merge([
             'network' => 'mtn',
             'plan_type' => DataPlan::STANDARD_TYPE,
             'network_type_id' => $this->type->id,
@@ -49,6 +51,12 @@ class PublicDataCatalogTest extends TestCase
             'is_draft' => false,
             'pricing' => ['basic' => 600, 'user' => 700],
         ], $attributes));
+        DB::table('providerables')->insert([
+            'provider_id' => $this->vendor->id, 'providerable_id' => $plan->id,
+            'providerable_type' => DataPlan::class, 'cost_price' => 500,
+            'margin_value' => 0, 'margin_type' => 'fiat', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        return $plan;
     }
 
     public function test_catalogue_is_public_and_uses_the_basic_customer_price(): void
@@ -113,7 +121,7 @@ class PublicDataCatalogTest extends TestCase
         $row = $response->json('data.0');
 
         $this->assertSame([
-            'network', 'plan_name', 'amount', 'unit', 'validity', 'plan_type', 'selling_price',
+            'id', 'network', 'plan_name', 'amount', 'unit', 'validity', 'plan_type', 'category', 'category_slug', 'is_featured', 'selling_price',
         ], array_keys($row));
         $this->assertStringNotContainsString('CheapDataHub', $response->getContent());
         $this->assertStringNotContainsString('supplier-secret-id', $response->getContent());

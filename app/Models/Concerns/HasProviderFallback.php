@@ -230,7 +230,7 @@ trait HasProviderFallback
                 continue;
             }
 
-            $vendor = Vendor::find($id);
+            $vendor = Vendor::whereKey($id)->where('active', true)->first();
             if ($vendor) {
                 return $vendor;
             }

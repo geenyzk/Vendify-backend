@@ -87,8 +87,8 @@ class ServiceRequest extends FormRequest
                         'exists:data_plans,id',
                         function ($attribute, $value, $fail) use ($network) {
                             $plan = DataPlan::find($value);
-                            if (!$plan || !$plan->active) {
-                                $fail('This data plan is currently unavailable.');
+                            if (! $plan || ! $plan->active || ! $plan->providers()->where('providers.active', true)->exists()) {
+                                $fail('Selected plan is currently unavailable.');
                                 return;
                             }
                             if ($network && strtolower($plan->network) !== strtolower($network)) {
