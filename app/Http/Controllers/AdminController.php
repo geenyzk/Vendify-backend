@@ -319,6 +319,12 @@ class AdminController extends Controller
         'networks', 'network_types', 'data_plans', 'cable_plans',
         'bill_plans', 'airtime_plans', 'exam_plans',
         'airtime_pin_plans', 'data_pin_plans', 'disco_provider_ids',
+        // The merchandising taxonomy the storefront browses data bundles by.
+        // Name/slug/sort_order/is_active only — no credentials, no PII — and
+        // the customer catalog already returns each plan's category name and
+        // slug, so this only adds the ordering and the active flag the
+        // storefront needs to render the category filter in the right order.
+        'data_categories',
     ];
 
     /**
@@ -431,11 +437,12 @@ class AdminController extends Controller
             // 2. Eager Loading (Relationships)
             if ($modelSlug === 'data_plans') {
                 // The compact list still needs the provider pivot's cost_price
-                // for percentage-type pricing entries (DataPlan::resolveCostPrice()),
-                // just not the extra provider columns — eager-loading `id` only
-                // keeps that a single batched query instead of one query per row.
+                // for percentage-type pricing entries (DataPlan::resolveCostPrice())
+                // and the provider's name for the admin table's Provider column,
+                // just not the rest of the provider columns — this stays a single
+                // batched query instead of one query per row.
                 $query->with($isCompactDataPlanList
-                    ? 'providers:id'
+                    ? 'providers:id,name'
                     : 'providers:id,name,code,sub_category,category');
                 $query->with('networkType:id,name,service_type,active');
                 $query->with(['autoCategory:id,name,slug,is_active', 'manualCategory:id,name,slug,is_active']);
@@ -527,6 +534,9 @@ class AdminController extends Controller
                 'plan_type' => $plan->plan_type,
                 'plan' => $plan->plan,
                 'validity' => $plan->validity,
+                'provider' => $plan->providers->first()
+                    ? ['id' => $plan->providers->first()->id, 'name' => $plan->providers->first()->name]
+                    : null,
                 'provider_plan_name' => $presentation['original'],
                 'provider_plan_description' => $presentation['description'],
                 'provider_plan_parse_confident' => $presentation['confident'],
