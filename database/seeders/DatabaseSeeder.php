@@ -20,7 +20,8 @@ class DatabaseSeeder extends Seeder
 
 
         General::create([
-            "app_name" => "Laravel"
+            "app_name" => "Laravel",
+            "app_email" => "info@geeny.co.uk",
         ]);
 
         $this->call([

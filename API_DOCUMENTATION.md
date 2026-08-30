@@ -995,7 +995,7 @@ GET /admin/analytics?start_date=2026-06-01&end_date=2026-07-04
       {
         "user_id": 8,
         "name": "Olaniyi Oladele",
-        "email": "oladele@example.com",
+        "email": "info@geeny.co.uk",
         "total_spent": 45000,
         "transaction_count": 30
       }

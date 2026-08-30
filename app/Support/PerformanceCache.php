@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Cache;
 class PerformanceCache
 {
     public const ADMIN_STATS_KEY = 'admin:stats:v1';
-    public const BRANDING_KEY = 'public:branding:v1';
+    public const BRANDING_KEY = 'public:branding:v2';
     public const SYSTEM_INFO_KEY = 'admin:system-info:v1';
 
     public static function analyticsKey(string $startDate, string $endDate): string
