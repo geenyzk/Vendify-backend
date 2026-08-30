@@ -671,6 +671,10 @@ class AdminController extends Controller
                         throw ValidationException::withMessages(['providerable.provider_id' => 'This provider has no safe default data-plan mapping. Use an integration-managed or synced plan.']);
                     }
                     $item['plan_type'] = $technicalType;
+                    // Validity is provider catalogue metadata, not an input for
+                    // a manually mapped plan. Keep the legacy non-null column
+                    // satisfied without inventing a customer-facing duration.
+                    $item['validity'] = '';
                 }
 
                 if ($modelClass === AirtimePlan::class && (! isset($item['id']) || array_key_exists('providerable', $item))) {
