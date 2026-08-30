@@ -10,6 +10,7 @@ use App\Models\ChildDirective;
 use App\Models\ChildInstance;
 use App\Models\ChildTransaction;
 use App\Models\DataPlan;
+use App\Models\DataCategory;
 use App\Models\AirtimePlan;
 use App\Models\Discount;
 use App\Models\General;
@@ -644,6 +645,34 @@ class AdminController extends Controller
                     continue;
                 }
 
+                $isUpdate = isset($item['id']) && $item['id'] != 0;
+                if ($modelClass === DataPlan::class && ! $isUpdate) {
+                    $categoryId = $item['manual_category_id'] ?? null;
+                    if (! $categoryId || ! DataCategory::whereKey($categoryId)->where('is_active', true)->exists()) {
+                        throw ValidationException::withMessages(['manual_category_id' => 'Select an active customer category for this manual plan.']);
+                    }
+
+                    $providerable = is_array($item['providerable'] ?? null) ? $item['providerable'] : [];
+                    $providerId = $providerable['provider_id'] ?? null;
+                    $providerPlanId = $providerable['server_id'] ?? null;
+                    if (! $providerId) {
+                        throw ValidationException::withMessages(['providerable.provider_id' => 'Select the provider that will fulfil this manual plan.']);
+                    }
+                    if ($providerPlanId === null || $providerPlanId === '' || (string) $providerPlanId === '0') {
+                        throw ValidationException::withMessages(['providerable.server_id' => 'Enter the provider plan ID so this plan can be purchased.']);
+                    }
+
+                    $provider = Provider::whereKey($providerId)->where('category', 'vendor')->where('active', true)->first();
+                    $technicalType = match ($provider?->sub_category) {
+                        'cheapdatahub', 'vtu_ng' => DataPlan::STANDARD_TYPE,
+                        default => null,
+                    };
+                    if (! $technicalType) {
+                        throw ValidationException::withMessages(['providerable.provider_id' => 'This provider has no safe default data-plan mapping. Use an integration-managed or synced plan.']);
+                    }
+                    $item['plan_type'] = $technicalType;
+                }
+
                 if ($modelClass === AirtimePlan::class && (! isset($item['id']) || array_key_exists('providerable', $item))) {
                     $providerable = is_array($item['providerable'] ?? null) ? $item['providerable'] : [];
                     $primaryId = $providerable['provider_id'] ?? null;
@@ -678,8 +707,6 @@ class AdminController extends Controller
                 }
 
                 $model = null;
-                $isUpdate = isset($item['id']) && $item['id'] != 0;
-
                 if ($hasModel) {
                     // 2. Eloquent Handling (Preferred)
                     $relationsSyncedBeforeSave = false;
