@@ -173,37 +173,15 @@ class DataPlan extends Model
             fn ($key) => is_string($key) && $key !== ''
         )));
 
-        // Prefer a role-specific JSON entry, accepting the display name,
-        // slug, or legacy user_type. Roles added after a plan was priced use
-        // the customer/user configuration where one exists rather than an
-        // invented zero price.
+        // Only positive role rules are overrides. Historical forms stored a
+        // zero rule for every unused role; skip those so the next role key
+        // (normally `user`) or the default cost-based price can resolve.
         if (is_array($this->pricing)) {
-            $entry = $this->pricingEntryFor($roleKeys);
-
-            if ($entry !== null) {
-                // New shape: ["type" => "fiat"|"percentage", "value" => number].
-                // "percentage" is a markup over cost price: cost + cost * value%.
-                if (is_array($entry)) {
-                    if (! array_key_exists('value', $entry) || ! is_numeric($entry['value'])) {
-                        return null;
-                    }
-
-                    $value = (float) $entry['value'];
-                    if (($entry['type'] ?? 'fiat') === 'percentage') {
-                        $cost = $this->resolveCostPrice();
-
-                        return $cost > 0 ? round($cost * (1 + $value / 100), 2) : null;
-                    }
-
-                    // Fiat role pricing is a fixed Naira markup over the
-                    // editable Vendify cost price (e.g. 1000 + 75 = 1075).
-                    $cost = $this->resolveCostPrice();
-
-                    return $cost > 0 ? round($cost + $value, 2) : null;
+            foreach ($roleKeys as $key) {
+                $resolved = $this->resolvePricingEntry($this->pricingEntryFor([$key]));
+                if ($resolved !== null) {
+                    return $resolved;
                 }
-
-                // Legacy JSON shape: a plain fiat number.
-                return is_numeric($entry) ? (float) $entry : null;
             }
         }
 
@@ -212,12 +190,51 @@ class DataPlan extends Model
         foreach ($roleKeys as $key) {
             $column = preg_replace('/[^A-Za-z0-9_]/', '_', $key) . '_price';
             $legacyPrice = $this->getAttribute($column);
-            if ($legacyPrice !== null && is_numeric($legacyPrice)) {
+            if ($legacyPrice !== null && is_numeric($legacyPrice) && (float) $legacyPrice > 0) {
                 return (float) $legacyPrice;
             }
         }
 
-        return null;
+        // There is currently no separate default-selling-price column. The
+        // editable providerable cost is the zero-margin default when no
+        // positive role rule exists.
+        $cost = $this->resolveCostPrice();
+
+        return $cost > 0 ? round($cost, 2) : null;
+    }
+
+    /** Resolve one JSON pricing rule; null means "no override". */
+    private function resolvePricingEntry(mixed $entry): ?float
+    {
+        if (is_array($entry)) {
+            if (! array_key_exists('value', $entry) || ! is_numeric($entry['value'])) {
+                return null;
+            }
+
+            $value = (float) $entry['value'];
+            if ($value <= 0) {
+                return null;
+            }
+
+            $type = $entry['type'] ?? 'fiat';
+            if ($type === 'fixed') {
+                return round($value, 2);
+            }
+
+            $cost = $this->resolveCostPrice();
+            if ($cost <= 0) {
+                return null;
+            }
+
+            return $type === 'percentage'
+                ? round($cost * (1 + $value / 100), 2)
+                : round($cost + $value, 2);
+        }
+
+        // Legacy scalar entries are absolute customer selling prices.
+        return is_numeric($entry) && (float) $entry > 0
+            ? round((float) $entry, 2)
+            : null;
     }
 
     /** @param array<int, string> $roleKeys */

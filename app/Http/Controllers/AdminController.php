@@ -526,6 +526,7 @@ class AdminController extends Controller
         return collect($plans)->map(function (DataPlan $plan) {
             $providerPlan = $plan->providers->first()?->pivot?->provider_plan_name;
             $presentation = ProviderPlanPresentation::from($providerPlan, $plan->validity);
+            $customerPrice = $plan->priceForRoleKeys(['basic', 'user']);
 
             return [
                 'id' => $plan->id,
@@ -550,8 +551,12 @@ class AdminController extends Controller
                 'category_slug' => $plan->effective_category?->slug,
                 'status' => $plan->is_draft ? 'draft' : ($plan->active ? 'active' : 'inactive'),
                 'sort_order' => $plan->sort_order,
-                'price' => $plan->price,
-                'price_ngn' => $plan->price_ngn,
+                // Preview the normal customer tier, not the signed-in staff
+                // role, whose explicit markup can legitimately be different.
+                'price' => $customerPrice,
+                'price_ngn' => $customerPrice === null
+                    ? null
+                    : '₦'.number_format($customerPrice, 2),
             ];
         })->values()->all();
     }

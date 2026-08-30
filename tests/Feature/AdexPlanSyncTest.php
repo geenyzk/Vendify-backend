@@ -424,7 +424,7 @@ test('customer catalogue returns an active configured price immediately and hide
         ->and($plans[0]['price'])->toBe(350.0);
 });
 
-test('percentage and missing role pricing resolve to a real price or null, never an invented zero', function () {
+test('percentage and missing role pricing resolve to a markup or the cost-based default', function () {
     $vendor = Vendor::create(['name' => 'Pricing vendor', 'sub_category' => 'adex', 'active' => true]);
     $plan = DataPlan::create([
         'network' => 'mtn', 'plan_type' => 'GIFTING', 'plan_name' => '1', 'plan_size' => 'GB',
@@ -441,7 +441,7 @@ test('percentage and missing role pricing resolve to a real price or null, never
 
     $plan->pricing = ['affiliate' => ['type' => 'fiat', 'value' => 600]];
     $plan->save();
-    expect($plan->fresh()->price)->toBeNull()->and($plan->fresh()->price_ngn)->toBeNull();
+    expect($plan->fresh()->price)->toBe(500.0)->and($plan->fresh()->price_ngn)->toBe('₦500.00');
 });
 
 test('vtu ng sync keeps provider price separate from an editable cost override', function () {
