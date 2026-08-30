@@ -316,7 +316,7 @@ class AdminController extends Controller
     // customer could GET /table/providers and walk off with every vendor and
     // payment-gateway credential.
     private const PUBLIC_TABLES = [
-        'networks', 'network_types', 'data_plans', 'cable_plans',
+        'networks', 'network_types', 'data_categories', 'data_plans', 'cable_plans',
         'bill_plans', 'airtime_plans', 'exam_plans',
         'airtime_pin_plans', 'data_pin_plans', 'disco_provider_ids',
         // The merchandising taxonomy the storefront browses data bundles by.
