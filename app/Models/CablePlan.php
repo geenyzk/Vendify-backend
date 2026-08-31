@@ -69,8 +69,25 @@ class CablePlan extends Model
      */
     public function providers()
     {
+        // Mirrors DataPlan::providers(): the sync columns are only carried
+        // when the migration that adds them has run, so the relation stays
+        // usable on an un-migrated database. Deliberately NOT ordered by
+        // `priority` the way DataPlan is — resolveCostPrice()/provider read
+        // `first()`, and reordering here would silently change which mapping
+        // sets a plan's cost price.
+        $fields = ['cost_price', 'margin_value', 'margin_type', 'server_id'];
+        foreach ([
+            'external_plan_id', 'provider_service_id', 'provider_plan_name',
+            'provider_price', 'provider_available', 'provider_enabled',
+            'priority', 'last_synced_at',
+        ] as $field) {
+            if (\Illuminate\Support\Facades\Schema::hasColumn('providerables', $field)) {
+                $fields[] = $field;
+            }
+        }
+
         return $this->morphToMany(Provider::class, 'providerable', 'providerables', 'providerable_id', 'provider_id')
-            ->withPivot(['cost_price', 'margin_value', 'margin_type', 'server_id'])
+            ->withPivot($fields)
             ->withTimestamps();
     }
 
