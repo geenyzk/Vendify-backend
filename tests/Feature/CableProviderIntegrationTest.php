@@ -138,3 +138,26 @@ test('disabled VTU provider does not sync or reactivate cable plans', function (
     expect($summary['disabled'])->toBeTrue()->and(CablePlan::count())->toBe(0);
     Http::assertNothingSent();
 });
+
+test('customer cable catalogue is lean and query count stays constant as plans grow', function () {
+    $user = User::factory()->create();
+    $vendor = cableVendor('VTU.ng', 'vtung');
+    foreach (range(1, 12) as $index) {
+        $plan = cablePlan('dstv', "Package {$index}");
+        mapCable($plan, $vendor, (string) (2700 + $index), 'dstv');
+    }
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $response = $this->actingAs($user)->getJson('/api/customer/cable/catalog')->assertOk();
+    $queries = DB::getQueryLog();
+
+    expect($response->json('data'))->toHaveCount(12)
+        ->and(count($queries))->toBeLessThanOrEqual(5);
+    expect(array_keys($response->json('data.0')))->toBe([
+        'service', 'service_name', 'plan', 'plan_id', 'price', 'availability',
+    ]);
+    expect(json_encode($response->json('data')))->not->toContain('provider')
+        ->not->toContain('external_plan_id')
+        ->not->toContain('cost_price');
+});

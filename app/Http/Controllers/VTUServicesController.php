@@ -625,19 +625,21 @@ class VTUServicesController extends Controller
         if ($service === 'cable') {
             $network = strtolower((string) $request->query('service_id', $request->query('cable_network', '')));
             $plans = CablePlan::query()
+                ->select(['id', 'cable_network', 'plan_name', 'charge_fee', 'sort_order'])
                 ->where('active', true)
                 ->when($network !== '', fn ($query) => $query->whereRaw('LOWER(cable_network) = ?', [$network]))
                 ->whereHas('providers', fn ($query) => $query
                     ->where('providers.active', true)
                     ->where('providerables.provider_enabled', true)
                     ->where('providerables.provider_available', true))
-                ->orderBy('sort_order')->orderBy('plan_name')->get()
-                ->map(fn (CablePlan $plan) => [
+                ->orderBy('sort_order')->orderBy('plan_name')->get();
+            $baseAmounts = app(CablePricingService::class)->baseAmounts($plans->modelKeys());
+            $plans = $plans->map(fn (CablePlan $plan) => [
                     'service' => strtolower($plan->cable_network),
                     'service_name' => CablePlan::serviceName($plan->cable_network),
                     'plan' => $plan->plan_name,
                     'plan_id' => $plan->id,
-                    'price' => $plan->price,
+                    'price' => round(($baseAmounts[$plan->id] ?? 0) + $plan->chargeFeeForBase($baseAmounts[$plan->id] ?? 0, $request->user()), 2),
                     'availability' => true,
                 ])->values();
 

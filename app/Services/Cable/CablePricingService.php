@@ -80,6 +80,36 @@ class CablePricingService
     }
 
     /**
+     * Resolve the live cost for a whole catalogue in one query.
+     *
+     * @param iterable<int> $planIds
+     * @return array<int, float>
+     */
+    public function baseAmounts(iterable $planIds): array
+    {
+        $ids = collect($planIds)->map(fn ($id) => (int) $id)->filter()->unique()->values();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $query = DB::table('providerables')
+            ->join('providers', 'providers.id', '=', 'providerables.provider_id')
+            ->whereIn('providerables.providerable_id', $ids)
+            ->where('providerables.providerable_type', CablePlan::class)
+            ->where('providers.active', true)
+            ->where('providerables.provider_enabled', true)
+            ->where('providerables.provider_available', true)
+            ->orderBy('providerables.providerable_id')
+            ->orderBy('providerables.priority');
+
+        return $query
+            ->get(['providerables.providerable_id', 'providerables.cost_price'])
+            ->groupBy('providerable_id')
+            ->map(fn ($rows) => (float) $rows->first()->cost_price)
+            ->all();
+    }
+
+    /**
      * The complete customer quote.
      *
      * `$renewalAmount` is the decoder's own renewal figure, read from the
