@@ -46,6 +46,19 @@ class SyncVendorPlans extends Command
                     $summary['conflicts'] ?? 0,
                     $summary['unavailable'] ?? 0,
                 ));
+                if (method_exists($vendorInstance, 'syncCablePlans')) {
+                    $cable = $vendorInstance->syncCablePlans();
+                    $this->info(sprintf(
+                        '  [%s cable] fetched=%d created=%d matched=%d updated=%d conflicts=%d unavailable=%d',
+                        $vendor->name,
+                        $cable['fetched'] ?? 0,
+                        $cable['created'] ?? 0,
+                        $cable['matched'] ?? 0,
+                        $cable['updated'] ?? 0,
+                        $cable['conflicts'] ?? 0,
+                        $cable['unavailable'] ?? 0,
+                    ));
+                }
             } catch (\Throwable $e) {
                 $this->error("  [{$vendor->name}] sync failed: {$e->getMessage()}");
                 Log::error("SyncVendorPlans: failed for [{$vendor->name}]", ['error' => $e->getMessage()]);

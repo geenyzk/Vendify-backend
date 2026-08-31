@@ -4,6 +4,7 @@ namespace App\Classes\Vendor\Providers;
 
 use App\Classes\Vendor\VendorBase;
 use App\Models\DataPlan;
+use App\Models\CablePlan;
 use App\Models\Transaction;
 use App\Models\Role;
 use App\Models\ServiceRoute;
@@ -15,6 +16,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -66,6 +68,7 @@ class VTUNg extends VendorBase
         return match ($service) {
             'airtime' => '/airtime',
             'data' => '/data',
+            'cable' => '/tv',
             'electricity' => '/electricity',
             default => throw new \InvalidArgumentException("VTU.ng does not support service [$service] in this integration."),
         };
@@ -78,7 +81,7 @@ class VTUNg extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['airtime', 'data', 'electricity'];
+        return ['airtime', 'data', 'cable', 'electricity'];
     }
 
     protected function getAuthHeaders(): array
@@ -209,6 +212,47 @@ class VTUNg extends VendorBase
             ];
         }
 
+        if ($service === 'cable') {
+            $plan = CablePlan::find($payload['cable_plan'] ?? null);
+            if (! $plan) {
+                throw new \InvalidArgumentException('Cable plan not found.');
+            }
+            $mapping = DB::table('providerables')
+                ->where('providerable_id', $plan->id)
+                ->where('providerable_type', CablePlan::class)
+                ->where('provider_id', $this->provider->id)
+                ->where('provider_enabled', true)
+                ->where('provider_available', true)
+                ->first();
+            if (! $mapping || ! $mapping->external_plan_id || ! $mapping->provider_service_id) {
+                throw new \InvalidArgumentException("Cable plan [{$plan->id}] has no available VTU.ng mapping.");
+            }
+
+            $serviceId = $this->cableServiceId((string) $mapping->provider_service_id);
+            $subscriptionType = strtolower((string) ($payload['subscription_type'] ?? 'change'));
+            $verification = Cache::get($this->cableVerificationKey((int) Auth::id(), $serviceId, (string) $payload['iuc']));
+            if ($serviceId !== 'showmax' && (! is_array($verification) || ($verification['verified'] ?? false) !== true)) {
+                throw new \InvalidArgumentException('Please verify this smartcard before purchasing.');
+            }
+            $request = [
+                'request_id' => substr('vendify_'.$payload['tx_ref'], 0, 50),
+                'customer_id' => (string) $payload['iuc'],
+                'service_id' => $serviceId,
+                'variation_id' => (string) $mapping->external_plan_id,
+                'subscription_type' => $subscriptionType,
+            ];
+
+            if ($subscriptionType === 'renew') {
+                $renewalAmount = is_array($verification) ? ($verification['renewal_amount'] ?? null) : null;
+                if (! is_numeric($renewalAmount) || (float) $renewalAmount <= 0) {
+                    throw new \InvalidArgumentException('Please verify this smartcard again before renewing.');
+                }
+                $request['amount'] = (float) $renewalAmount;
+            }
+
+            return $request;
+        }
+
         $plan = DataPlan::find($payload['data_plan'] ?? null);
         if (! $plan) {
             throw new \InvalidArgumentException('Data plan not found.');
@@ -252,6 +296,7 @@ class VTUNg extends VendorBase
             'provider' => $this->providerName,
             'transaction_type' => match ($service) {
                 'airtime' => 'airtime_recharge',
+                'cable' => 'cable_subscription',
                 'electricity' => 'electric_bill',
                 default => 'data_subscription',
             },
@@ -260,10 +305,10 @@ class VTUNg extends VendorBase
             'transaction_reference' => $response['tx_ref'] ?? null,
             'payment_reference' => $data['request_id'] ?? $response['request_id'] ?? null,
             'response_message' => $response['message'] ?? 'VTU.ng order submitted.',
-            'account_or_phone' => $service === 'electricity'
+            'account_or_phone' => in_array($service, ['electricity', 'cable'], true)
                 ? ($data['customer_id'] ?? $response['meter_number'] ?? null)
                 : ($data['phone'] ?? $response['phone'] ?? null),
-            'receiver' => $service === 'electricity'
+            'receiver' => in_array($service, ['electricity', 'cable'], true)
                 ? ($data['customer_id'] ?? $response['meter_number'] ?? null)
                 : ($data['phone'] ?? $response['phone'] ?? null),
             'amount' => $response['amount'] ?? 0,
@@ -271,6 +316,7 @@ class VTUNg extends VendorBase
             'service_fee' => (float) ($response['service_fee'] ?? 0),
             'plan_type' => match ($service) {
                 'airtime' => $response['network_type'] ?? 'VTU',
+                'cable' => $response['subscription_type'] ?? 'change',
                 'electricity' => $response['meter_type'] ?? $data['variation_id'] ?? null,
                 default => $response['plan_type'] ?? 'DATA',
             },
@@ -353,6 +399,112 @@ class VTUNg extends VendorBase
                 'available' => strcasecmp((string) ($row['availability'] ?? ''), 'available') === 0,
             ];
         }, $response->json('data'))));
+    }
+
+    public function fetchRemoteCablePlans(): array
+    {
+        $response = Http::connectTimeout(5)->timeout(20)->get($this->baseUrl().'/variations/tv');
+        if (! $response->successful() || ! is_array($response->json('data'))) {
+            throw new \RuntimeException('VTU.ng cable variation list request failed.');
+        }
+
+        return array_values(array_filter(array_map(function ($row) {
+            if (! is_array($row) || empty($row['variation_id']) || empty($row['service_id']) || empty($row['package_bouquet'])) {
+                return null;
+            }
+            try {
+                $serviceId = $this->cableServiceId((string) $row['service_id']);
+            } catch (\InvalidArgumentException) {
+                return null;
+            }
+            return [
+                'external_plan_id' => (string) $row['variation_id'],
+                'service_id' => $serviceId,
+                'name' => trim((string) $row['package_bouquet']),
+                'provider_price' => (float) ($row['price'] ?? 0),
+                'available' => strcasecmp((string) ($row['availability'] ?? ''), 'available') === 0,
+            ];
+        }, $response->json('data'))));
+    }
+
+    public function syncCablePlans(): array
+    {
+        if (! $this->provider->active) {
+            return ['fetched' => 0, 'created' => 0, 'matched' => 0, 'updated' => 0, 'conflicts' => 0, 'unavailable' => 0, 'disabled' => true];
+        }
+
+        $remotePlans = $this->fetchRemoteCablePlans();
+        $summary = ['fetched' => count($remotePlans), 'created' => 0, 'matched' => 0, 'updated' => 0, 'conflicts' => 0, 'unavailable' => 0];
+        $seen = [];
+        foreach ($remotePlans as $remote) {
+            $seen[] = $remote['external_plan_id'];
+            $link = DB::table('providerables')
+                ->where('provider_id', $this->provider->id)
+                ->where('providerable_type', CablePlan::class)
+                ->where('provider_service_id', $remote['service_id'])
+                ->where('external_plan_id', $remote['external_plan_id'])
+                ->first();
+            $plan = $link ? CablePlan::find($link->providerable_id) : null;
+
+            if (! $plan) {
+                $normalize = fn ($value) => strtolower(trim(preg_replace('/\s+/', ' ', (string) $value) ?? ''));
+                $candidates = CablePlan::query()->where('cable_network', $remote['service_id'])->get()
+                    ->filter(fn (CablePlan $candidate) => $normalize($candidate->plan_name) === $normalize($remote['name']));
+                if ($candidates->count() === 1) {
+                    $plan = $candidates->first();
+                    $summary['matched']++;
+                } elseif ($candidates->count() > 1) {
+                    $summary['conflicts']++;
+                }
+            }
+
+            if (! $plan) {
+                $plan = CablePlan::create([
+                    'cable_network' => $remote['service_id'],
+                    'plan_name' => $remote['name'],
+                    'active' => $remote['available'],
+                    'sort_order' => 0,
+                    'charge_fee' => $this->defaultPricing(),
+                ]);
+                $summary['created']++;
+            } else {
+                $summary['updated']++;
+            }
+
+            DB::table('providerables')->updateOrInsert(
+                [
+                    'provider_id' => $this->provider->id,
+                    'providerable_type' => CablePlan::class,
+                    'provider_service_id' => $remote['service_id'],
+                    'external_plan_id' => $remote['external_plan_id'],
+                ],
+                [
+                    'providerable_id' => $plan->id,
+                    'server_id' => $remote['external_plan_id'],
+                    'provider_plan_name' => $remote['name'],
+                    'provider_price' => $remote['provider_price'],
+                    'cost_price' => $link->cost_price ?? $remote['provider_price'],
+                    'provider_available' => $remote['available'],
+                    'provider_enabled' => $link->provider_enabled ?? true,
+                    'priority' => $link->priority ?? 100,
+                    'last_synced_at' => now(),
+                    'margin_value' => $link->margin_value ?? 0,
+                    'margin_type' => $link->margin_type ?? 'fiat',
+                    'created_at' => $link->created_at ?? now(),
+                    'updated_at' => now(),
+                ],
+            );
+        }
+
+        $summary['unavailable'] = DB::table('providerables')
+            ->where('provider_id', $this->provider->id)
+            ->where('providerable_type', CablePlan::class)
+            ->whereNotNull('external_plan_id')
+            ->when($seen !== [], fn ($query) => $query->whereNotIn('external_plan_id', $seen))
+            ->update(['provider_available' => false, 'last_synced_at' => now(), 'updated_at' => now()]);
+        PerformanceCache::clearCatalog();
+
+        return $summary;
     }
 
     public function syncPlans(): array
@@ -520,6 +672,52 @@ class VTUNg extends VendorBase
 
     public function verifyUser(string $service, string $identifier, array $payload): JsonResponse
     {
+        if ($service === 'cable') {
+            try {
+                $serviceId = $this->cableServiceId((string) ($payload['cable_network'] ?? $payload['service_id'] ?? ''));
+                if ($serviceId === 'showmax') {
+                    return $this->success([
+                        'verified' => true,
+                        'service' => $serviceId,
+                        'smartcard_number' => $identifier,
+                        'verification_required' => false,
+                    ], 'Customer verification is not required for Showmax.', 200);
+                }
+
+                $response = $this->authenticatedPost($this->baseUrl().'/verify-customer', [
+                    'customer_id' => $identifier,
+                    'service_id' => $serviceId,
+                ]);
+                $body = $response->json();
+                $body = is_array($body) ? $body : [];
+                $data = is_array($body['data'] ?? null) ? $body['data'] : [];
+                if (! $response->successful() || strtolower((string) ($body['code'] ?? '')) !== 'success') {
+                    return $this->fail([], 'Unable to verify this smartcard number.', 422);
+                }
+
+                $normalized = array_filter([
+                    'verified' => true,
+                    'customer_name' => $data['customer_name'] ?? $data['name'] ?? null,
+                    'service' => $serviceId,
+                    'smartcard_number' => $identifier,
+                    'current_package' => $data['current_package'] ?? $data['current_bouquet'] ?? null,
+                    'renewal_amount' => isset($data['renewal_amount']) && is_numeric($data['renewal_amount'])
+                        ? (float) $data['renewal_amount'] : null,
+                ], fn ($value) => $value !== null && $value !== '');
+                Cache::put(
+                    $this->cableVerificationKey((int) Auth::id(), $serviceId, $identifier),
+                    $normalized,
+                    now()->addMinutes(10),
+                );
+
+                return $this->success($normalized, 'Smartcard verification successful.', 200);
+            } catch (ConnectionException) {
+                return $this->fail([], 'Smartcard verification is temporarily unavailable.', 503);
+            } catch (\InvalidArgumentException $e) {
+                return $this->fail([], $e->getMessage(), 422);
+            }
+        }
+
         if ($service !== 'electricity') {
             return response()->json(['success' => true, 'data' => []]);
         }
@@ -550,6 +748,29 @@ class VTUNg extends VendorBase
         } catch (\InvalidArgumentException $e) {
             return $this->fail([], $e->getMessage(), 422);
         }
+    }
+
+    private function cableServiceId(string $service): string
+    {
+        $key = strtolower(preg_replace('/[^a-z0-9]+/i', '', $service) ?? '');
+        return match ($key) {
+            'dstv' => 'dstv',
+            'gotv' => 'gotv',
+            'startime', 'startimes' => 'startimes',
+            'showmax', 'dstvshowmax' => 'showmax',
+            default => throw new \InvalidArgumentException('This cable service is not supported.'),
+        };
+    }
+
+    private function cableVerificationKey(int $userId, string $service, string $identifier): string
+    {
+        return 'cable-verification:'.$userId.':'.$service.':'.hash('sha256', $identifier);
+    }
+
+    public static function verifiedCableCustomer(int $userId, string $service, string $identifier): ?array
+    {
+        $value = Cache::get('cable-verification:'.$userId.':'.$service.':'.hash('sha256', $identifier));
+        return is_array($value) && ($value['verified'] ?? false) === true ? $value : null;
     }
 
     /** Convert Vendify's display names (and common abbreviations) to v2 IDs. */

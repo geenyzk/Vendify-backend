@@ -21,6 +21,7 @@ class CablePlan extends Model
     ];
     protected $casts = [
         "active" => "boolean",
+        "sort_order" => "integer",
         "charge_fee" => "array",
     ];
 
@@ -49,7 +50,7 @@ class CablePlan extends Model
 
 
      protected $fillable = [
-        'cable_network', 'plan_name', 'active', 'charge_fee',
+        'cable_network', 'plan_name', 'active', 'sort_order', 'charge_fee',
         'adex_server_1', 'adex_server_2', 'adex_server_3', 'adex_server_4', 'adex_server_5',
         'spurs_server_1', 'spurs_server_2', 'spurs_server_3', 'spurs_server_4', 'spurs_server_5',
         'msorg_server_1', 'msorg_server_2', 'msorg_server_3', 'msorg_server_4', 'msorg_server_5',
@@ -148,6 +149,11 @@ class CablePlan extends Model
      */
     public function getChargeFeeAmountAttribute(): float
     {
+        return $this->chargeFeeForBase($this->resolveCostPrice());
+    }
+
+    public function chargeFeeForBase(float $base): float
+    {
         $user = Auth::user();
         $role = $user?->role->name ?? "user";
 
@@ -159,7 +165,7 @@ class CablePlan extends Model
         $value = (float) ($entry['value'] ?? 0);
 
         return ($entry['type'] ?? 'fiat') === 'percentage'
-            ? round($this->resolveCostPrice() * ($value / 100), 2)
+            ? round($base * ($value / 100), 2)
             : $value;
     }
 

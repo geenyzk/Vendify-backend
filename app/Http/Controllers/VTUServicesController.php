@@ -264,10 +264,23 @@ class VTUServicesController extends Controller
         if ($service === 'cable' && !empty($validated['cable_plan'])) {
             $cablePlan = CablePlan::find($validated['cable_plan']);
             if ($cablePlan) {
-                if ($cablePlan->price === null || (float) $cablePlan->price <= 0) {
+                $cablePrice = (float) $cablePlan->price;
+                if (($validated['subscription_type'] ?? 'change') === 'renew') {
+                    $verification = VTUNg::verifiedCableCustomer(
+                        (int) $request->user()->id,
+                        strtolower((string) $cablePlan->cable_network),
+                        (string) $validated['iuc'],
+                    );
+                    $renewalAmount = $verification['renewal_amount'] ?? null;
+                    if (! is_numeric($renewalAmount) || (float) $renewalAmount <= 0) {
+                        return $this->fail([], 'Please verify this smartcard again before renewing.', 422);
+                    }
+                    $cablePrice = round((float) $renewalAmount + $cablePlan->chargeFeeForBase((float) $renewalAmount), 2);
+                }
+                if ($cablePrice <= 0) {
                     return $this->fail([], 'This cable plan is not available for your account right now. Please contact support.', 422);
                 }
-                $validated['amount'] = (float) $cablePlan->price;
+                $validated['amount'] = $cablePrice;
             }
         }
 
@@ -595,6 +608,30 @@ class VTUServicesController extends Controller
 
     public function plan(Request $request, string $service){
         Log::info($request);
+        if ($service === 'cable') {
+            $network = strtolower((string) $request->query('service_id', $request->query('cable_network', '')));
+            $plans = CablePlan::query()
+                ->where('active', true)
+                ->when($network !== '', fn ($query) => $query->whereRaw('LOWER(cable_network) = ?', [$network]))
+                ->whereHas('providers', fn ($query) => $query
+                    ->where('providers.active', true)
+                    ->where('providerables.provider_enabled', true)
+                    ->where('providerables.provider_available', true))
+                ->orderBy('sort_order')->orderBy('plan_name')->get()
+                ->map(fn (CablePlan $plan) => [
+                    'service' => strtolower($plan->cable_network),
+                    'service_name' => match (strtolower($plan->cable_network)) {
+                        'dstv' => 'DStv', 'gotv' => 'GOtv', 'startimes' => 'StarTimes',
+                        'showmax' => 'Showmax', default => $plan->cable_network,
+                    },
+                    'plan' => $plan->plan_name,
+                    'plan_id' => $plan->id,
+                    'price' => $plan->price,
+                    'availability' => true,
+                ])->values();
+
+            return $this->success($plans);
+        }
         $servicePlansObject = [
             "data" => "data_plans",
             "cable" => "cable_plans",
@@ -632,13 +669,24 @@ class VTUServicesController extends Controller
             $val = [];
             if($service == "cable"){
                 $val = [
-                'cable_network' => 'required|string',
+                'cable_network' => 'required|string|in:dstv,gotv,startimes,showmax',
                 ];
             }elseif ($service == 'electricity') {
                 $val = [
                 'meter_type' => 'required|string',
                 'disco' => 'required|string',
                 ];
+            }
+            if ($service === 'cable') {
+                $rawService = (string) ($request->input('service_id') ?: $request->input('cable_network'));
+                $key = strtolower(preg_replace('/[^a-z0-9]+/i', '', $rawService) ?? '');
+                $request->merge([
+                    'identifier' => $request->input('identifier', $request->input('smartcard_number')),
+                    'cable_network' => match ($key) {
+                    'dstv' => 'dstv', 'gotv' => 'gotv', 'startime', 'startimes' => 'startimes',
+                    'showmax', 'dstvshowmax' => 'showmax', default => $key,
+                    },
+                ]);
             }
             $payload = $request->validate(array_merge([
                 'identifier' => 'required|string',
@@ -650,8 +698,11 @@ class VTUServicesController extends Controller
                 ? ($payload['disco'] ?? $service)
                 : ($payload['cable_network'] ?? '');
             $handler = VTUServiceFactory::make($service, $routeKey, null, null, $routeKey);
+            if ($service === 'cable' && ! $handler && ($vtu = VTUNg::activeProvider())) {
+                $handler = new VTUNg($vtu);
+            }
             if (! $handler) {
-                return $this->fail([], 'Electricity service is not configured.', 503);
+                return $this->fail([], ucfirst($service).' service is not configured.', 503);
             }
             // CheapDataHub documents electricity purchase but does not expose
             // a reseller meter-verification endpoint. Keep the mandatory UI
@@ -659,6 +710,12 @@ class VTUServicesController extends Controller
             // the confirmed purchase still follows the BillPlan's configured
             // CheapDataHub route.
             if ($service === 'electricity' && $handler instanceof CheapDataHub && ($vtu = VTUNg::activeProvider())) {
+                $handler = new VTUNg($vtu);
+            }
+            // CheapDataHub publishes no reseller smartcard-verification API.
+            // VTU.ng verification is cable-network verification (not a plan
+            // purchase), so it is the only documented safe verifier available.
+            if ($service === 'cable' && $handler instanceof CheapDataHub && ($vtu = VTUNg::activeProvider())) {
                 $handler = new VTUNg($vtu);
             }
             return $handler->verifyUser($service, $request->identifier, $payload);

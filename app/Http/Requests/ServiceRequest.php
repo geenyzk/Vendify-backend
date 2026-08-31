@@ -9,10 +9,36 @@ use App\Models\DataPlan;
 use App\Rules\ValidPhoneForNetwork;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ServiceRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        if ($this->route('service') !== 'cable') {
+            return;
+        }
+
+        $planId = $this->input('cable_plan', $this->input('plan_id'));
+        $network = $this->input('cable_network')
+            ?: ($planId ? CablePlan::whereKey($planId)->value('cable_network') : null);
+        $key = strtolower(preg_replace('/[^a-z0-9]+/i', '', (string) $network) ?? '');
+        $service = match ($key) {
+            'dstv' => 'dstv', 'gotv' => 'gotv',
+            'startime', 'startimes' => 'startimes',
+            'showmax', 'dstvshowmax' => 'showmax',
+            default => $key,
+        };
+        $this->merge([
+            'cable_network' => $service,
+            'cable_plan' => $planId,
+            'iuc' => $this->input('iuc', $this->input('smartcard_number')),
+            'tx_ref' => $this->input('tx_ref', $this->input('idempotency_key', $this->header('Idempotency-Key'))),
+            'subscription_type' => strtolower((string) ($this->input('subscription_type') ?: 'change')),
+        ]);
+    }
+
     public function authorize(): bool
     {
         return true;
@@ -149,8 +175,38 @@ class ServiceRequest extends FormRequest
                 // than relying on the generic $network passed in.
                 $cableNetwork = $this->input('cable_network');
                 return [
-                    "cable_network" => "required|string",
-                    "iuc" => "required|string",
+                    // Cable pricing is resolved from the selected Vendify
+                    // plan (or verified renewal amount), never from a client.
+                    "amount" => ['sometimes', 'numeric'],
+                    "cable_network" => ['required', 'string', Rule::in(['dstv', 'gotv', 'startimes', 'showmax'])],
+                    "iuc" => $cableNetwork === 'showmax'
+                        ? ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9@._+\-]{5,100}$/']
+                        : ['required', 'string', 'regex:/^[0-9]{5,30}$/'],
+                    "phone" => ['required', 'string', 'regex:/^\+?[0-9]{10,15}$/'],
+                    "subscription_type" => [
+                        'sometimes', 'string', Rule::in(['change', 'renew']),
+                        function ($attribute, $value, $fail) use ($cableNetwork) {
+                            if ($value === 'renew' && ! in_array(strtolower((string) $cableNetwork), ['dstv', 'gotv'], true)) {
+                                $fail('Renewal is supported only for DStv and GOtv.');
+                                return;
+                            }
+                            if ($value === 'renew') {
+                                $provider = DB::table('providerables')
+                                    ->join('providers', 'providers.id', '=', 'providerables.provider_id')
+                                    ->where('providerables.providerable_id', $this->input('cable_plan'))
+                                    ->where('providerables.providerable_type', CablePlan::class)
+                                    ->where('providerables.provider_enabled', true)
+                                    ->where('providerables.provider_available', true)
+                                    ->where('providers.active', true)
+                                    ->orderBy('providerables.priority')
+                                    ->first(['providers.name', 'providers.sub_category']);
+                                $identity = strtolower(preg_replace('/[^a-z0-9]+/i', '', (string) ($provider->sub_category ?? $provider->name ?? '')) ?? '');
+                                if ($identity !== 'vtung') {
+                                    $fail('Renewal is not supported by the configured provider for this plan.');
+                                }
+                            }
+                        },
+                    ],
                     "cable_plan" => [
                         'required',
                         'exists:cable_plans,id',
@@ -162,6 +218,12 @@ class ServiceRequest extends FormRequest
                             }
                             if ($cableNetwork && strtolower($plan->cable_network) !== strtolower($cableNetwork)) {
                                 $fail('This cable plan does not belong to the selected provider.');
+                                return;
+                            }
+                            if (! $plan->providers()->where('providers.active', true)
+                                ->wherePivot('provider_enabled', true)
+                                ->wherePivot('provider_available', true)->exists()) {
+                                $fail('This cable plan currently has no available provider mapping.');
                             }
                         },
                     ],

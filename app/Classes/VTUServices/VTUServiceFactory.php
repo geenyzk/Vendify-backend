@@ -74,6 +74,19 @@ class VTUServiceFactory
             }
         } elseif ($service === 'cable' && $planId) {
             $provider = CablePlan::find($planId)?->resolveFallbackVendor($excludeProviderIds);
+            if (Schema::hasColumn('providerables', 'priority')) {
+                $providerId = DB::table('providerables')
+                    ->join('providers', 'providers.id', '=', 'providerables.provider_id')
+                    ->where('providerables.providerable_id', $planId)
+                    ->where('providerables.providerable_type', CablePlan::class)
+                    ->where('providerables.provider_enabled', true)
+                    ->where('providerables.provider_available', true)
+                    ->where('providers.active', true)
+                    ->when($excludeProviderIds !== [], fn ($query) => $query->whereNotIn('providerables.provider_id', $excludeProviderIds))
+                    ->orderBy('providerables.priority')
+                    ->value('providerables.provider_id');
+                $provider = $providerId ? Vendor::find($providerId) : $provider;
+            }
         } elseif ($service === 'airtime' && $network) {
             $plans = AirtimePlan::where('name', $network)->where('active', true)->get();
             $plan = $plans->first(fn ($candidate) => ($candidate->category ?: 'vtu') === $sub)
@@ -131,7 +144,18 @@ class VTUServiceFactory
         }
 
         if ($service === 'cable' && $planId) {
-            $vendor = self::usable(CablePlan::find($planId)?->resolveVendor(), $service, $network, $planId, $amount);
+            $providerId = Schema::hasColumn('providerables', 'priority')
+                ? DB::table('providerables')
+                    ->join('providers', 'providers.id', '=', 'providerables.provider_id')
+                    ->where('providerables.providerable_id', $planId)
+                    ->where('providerables.providerable_type', CablePlan::class)
+                    ->where('providerables.provider_enabled', true)
+                    ->where('providerables.provider_available', true)
+                    ->where('providers.active', true)
+                    ->orderBy('providerables.priority')
+                    ->value('providerables.provider_id')
+                : null;
+            $vendor = self::usable($providerId ? Vendor::find($providerId) : CablePlan::find($planId)?->resolveVendor(), $service, $network, $planId, $amount);
             if ($vendor) {
                 return $vendor;
             }

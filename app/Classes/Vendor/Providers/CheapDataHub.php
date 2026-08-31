@@ -5,6 +5,7 @@ namespace App\Classes\Vendor\Providers;
 use App\Classes\Vendor\VendorBase;
 use App\Models\DataPlan;
 use App\Models\BillPlan;
+use App\Models\CablePlan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -39,6 +40,7 @@ class CheapDataHub extends VendorBase
             'airtime' => '/airtime/purchase/',
             'data' => '/data/purchase/',
             'electricity' => '/electricity/purchase/',
+            'cable' => '/cable/purchase/',
             default => throw new \InvalidArgumentException("CheapDataHub does not support service [{$service}]."),
         };
     }
@@ -50,7 +52,7 @@ class CheapDataHub extends VendorBase
 
     protected function getSupportedServices(): array
     {
-        return ['airtime', 'data', 'electricity'];
+        return ['airtime', 'data', 'cable', 'electricity'];
     }
 
     protected function getAuthHeaders(): array
@@ -141,14 +143,18 @@ class CheapDataHub extends VendorBase
         if (in_array($service, ['airtime', 'electricity'], true)) {
             return true;
         }
-        if ($service !== 'data' || ! $planId) {
+        if (! in_array($service, ['data', 'cable'], true) || ! $planId) {
             return false;
         }
 
+        $model = $service === 'cable' ? CablePlan::class : DataPlan::class;
+
         return DB::table('providerables')
             ->where('providerable_id', $planId)
-            ->where('providerable_type', DataPlan::class)
+            ->where('providerable_type', $model)
             ->where('provider_id', $this->provider->id)
+            ->where('provider_enabled', true)
+            ->where('provider_available', true)
             ->where(function ($query) {
                 $query->whereNotNull('external_plan_id')->where('external_plan_id', '<>', '')
                     ->orWhere(function ($legacy) {
@@ -199,6 +205,30 @@ class CheapDataHub extends VendorBase
             ];
         }
 
+        if ($service === 'cable') {
+            $plan = CablePlan::find($payload['cable_plan'] ?? null);
+            if (! $plan) {
+                throw new \InvalidArgumentException('Cable plan not found.');
+            }
+            $mapping = DB::table('providerables')
+                ->where('providerable_id', $plan->id)
+                ->where('providerable_type', CablePlan::class)
+                ->where('provider_id', $this->provider->id)
+                ->where('provider_enabled', true)
+                ->where('provider_available', true)
+                ->first();
+            $planId = $mapping->external_plan_id ?? $mapping->server_id ?? null;
+            if (! is_numeric($planId)) {
+                throw new \InvalidArgumentException('This cable plan has no numeric CheapDataHub plan mapping.');
+            }
+
+            return [
+                'plan_id' => (int) $planId,
+                'cardnumber' => (string) $payload['iuc'],
+                'phone' => (string) ($payload['phone'] ?? Auth::user()?->phone ?? ''),
+            ];
+        }
+
         $plan = DataPlan::find($payload['data_plan'] ?? null);
         if (! $plan) {
             throw new \InvalidArgumentException('Data plan not found.');
@@ -237,6 +267,7 @@ class CheapDataHub extends VendorBase
             'provider' => $this->providerName,
             'transaction_type' => match ($service) {
                 'airtime' => 'airtime_recharge',
+                'cable' => 'cable_subscription',
                 'electricity' => 'electric_bill',
                 default => 'data_subscription',
             },
@@ -244,12 +275,13 @@ class CheapDataHub extends VendorBase
             'transaction_reference' => $response['tx_ref'] ?? null,
             'payment_reference' => $response['reference'] ?? $response['transaction_id'] ?? null,
             'response_message' => $message,
-            'account_or_phone' => $service === 'electricity' ? ($response['meter_number'] ?? null) : ($response['phone'] ?? null),
-            'receiver' => $service === 'electricity' ? ($response['meter_number'] ?? null) : ($response['phone'] ?? null),
+            'account_or_phone' => $service === 'electricity' ? ($response['meter_number'] ?? null) : ($service === 'cable' ? ($response['iuc'] ?? null) : ($response['phone'] ?? null)),
+            'receiver' => $service === 'electricity' ? ($response['meter_number'] ?? null) : ($service === 'cable' ? ($response['iuc'] ?? null) : ($response['phone'] ?? null)),
             'amount' => $response['amount'] ?? 0,
             'discount_amount' => $response['discount_amount'] ?? 0,
             'plan_type' => match ($service) {
                 'airtime' => $response['network_type'] ?? 'VTU',
+                'cable' => $response['subscription_type'] ?? 'change',
                 'electricity' => $response['meter_type'] ?? null,
                 default => $response['plan_type'] ?? 'DATA',
             },

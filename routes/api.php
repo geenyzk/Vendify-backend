@@ -204,6 +204,12 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::get('/vtu/{service}/verify', [VTUServicesController::class, 'verify']);
     Route::get('/vtu/{service}/discount', [VTUServicesController::class, 'discountPreview']);
     Route::get('/vtu/{service}/active-discount', [VTUServicesController::class, 'activeDiscount']);
+    Route::get('/customer/cable/catalog', [VTUServicesController::class, 'plan'])
+        ->defaults('service', 'cable');
+    Route::post('/customer/cable/verify', [VTUServicesController::class, 'verify'])
+        ->defaults('service', 'cable')->middleware('throttle:20,1');
+    Route::post('/customer/cable/purchase', [VTUServicesController::class, 'handle'])
+        ->defaults('service', 'cable')->middleware(['not.impersonating', 'throttle:10,1']);
     Route::get('/vtu/electricity/sandbox-status', [VTUServicesController::class, 'electricitySandboxStatus']);
     Route::get('/betting/providers', [BettingController::class, 'index']);
     Route::post('/betting/verify', [BettingController::class, 'verify'])->middleware('throttle:30,1');
