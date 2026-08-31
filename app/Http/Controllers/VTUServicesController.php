@@ -12,6 +12,7 @@ use App\Models\CablePlan;
 use App\Models\DataPlan;
 use App\Models\Discount;
 use App\Models\Transaction;
+use App\Services\Cable\CablePricingService;
 use App\Services\PromotionService;
 use App\Services\Electricity\ElectricitySandboxProvider;
 use App\Support\PerformanceCache;
@@ -23,6 +24,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class VTUServicesController extends Controller
 {
@@ -264,8 +266,12 @@ class VTUServicesController extends Controller
         if ($service === 'cable' && !empty($validated['cable_plan'])) {
             $cablePlan = CablePlan::find($validated['cable_plan']);
             if ($cablePlan) {
-                $cablePrice = (float) $cablePlan->price;
-                if (($validated['subscription_type'] ?? 'change') === 'renew') {
+                $subscriptionType = $validated['subscription_type'] ?? 'change';
+                $renewalAmount = null;
+                if ($subscriptionType === 'renew') {
+                    // The renewal figure is only ever the one this server
+                    // confirmed with the provider and cached for this user,
+                    // service and decoder — never a number from the client.
                     $verification = VTUNg::verifiedCableCustomer(
                         (int) $request->user()->id,
                         strtolower((string) $cablePlan->cable_network),
@@ -275,8 +281,16 @@ class VTUServicesController extends Controller
                     if (! is_numeric($renewalAmount) || (float) $renewalAmount <= 0) {
                         return $this->fail([], 'Please verify this smartcard again before renewing.', 422);
                     }
-                    $cablePrice = round((float) $renewalAmount + $cablePlan->chargeFeeForBase((float) $renewalAmount), 2);
                 }
+
+                // Same resolver the quote endpoint uses, so what was quoted
+                // and what is debited cannot drift apart.
+                $cablePrice = app(CablePricingService::class)->total(
+                    $cablePlan,
+                    $subscriptionType,
+                    $renewalAmount === null ? null : (float) $renewalAmount,
+                    $request->user(),
+                );
                 if ($cablePrice <= 0) {
                     return $this->fail([], 'This cable plan is not available for your account right now. Please contact support.', 422);
                 }
@@ -620,10 +634,7 @@ class VTUServicesController extends Controller
                 ->orderBy('sort_order')->orderBy('plan_name')->get()
                 ->map(fn (CablePlan $plan) => [
                     'service' => strtolower($plan->cable_network),
-                    'service_name' => match (strtolower($plan->cable_network)) {
-                        'dstv' => 'DStv', 'gotv' => 'GOtv', 'startimes' => 'StarTimes',
-                        'showmax' => 'Showmax', default => $plan->cable_network,
-                    },
+                    'service_name' => CablePlan::serviceName($plan->cable_network),
                     'plan' => $plan->plan_name,
                     'plan_id' => $plan->id,
                     'price' => $plan->price,
@@ -732,6 +743,69 @@ class VTUServicesController extends Controller
         // }Except(e){
 
         // }
+    }
+
+    /**
+     * What a cable subscription would cost this customer, resolved server-side.
+     *
+     * Informational only — `handle()` recomputes the amount through the same
+     * CablePricingService before charging anything, so a manipulated or stale
+     * quote cannot change what is debited. It exists because the renewal total
+     * (the decoder's renewal amount plus this account's role fee) is not
+     * something the storefront is able, or allowed, to work out for itself.
+     *
+     * @bodyParam cable_plan integer required The Vendify plan id. Example: 12
+     * @bodyParam subscription_type string change|renew. Example: renew
+     * @bodyParam iuc string required for renew — the verified decoder. Example: 1234567890
+     */
+    public function cableQuote(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'cable_plan' => ['required', 'integer', 'exists:cable_plans,id'],
+            'subscription_type' => ['sometimes', 'string', Rule::in(['change', 'renew'])],
+            'iuc' => ['sometimes', 'nullable', 'string', 'max:100'],
+        ]);
+
+        $plan = CablePlan::find($payload['cable_plan']);
+        if (! $plan || ! $plan->active) {
+            return $this->fail([], 'This cable plan is currently unavailable.', 422);
+        }
+
+        $subscriptionType = strtolower((string) ($payload['subscription_type'] ?? 'change'));
+        $renewalAmount = null;
+
+        if ($subscriptionType === 'renew') {
+            if (! in_array(strtolower((string) $plan->cable_network), ['dstv', 'gotv'], true)) {
+                return $this->fail([], 'Renewal is supported only for DStv and GOtv.', 422);
+            }
+
+            $identifier = trim((string) ($payload['iuc'] ?? ''));
+            if ($identifier === '') {
+                return $this->fail([], 'Verify this smartcard before requesting a renewal quote.', 422);
+            }
+
+            // Exactly the lookup the purchase performs: this user, this
+            // service, this decoder.
+            $verification = VTUNg::verifiedCableCustomer(
+                (int) $request->user()->id,
+                strtolower((string) $plan->cable_network),
+                $identifier,
+            );
+            $renewalAmount = $verification['renewal_amount'] ?? null;
+            if (! is_numeric($renewalAmount) || (float) $renewalAmount <= 0) {
+                return $this->fail([], 'Please verify this smartcard again before renewing.', 422);
+            }
+            $renewalAmount = (float) $renewalAmount;
+        }
+
+        $quote = app(CablePricingService::class)
+            ->quote($plan, $subscriptionType, $renewalAmount, $request->user());
+
+        if ($quote['total_amount'] <= 0) {
+            return $this->fail([], 'This cable plan is not available for your account right now. Please contact support.', 422);
+        }
+
+        return $this->success($quote);
     }
 
     public function electricitySandboxStatus(ElectricitySandboxProvider $sandbox): JsonResponse

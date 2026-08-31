@@ -210,6 +210,10 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         ->defaults('service', 'cable')->middleware('throttle:20,1');
     Route::post('/customer/cable/purchase', [VTUServicesController::class, 'handle'])
         ->defaults('service', 'cable')->middleware(['not.impersonating', 'throttle:10,1']);
+    // Informational pricing preview. The purchase path re-resolves the amount
+    // through the same CablePricingService, so this can never set a price.
+    Route::post('/customer/cable/quote', [VTUServicesController::class, 'cableQuote'])
+        ->middleware('throttle:30,1');
     Route::get('/vtu/electricity/sandbox-status', [VTUServicesController::class, 'electricitySandboxStatus']);
     Route::get('/betting/providers', [BettingController::class, 'index']);
     Route::post('/betting/verify', [BettingController::class, 'verify'])->middleware('throttle:30,1');
@@ -445,6 +449,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::get('/vendor/{id}/banks', [AdminController::class, 'banks'])->middleware('permission:settings');
         Route::get('/vendor/{id}/plan-sync-status', [AdminController::class, 'vendorPlanSyncStatus'])->middleware('permission:settings');
         Route::post('/vendor/{id}/sync-plans', [AdminController::class, 'syncVendorPlans'])->middleware('permission:settings');
+        Route::post('/vendor/{id}/sync-cable-plans', [AdminController::class, 'syncVendorCablePlans'])->middleware('permission:settings');
         Route::get('/vendor/{id}/plan-imports', [AdminController::class, 'vendorPlanImports'])->middleware('permission:settings');
         Route::patch('/vendor/{id}/plan-mappings/{planId}', [AdminController::class, 'updateVendorPlanMapping'])->middleware('permission:settings');
         Route::post('/vendor/{id}/plan-imports', [AdminController::class, 'importVendorPlanPrices'])->middleware('permission:settings');

@@ -58,18 +58,13 @@ class CustomerDashboardController extends Controller
             'raw_payload', 'response_message', 'completed_at', 'refunded_at',
             'refund_reason', 'is_sandbox', 'created_at',
         ]);
+        // This list is the customer's own transaction history. Vendor adapter
+        // names ("VTU.ng", "cheapdatahub") are how Vendify fulfils an order,
+        // not something a customer bought, so `provider` is reduced to what is
+        // meaningful to them — the disco on an electricity receipt, and
+        // nothing at all elsewhere. `provider_key` is not exposed here at all.
         $transactions->each(function (Transaction $transaction) {
-            if ($transaction->transaction_type !== 'electric_bill') {
-                return;
-            }
-
-            $providerKey = $transaction->provider;
-            $transaction->setAttribute('provider_key', $providerKey);
-            $transaction->setAttribute(
-                'provider',
-                $transaction->distribution_company
-                    ?? ($providerKey === 'electricity_sandbox' ? 'Ikeja Electric' : $providerKey),
-            );
+            $transaction->setAttribute('provider', $transaction->customerFacingProvider());
         });
 
         $user->load('role.permissions');

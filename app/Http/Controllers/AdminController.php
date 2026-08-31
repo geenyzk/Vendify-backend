@@ -1386,6 +1386,48 @@ class AdminController extends Controller
         }
     }
 
+    /**
+     * Pull this provider's live TV bouquet catalogue into cable_plans.
+     *
+     * Deliberately a separate route from syncVendorPlans() rather than a mode
+     * flag on it: the two touch different catalogues, and an ambiguous switch
+     * is how someone ends up rewriting the wrong one. All the sync rules —
+     * matching on the provider's own bouquet id, preserving manual mappings
+     * and admin-set cost prices, refusing to run for a disabled provider —
+     * live in the provider class, which is the same implementation the
+     * vendors:sync-plans command calls. Nothing is duplicated here.
+     */
+    public function syncVendorCablePlans(string $id)
+    {
+        try {
+            $vendor = Vendor::findOrFail($id);
+            $vendorInstance = VendorFactory::make($vendor);
+
+            if (! method_exists($vendorInstance, 'syncCablePlans')) {
+                return $this->fail([], 'This provider does not support syncing cable plans.', 422);
+            }
+
+            // A disabled provider is disabled: syncCablePlans() returns
+            // ['disabled' => true] without contacting the vendor and without
+            // touching a single mapping. Say so plainly instead of reporting
+            // a run of zeroes that looks like an empty catalogue.
+            if (! $vendor->active) {
+                return $this->fail(
+                    [],
+                    $vendor->name.' is disabled. Enable the provider before syncing its cable plans.',
+                    422,
+                );
+            }
+
+            $summary = $vendorInstance->syncCablePlans();
+            PerformanceCache::clearCatalog();
+
+            return $this->success($summary, $vendor->name.' cable sync completed.');
+        } catch (\Throwable $e) {
+            return $this->failFromException($e, 'Provider cable plan sync failed');
+        }
+    }
+
     /** Non-sensitive catalogue health for the provider details screen. */
     public function vendorPlanSyncStatus(string $id)
     {

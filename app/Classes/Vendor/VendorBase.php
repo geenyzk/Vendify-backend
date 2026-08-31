@@ -92,6 +92,28 @@ abstract class VendorBase implements VendorInterface
                 // own field so transaction screens cannot label MTN a provider.
                 $formattedResponse['provider'] = $this->provider->name;
             }
+            if ($service === 'cable') {
+                // Snapshot what was bought, at the moment it was bought.
+                // A receipt must keep saying "DStv Compact" after the plan is
+                // renamed, re-pointed at another provider, or deleted, so this
+                // is copied in rather than resolved from cable_plans later.
+                // Merged into whatever raw_payload the adapter already built.
+                $cablePlan = \App\Models\CablePlan::find($payload['cable_plan'] ?? null);
+                $formattedResponse['raw_payload'] = array_merge(
+                    is_array($formattedResponse['raw_payload'] ?? null) ? $formattedResponse['raw_payload'] : [],
+                    array_filter([
+                        'cable_service' => $cablePlan ? strtolower((string) $cablePlan->cable_network) : null,
+                        'cable_service_name' => $cablePlan
+                            ? \App\Models\CablePlan::serviceName($cablePlan->cable_network)
+                            : null,
+                        'cable_package_name' => $cablePlan?->plan_name,
+                        'cable_plan_id' => $cablePlan?->getKey(),
+                        'cable_identifier' => $payload['iuc'] ?? null,
+                        'cable_subscription_type' => strtolower((string) ($payload['subscription_type'] ?? 'change')),
+                    ], fn ($value) => $value !== null && $value !== ''),
+                );
+            }
+
             // Record the vendor cost of goods for this sale (formatResponse drops
             // the plan ids, so compute it here where $payload is still intact) —
             // profit = amount − cost on the admin dashboard.

@@ -62,6 +62,24 @@ class CablePlan extends Model
     }
 
     /**
+     * The customer-facing name for a `cable_network` key.
+     *
+     * One mapping, shared by the storefront catalogue and the transaction
+     * snapshot, so a receipt can never disagree with the page it was bought
+     * from. An unknown key is returned unchanged rather than dropped.
+     */
+    public static function serviceName(?string $key): string
+    {
+        return match (strtolower(trim((string) $key))) {
+            'dstv' => 'DStv',
+            'gotv' => 'GOtv',
+            'startime', 'startimes' => 'StarTimes',
+            'showmax' => 'Showmax',
+            default => (string) $key,
+        };
+    }
+
+    /**
      * Providers (vendors) that supply this cable plan, with pivot fields
      * Pivot contains: cost_price, margin_value, margin_type, server_id.
      * Same polymorphic relation DataPlan uses — see AdminController::
@@ -143,20 +161,16 @@ class CablePlan extends Model
      * The subscription cost the cable company charges — always resolved
      * from the attached provider's pivot, never a plan-level column (the
      * platform doesn't set this itself, unlike a data plan's markup price).
+     *
+     * Delegated to CablePricingService so this reads the SAME mapping the
+     * sale would be routed through (enabled + available + active provider,
+     * ordered by priority). It previously read an unordered `first()`, which
+     * on a plan with a primary and a fallback mapping could price against a
+     * provider that was not the one serving the order.
      */
     protected function resolveCostPrice(): float
     {
-        $pivotCost = $this->providers()->first()?->pivot?->cost_price;
-        if ($pivotCost !== null) {
-            return (float) $pivotCost;
-        }
-
-        $row = \Illuminate\Support\Facades\DB::table('providerables')
-            ->where('providerable_id', $this->id)
-            ->where('providerable_type', self::class)
-            ->first();
-
-        return (float) ($row->cost_price ?? 0);
+        return app(\App\Services\Cable\CablePricingService::class)->baseAmount($this);
     }
 
     /**
@@ -169,10 +183,17 @@ class CablePlan extends Model
         return $this->chargeFeeForBase($this->resolveCostPrice());
     }
 
-    public function chargeFeeForBase(float $base): float
+    /**
+     * The per-role fee this platform adds on top of `$base`.
+     *
+     * `$user` is explicit so the quote endpoint and the purchase handler can
+     * both price for a known buyer; it falls back to the authenticated user so
+     * every existing caller keeps working unchanged.
+     */
+    public function chargeFeeForBase(float $base, ?User $user = null): float
     {
-        $user = Auth::user();
-        $role = $user?->role->name ?? "user";
+        $user ??= Auth::user();
+        $role = $user?->role?->name ?? "user";
 
         if (!is_array($this->charge_fee) || !array_key_exists($role, $this->charge_fee)) {
             return 0.0;

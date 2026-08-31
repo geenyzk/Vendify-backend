@@ -15,6 +15,12 @@ class TransactionResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // This resource serves both the customer's own transaction lookup
+        // (TransactionController::showOwn) and the admin status/refund/requery
+        // screens. Routing/vendor identity is operational data: staff keep it
+        // for reconciliation, customers never see it.
+        $isStaff = (bool) ($request->user()?->role?->is_staff);
+
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
@@ -27,15 +33,15 @@ class TransactionResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             // Provider adapter keys are operational details. Electricity
-            // receipts should name the disco that supplied the meter instead.
-            "provider" => $this->transaction_type === 'electric_bill'
-                ? ($this->distribution_company ?? $this->electricityProviderLabel())
-                : $this->provider,
-            'provider_key' => $this->provider,
+            // receipts should name the disco that supplied the meter instead;
+            // every other service tells a customer nothing about the vendor.
+            "provider" => $isStaff
+                ? ($this->transaction_type === 'electric_bill'
+                    ? ($this->distribution_company ?? $this->electricityProviderLabel())
+                    : $this->provider)
+                : $this->customerFacingProvider(),
             'network' => $this->network,
             'airtime_plan_id' => $this->airtime_plan_id,
-            'primary_provider_id' => $this->primary_provider_id,
-            'final_provider_id' => $this->final_provider_id,
             'fallback_used' => (bool) $this->fallback_used,
             'is_sandbox' => (bool) $this->is_sandbox,
             'recipient' => $this->receiver ?? $this->account_or_phone ?? "Anonymous",
@@ -53,6 +59,14 @@ class TransactionResource extends JsonResource
                 ? VendorErrorMessage::forCurrentUser($this->response_message, $this->status)
                 : $this->response_message,
             'platform' => $this->platform,
+            // Reconciliation fields — which vendor was tried, which one
+            // served it. Admin-only, and omitted entirely for customers
+            // rather than nulled, so nothing hints at the routing.
+            $this->mergeWhen($isStaff, fn () => [
+                'provider_key' => $this->provider,
+                'primary_provider_id' => $this->primary_provider_id,
+                'final_provider_id' => $this->final_provider_id,
+            ]),
             'plan_type' => $this->plan_type,
             'token' => $this->token,
             'service' => $this->service,

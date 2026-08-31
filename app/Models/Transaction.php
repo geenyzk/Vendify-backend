@@ -12,7 +12,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Transaction extends Model
 {
     //
-    protected $appends = ['service', 'meter_type', 'meter_number', 'customer_name', 'distribution_company', 'electricity_token'];
+    protected $appends = [
+        'service', 'meter_type', 'meter_number', 'customer_name', 'distribution_company', 'electricity_token',
+        'cable_service', 'cable_service_name', 'cable_package_name', 'cable_identifier', 'cable_subscription_type',
+    ];
     protected $hidden = ['idempotency_key', 'raw_payload'];
     protected $fillable = [
         'user_id', 'transaction_type', 'provider', 'account_or_phone', 'amount', 'cost',
@@ -102,6 +105,91 @@ class Transaction extends Model
         return $this->transaction_type === 'electric_bill' && is_string($this->token) && trim($this->token) !== ''
             ? $this->token
             : null;
+    }
+
+    /*
+     * ── Cable snapshot ──────────────────────────────────────────────────
+     * What was bought, as it read at the time of purchase (written by
+     * VendorBase::process). These deliberately never look the package up in
+     * cable_plans: a receipt has to keep showing "DStv Compact" after the
+     * plan is renamed, re-pointed or deleted. A row written before this
+     * snapshot existed simply returns null and the UI omits the line.
+     */
+
+    private function cableSnapshot(string $key): ?string
+    {
+        if ($this->transaction_type !== 'cable_subscription') {
+            return null;
+        }
+
+        // raw_payload is absent whenever a query selected a narrower column
+        // set, so never index it directly.
+        $payload = is_array($this->raw_payload) ? $this->raw_payload : [];
+        $value = $payload[$key] ?? null;
+
+        return is_scalar($value) && trim((string) $value) !== '' ? (string) $value : null;
+    }
+
+    public function getCableServiceAttribute(): ?string
+    {
+        return $this->cableSnapshot('cable_service');
+    }
+
+    public function getCableServiceNameAttribute(): ?string
+    {
+        return $this->cableSnapshot('cable_service_name');
+    }
+
+    public function getCablePackageNameAttribute(): ?string
+    {
+        return $this->cableSnapshot('cable_package_name');
+    }
+
+    public function getCableIdentifierAttribute(): ?string
+    {
+        return $this->cableSnapshot('cable_identifier')
+            ?? ($this->transaction_type === 'cable_subscription'
+                ? ($this->receiver ?: $this->account_or_phone ?: null)
+                : null);
+    }
+
+    public function getCableSubscriptionTypeAttribute(): ?string
+    {
+        // plan_type has carried change/renew since before the snapshot,
+        // so older rows still resolve.
+        return $this->cableSnapshot('cable_subscription_type')
+            ?? ($this->transaction_type === 'cable_subscription'
+                ? (in_array(strtolower((string) $this->plan_type), ['change', 'renew'], true)
+                    ? strtolower((string) $this->plan_type)
+                    : null)
+                : null);
+    }
+
+    /**
+     * What a customer may be told about who served this order.
+     *
+     * `provider` is a vendor adapter key ("VTU.ng", "cheapdatahub") — an
+     * operational detail of how Vendify fulfils an order, not a product a
+     * customer bought. Electricity is the one exception: there the meaningful
+     * answer is the disco that supplied the meter, which is genuinely part of
+     * what was purchased. Everything else resolves to null and the receipt
+     * simply omits the line.
+     *
+     * Staff keep the raw value through the admin surfaces; see
+     * TransactionResource.
+     */
+    public function customerFacingProvider(): ?string
+    {
+        if ($this->transaction_type !== 'electric_bill') {
+            return null;
+        }
+
+        $disco = $this->distribution_company;
+        if (is_string($disco) && trim($disco) !== '') {
+            return $disco;
+        }
+
+        return $this->provider === 'electricity_sandbox' ? 'Ikeja Electric' : null;
     }
 
     /**
