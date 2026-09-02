@@ -6,25 +6,31 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Services\AirtimeToCashSettlementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 function airtimeToCashFixture(string $status = 'pending'): array
 {
-    $user = User::factory()->create([
+    $user = User::create([
         'username' => 'atc-user-'.Str::lower(Str::random(8)),
         'fullname' => 'Airtime Customer',
+        'email' => 'atc-user-'.Str::lower(Str::random(8)).'@example.test',
         'phone' => '080'.random_int(10000000, 99999999),
+        'password' => 'password',
         'status' => 'active',
         'wallet_balance' => 1000,
     ]);
-    $reviewer = User::factory()->create([
+    $reviewer = User::create([
         'username' => 'atc-reviewer-'.Str::lower(Str::random(8)),
         'fullname' => 'Airtime Reviewer',
+        'email' => 'atc-reviewer-'.Str::lower(Str::random(8)).'@example.test',
         'phone' => '081'.random_int(10000000, 99999999),
+        'password' => 'password',
         'status' => 'active',
     ]);
     $request = AirtimeToCashRequest::create([
@@ -95,7 +101,7 @@ test('database uniqueness prevents a second payout ledger for one conversion', f
         'status' => 'success',
         'transaction_reference' => 'ATC-DUPLICATE-'.Str::upper(Str::random(8)),
         'airtime_to_cash_request_id' => $request->id,
-    ]))->toThrow(Throwable::class);
+    ]))->toThrow(QueryException::class);
 
     expect(Transaction::where('airtime_to_cash_request_id', $request->id)->count())->toBe(1)
         ->and((float) $user->fresh()->wallet_balance)->toBe(1950.0);
@@ -103,15 +109,15 @@ test('database uniqueness prevents a second payout ledger for one conversion', f
 
 test('a failure after ledger creation rolls back ledger wallet and request together', function () {
     [$user, $reviewer, $request] = airtimeToCashFixture();
-    $service = new class extends AirtimeToCashSettlementService {
-        protected function afterPayoutCreated(AirtimeToCashRequest $request, Transaction $transaction): void
-        {
-            throw new RuntimeException('forced settlement failure');
-        }
-    };
+    $event = 'eloquent.created: '.Transaction::class;
+    Event::listen($event, fn () => throw new RuntimeException('forced settlement failure'));
 
-    expect(fn () => $service->settle($request->id, $reviewer->id))
-        ->toThrow(RuntimeException::class, 'forced settlement failure');
+    try {
+        expect(fn () => app(AirtimeToCashSettlementService::class)->settle($request->id, $reviewer->id))
+            ->toThrow(RuntimeException::class, 'forced settlement failure');
+    } finally {
+        Event::forget($event);
+    }
 
     expect((float) $user->fresh()->wallet_balance)->toBe(1000.0)
         ->and($request->fresh()->status)->toBe('pending')

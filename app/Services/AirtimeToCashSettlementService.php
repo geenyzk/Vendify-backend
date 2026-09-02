@@ -59,10 +59,6 @@ class AirtimeToCashSettlementService
                 'receiver' => $user->username,
             ]);
 
-            // Deliberate test seam for proving that any exception after the
-            // ledger insert still rolls back the ledger, wallet and request.
-            $this->afterPayoutCreated($request, $transaction);
-
             $user->increment('wallet_balance', $amount);
 
             $request->update([
@@ -76,8 +72,4 @@ class AirtimeToCashSettlementService
         });
     }
 
-    protected function afterPayoutCreated(AirtimeToCashRequest $request, Transaction $transaction): void
-    {
-        // Intentionally empty.
-    }
 }
