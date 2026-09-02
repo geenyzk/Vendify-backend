@@ -11,21 +11,15 @@ use App\Models\Vendor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Tests\TestCase;
+uses(RefreshDatabase::class);
 
-class VendorProviderNameExposureTest extends TestCase
-{
-    use RefreshDatabase;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
         // Ensure STANDARD type exists
         NetworkType::updateOrInsert(
             ['name' => 'STANDARD', 'service_type' => 'data'],
             ['active' => true, 'created_at' => now(), 'updated_at' => now()]
         );
-    }
+});
 
     // Test 1: VTU.ng provider remains registered internally
     test('vtu_ng provider is registered and active in the system', function () {
@@ -354,4 +348,3 @@ class VendorProviderNameExposureTest extends TestCase
             ->and($catalogPlan)->not->toHaveKey('provider_price')
             ->and($catalogPlan)->not->toHaveKey('server_id');
     });
-}
