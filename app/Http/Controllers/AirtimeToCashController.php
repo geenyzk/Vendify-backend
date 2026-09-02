@@ -15,8 +15,10 @@ use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class AirtimeToCashController extends Controller
 {
@@ -117,11 +119,19 @@ class AirtimeToCashController extends Controller
         }
 
         $user = $atc->user;
-        $user->notify(new AppNotification(
-            'airtime_to_cash_approved',
-            'Airtime to cash approved',
-            "Your {$atc->network} airtime-to-cash request was approved — ₦{$atc->payout_amount} credited to your wallet.",
-        ));
+        try {
+            $user->notify(new AppNotification(
+                'airtime_to_cash_approved',
+                'Airtime to cash approved',
+                "Your {$atc->network} airtime-to-cash request was approved — ₦{$atc->payout_amount} credited to your wallet.",
+            ));
+        } catch (Throwable $e) {
+            Log::warning('Airtime-to-cash approval notification failed after settlement', [
+                'request_id' => $atc->id,
+                'user_id' => $atc->user_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $this->success($atc->fresh(), 'Request approved and wallet credited');
     }

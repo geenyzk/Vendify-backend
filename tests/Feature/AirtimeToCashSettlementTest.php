@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\AirtimeToCashSettlementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Database\QueryException;
+use Illuminate\Contracts\Notifications\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
@@ -75,6 +76,31 @@ test('the existing approval controller contract delegates to atomic settlement',
         ->and($response->getData(true)['message'])->toBe('Request approved and wallet credited')
         ->and($request->fresh()->status)->toBe('approved')
         ->and((float) $user->fresh()->wallet_balance)->toBe(1950.0);
+});
+
+test('notification failure does not make a committed approval appear failed or credit twice', function () {
+    [$user, $reviewer, $request] = airtimeToCashFixture();
+    Auth::login($reviewer);
+    $notifications = Mockery::mock(Dispatcher::class);
+    $notifications->shouldReceive('send')->once()->andThrow(new RuntimeException('forced notification failure'));
+    app()->instance(Dispatcher::class, $notifications);
+
+    $response = app(AirtimeToCashController::class)->approve(
+        $request,
+        app(AirtimeToCashSettlementService::class),
+    );
+
+    $retry = app(AirtimeToCashController::class)->approve(
+        $request->fresh(),
+        app(AirtimeToCashSettlementService::class),
+    );
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true)['message'])->toBe('Request approved and wallet credited')
+        ->and($retry->getStatusCode())->toBe(422)
+        ->and((float) $user->fresh()->wallet_balance)->toBe(1950.0)
+        ->and($request->fresh()->status)->toBe('approved')
+        ->and(Transaction::where('airtime_to_cash_request_id', $request->id)->count())->toBe(1);
 });
 
 test('repeated settlement never credits the wallet twice', function () {
