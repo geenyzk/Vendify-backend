@@ -8,9 +8,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use App\Models\Promotion;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Transaction extends Model
 {
+    public const TYPE_AIRTIME_TO_CASH = 'airtime_to_cash';
+
     //
     protected $appends = [
         'service', 'meter_type', 'meter_number', 'customer_name', 'distribution_company', 'electricity_token',
@@ -24,6 +27,7 @@ class Transaction extends Model
         'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token',
         'promotion_id', 'discount_amount', 'refunded_at', 'refund_reason',
         'related_reference',
+        'airtime_to_cash_request_id',
         'idempotency_key', 'raw_payload',
         'network', 'airtime_plan_id', 'primary_provider_id', 'final_provider_id', 'fallback_used', 'is_sandbox',
     ];
@@ -47,6 +51,11 @@ class Transaction extends Model
         'airtime_recharge', 'data_subscription', 'cable_subscription', 'electric_bill',
         'exam', 'betting_funding', 'airtime_pin', 'data_pin', 'bulksms', 'wallet_withdrawal',
     ];
+
+    public function airtimeToCashRequest(): BelongsTo
+    {
+        return $this->belongsTo(AirtimeToCashRequest::class, 'airtime_to_cash_request_id');
+    }
 
     public function scopeReal($query)
     {

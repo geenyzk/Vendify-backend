@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class AirtimeToCashRequest extends Model
 {
@@ -27,5 +28,10 @@ class AirtimeToCashRequest extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function payoutTransaction(): HasOne
+    {
+        return $this->hasOne(Transaction::class, 'airtime_to_cash_request_id');
     }
 }
