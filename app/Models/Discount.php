@@ -67,11 +67,17 @@ class Discount extends Model
      */
     public static function findApplicable(string $serviceType, ?string $network): ?self
     {
+        $normalizedNetwork = $network === null ? null : strtolower(trim($network));
+
         $candidates = static::where('service_type', $serviceType)
-            ->where(function ($q) use ($network) {
+            ->where(function ($q) use ($normalizedNetwork) {
                 $q->whereNull('network');
-                if ($network) {
-                    $q->orWhere('network', $network);
+                if ($normalizedNetwork) {
+                    // Network names are display values in the catalogue (for
+                    // example "MTN"), while discount rows historically use
+                    // lowercase identifiers ("mtn"). Match the identifier
+                    // consistently on every supported database driver.
+                    $q->orWhereRaw('LOWER(network) = ?', [$normalizedNetwork]);
                 }
             })
             ->get()
@@ -81,7 +87,8 @@ class Discount extends Model
             return null;
         }
 
-        return $candidates->first(fn (self $d) => $network && $d->network === $network)
+        return $candidates->first(fn (self $d) => $normalizedNetwork
+            && strtolower(trim((string) $d->network)) === $normalizedNetwork)
             ?? $candidates->first();
     }
 }

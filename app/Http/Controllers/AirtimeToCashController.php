@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class AirtimeToCashController extends Controller
 {
@@ -29,32 +30,38 @@ class AirtimeToCashController extends Controller
     public function submit(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'network' => [
-                'required',
-                'string',
-                function ($attribute, $value, $fail) {
-                    $network = Network::where('name', $value)->where('airtime_to_cash_active', true)->first();
-                    if (!$network) {
-                        $fail('Airtime to cash is not available for this network yet.');
-                    }
-                },
-            ],
+            'network_id' => 'nullable|integer',
+            // Kept for clients deployed before network_id was introduced.
+            'network' => 'required_without:network_id|string',
             'amount' => 'required|numeric|min:1',
             'sender_phone' => 'required|string|max:20',
             'proof_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:2048',
         ]);
 
-        $network = Network::where('name', $validated['network'])->where('airtime_to_cash_active', true)->first();
+        $network = Network::query()
+            ->when(
+                isset($validated['network_id']),
+                fn ($query) => $query->whereKey($validated['network_id']),
+                fn ($query) => $query->whereRaw('LOWER(name) = ?', [strtolower(trim($validated['network']))]),
+            )
+            ->where('airtime_to_cash_active', true)
+            ->first();
+
+        if (! $network) {
+            throw ValidationException::withMessages([
+                'network' => ['Airtime to cash is not available for this network yet.'],
+            ]);
+        }
 
         if ((float) $validated['amount'] < (float) $network->airtime_to_cash_min || (float) $validated['amount'] > (float) $network->airtime_to_cash_max) {
             return $this->fail([], "Amount must be between {$network->airtime_to_cash_min} and {$network->airtime_to_cash_max}.", 422);
         }
 
-        $rate = Discount::findApplicable('airtimeToCash', $validated['network']);
+        $rate = Discount::findApplicable('airtimeToCash', $network->name);
         if (!$rate) {
             return $this->fail([], 'Airtime to cash is not available for this network yet.', 422);
         }
-        $payoutAmount = Discount::getDiscountedAmount((float) $validated['amount'], 'airtimeToCash', $validated['network']);
+        $payoutAmount = Discount::getDiscountedAmount((float) $validated['amount'], 'airtimeToCash', $network->name);
 
         $proofPath = null;
         if ($request->hasFile('proof_image')) {
@@ -63,7 +70,7 @@ class AirtimeToCashController extends Controller
 
         $atc = AirtimeToCashRequest::create([
             'user_id' => Auth::id(),
-            'network' => $validated['network'],
+            'network' => $network->name,
             'amount' => $validated['amount'],
             'sender_phone' => $validated['sender_phone'],
             'destination_number' => $network->airtime_to_cash_destination_number,

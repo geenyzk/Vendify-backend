@@ -569,7 +569,14 @@ class VTUServicesController extends Controller
             ]);
         }
 
-        $discountedAmount = Discount::getDiscountedAmount($amount, $service, $network);
+        $discount = Discount::findApplicable($service, $network);
+        if ($service === 'airtimeToCash' && ! $discount) {
+            return $this->fail([], 'Airtime to cash is not available for this network yet.', 422);
+        }
+
+        $discountedAmount = $discount
+            ? Discount::getDiscountedAmount($amount, $service, $network)
+            : $amount;
         $discountAmount = round($amount - $discountedAmount, 2);
 
         // Bill Plan's service fee (electricity only) is additive on top —
