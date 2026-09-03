@@ -7,6 +7,7 @@ use App\Models\AirtimeToCashRequest;
 use App\Models\User;
 use App\Services\AiManager\AiManagerException;
 use App\Services\AiManager\Tools\Concerns\CallsControllerAction;
+use App\Services\AirtimeToCashSettlementService;
 use Illuminate\Http\Request;
 
 /**
@@ -80,7 +81,10 @@ class ReviewAirtimeToCashTool extends AiTool
         $controller = app(AirtimeToCashController::class);
 
         if ($arguments['action'] === 'approve') {
-            return $this->unwrap($controller->approve($atc), 'The request could not be approved.');
+            return $this->unwrap(
+                $controller->approve($atc, app(AirtimeToCashSettlementService::class)),
+                'The request could not be approved.',
+            );
         }
 
         $request = Request::create('/', 'POST', ['reason' => $arguments['reason'] ?? '']);

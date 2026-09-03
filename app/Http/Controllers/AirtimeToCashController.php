@@ -10,11 +10,16 @@ use App\Models\Discount;
 use App\Models\Network;
 use App\Models\User;
 use App\Notifications\AppNotification;
+use App\Services\AirtimeToCashSettlementService;
+use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class AirtimeToCashController extends Controller
 {
@@ -111,56 +116,58 @@ class AirtimeToCashController extends Controller
         return $this->success($requests);
     }
 
-    /**
-     * Credits the customer's wallet with the already-computed payout and
-     * records it as a normal ledger Transaction (via the same fundUser()
-     * helper the admin "fund user" action uses), then marks this request
-     * reviewed. Wrapped atomically inside fundUser()'s own DB transaction.
-     */
-    public function approve(AirtimeToCashRequest $atc): JsonResponse
+    /** Atomically credit the payout and mark this request approved. */
+    public function approve(AirtimeToCashRequest $atc, AirtimeToCashSettlementService $settlement): JsonResponse
     {
-        if ($atc->status !== 'pending') {
-            return $this->fail([], 'This request has already been reviewed.', 422);
+        try {
+            $atc = $settlement->settle((int) $atc->id, (string) Auth::id());
+        } catch (DomainException $e) {
+            return $this->fail([], $e->getMessage(), 422);
         }
 
-        $user = User::findOrFail($atc->user_id);
-        $result = TransactionService::fundUser(
-            $user,
-            (float) $atc->payout_amount,
-            'credit',
-            'Airtime to cash - ' . strtoupper($atc->network) . ' - ' . $atc->sender_phone,
-        );
-
-        $atc->update([
-            'status' => 'approved',
-            'reviewed_by' => Auth::id(),
-            'reviewed_at' => now(),
-            'payout_transaction_reference' => $result['transaction_reference'],
-        ]);
-
-        $user->notify(new AppNotification(
-            'airtime_to_cash_approved',
-            'Airtime to cash approved',
-            "Your {$atc->network} airtime-to-cash request was approved — ₦{$atc->payout_amount} credited to your wallet.",
-        ));
+        $user = $atc->user;
+        try {
+            $user->notify(new AppNotification(
+                'airtime_to_cash_approved',
+                'Airtime to cash approved',
+                "Your {$atc->network} airtime-to-cash request was approved — ₦{$atc->payout_amount} credited to your wallet.",
+            ));
+        } catch (Throwable $e) {
+            Log::warning('Airtime-to-cash approval notification failed after settlement', [
+                'request_id' => $atc->id,
+                'user_id' => $atc->user_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $this->success($atc->fresh(), 'Request approved and wallet credited');
     }
 
     public function reject(Request $request, AirtimeToCashRequest $atc): JsonResponse
     {
-        if ($atc->status !== 'pending') {
-            return $this->fail([], 'This request has already been reviewed.', 422);
-        }
-
         $validated = $request->validate(['reason' => 'required|string|max:255']);
 
-        $atc->update([
-            'status' => 'rejected',
-            'rejection_reason' => $validated['reason'],
-            'reviewed_by' => Auth::id(),
-            'reviewed_at' => now(),
-        ]);
+        $atc = DB::transaction(function () use ($atc, $validated) {
+            $locked = AirtimeToCashRequest::query()->lockForUpdate()->findOrFail($atc->id);
+            if ($locked->status !== 'pending'
+                || $locked->payoutTransaction()->exists()
+                || $locked->payout_transaction_reference) {
+                return null;
+            }
+
+            $locked->update([
+                'status' => 'rejected',
+                'rejection_reason' => $validated['reason'],
+                'reviewed_by' => Auth::id(),
+                'reviewed_at' => now(),
+            ]);
+
+            return $locked->fresh();
+        });
+
+        if (! $atc) {
+            return $this->fail([], 'This request has already been reviewed.', 422);
+        }
 
         $user = User::find($atc->user_id);
         $user?->notify(new AppNotification(
