@@ -41,7 +41,7 @@ class AirtimeToCashAvailabilityService
         return $chosen->count() === 1 ? $chosen->first() : null;
     }
 
-    public function inspect(?Network $network, ?float $amount = null): array
+    public function inspect(?Network $network, ?float $amount = null, string $mode = 'manual'): array
     {
         $reason = null;
         $rate = $network ? $this->rate($network) : null;
@@ -49,7 +49,7 @@ class AirtimeToCashAvailabilityService
             $reason = 'Network not found or legacy network name is ambiguous. Select a network by ID.';
         } elseif (! $network->airtime_to_cash_active) {
             $reason = 'Airtime to cash is disabled for this network.';
-        } elseif (! preg_match('/^0[789][0-9]{9}$/', trim((string) $network->airtime_to_cash_destination_number))) {
+        } elseif ($mode === 'manual' && ! preg_match('/^0[789][0-9]{9}$/', trim((string) $network->airtime_to_cash_destination_number))) {
             $reason = 'A valid destination number has not been configured.';
         } elseif ((float) $network->airtime_to_cash_min <= 0 || (float) $network->airtime_to_cash_max < (float) $network->airtime_to_cash_min) {
             $reason = 'The conversion amount limits are invalid.';

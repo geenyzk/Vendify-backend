@@ -296,13 +296,14 @@ class AdminController extends Controller
     // other users' PII (phone numbers, proof uploads, submitted amounts,
     // bank account details) needs its own permission-gated controller
     // instead — see AirtimeToCashController / WalletWithdrawalController.
-    private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'wallet_withdrawals', 'broadcasts'];
+    private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'airtime_to_cash_provider_settings', 'wallet_withdrawals', 'broadcasts'];
 
     // Security-sensitive records must go through their dedicated controllers,
     // where row-level authorization, audit logging, and invariants are enforced.
     // The generic writer uses forceFill/DB fallback and must never be an
     // alternate path around role, balance, transaction, session, or audit rules.
     private const RESTRICTED_WRITE_TABLES = [
+        'airtime_to_cash_requests', 'airtime_to_cash_provider_settings',
         'users', 'roles', 'permissions', 'permission_role', 'transactions',
         'audit_logs', 'auth_sessions', 'auth_refresh_tokens',
         'support_tickets', 'support_ticket_messages', 'support_ticket_notes',

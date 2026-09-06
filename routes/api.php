@@ -262,6 +262,15 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
 
         // Airtime to cash — manually reviewed, not an instant purchase (see
         // AirtimeToCashController), so it's not routed through /vtu/{service}.
+        Route::middleware(['not.impersonating', 'atc.https', 'throttle:10,1'])->group(function () {
+            Route::get('/airtime-to-cash/provider/options', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'options']);
+            Route::get('/airtime-to-cash/provider/quote', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'quote']);
+            Route::post('/airtime-to-cash/provider/start', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'start']);
+            Route::post('/airtime-to-cash/{id}/verify-otp', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'verify'])->whereNumber('id')->middleware('atc.secrets');
+            Route::post('/airtime-to-cash/{id}/restart-otp', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'restart'])->whereNumber('id');
+            Route::post('/airtime-to-cash/{id}/convert', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'convert'])->whereNumber('id')->middleware('atc.secrets');
+            Route::get('/airtime-to-cash/{id}/status', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'status'])->whereNumber('id');
+        });
         Route::get('/airtime-to-cash/networks', [AirtimeToCashController::class, 'catalog']);
         Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'myRequests']);
         Route::post('/airtime-to-cash', [AirtimeToCashController::class, 'submit'])->middleware('not.impersonating');
@@ -397,6 +406,9 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // "transactions" (which covers status overrides/refunds on already-
         // completed purchases), so it gets its own permission slug.
         Route::middleware('permission:airtime_to_cash')->group(function () {
+            Route::get('/airtime-to-cash/providers', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'adminSettings']);
+            Route::put('/airtime-to-cash/providers/{provider}', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'updateSettings']);
+            Route::post('/airtime-to-cash/{id}/reconcile', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'reconcile'])->whereNumber('id')->middleware('throttle:5,1');
             Route::get('/airtime-to-cash/configuration', [\App\Http\Controllers\AirtimeToCashConfigurationController::class, 'index']);
             Route::put('/airtime-to-cash/configuration/{network}', [\App\Http\Controllers\AirtimeToCashConfigurationController::class, 'update']);
             Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'adminIndex']);

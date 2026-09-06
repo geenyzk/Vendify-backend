@@ -19,10 +19,26 @@ class AirtimeToCashSettlementService
      * retained. Future provider states can enter this same settlement boundary
      * once they are eligible to become approved/completed.
      */
-    public function settle(int $requestId, string $reviewerId): AirtimeToCashRequest
+    public function settle(int $requestId, ?string $reviewerId = null): AirtimeToCashRequest
     {
         return DB::transaction(function () use ($requestId, $reviewerId): AirtimeToCashRequest {
             $request = AirtimeToCashRequest::query()->lockForUpdate()->findOrFail($requestId);
+
+            $automated = $request->processing_mode === 'provider';
+            if ($automated) {
+                if ($reviewerId !== null) {
+                    throw new DomainException('Automated conversions cannot be manually approved.');
+                }
+                if ($request->provider_status === 'completed' && $request->payoutTransaction()->exists()) {
+                    return $request;
+                }
+                if (! in_array($request->provider_status, ['provider_confirmed', 'settlement_pending'], true)
+                    || ! $request->provider_confirmed_at || ! $request->provider_reference || ! $request->provider) {
+                    throw new DomainException('Authoritative conversion confirmation is required before settlement.');
+                }
+            } elseif ($reviewerId === null) {
+                throw new DomainException('Manual conversion requires an admin reviewer.');
+            }
 
             if ($request->status !== 'pending') {
                 throw new DomainException('This request has already been reviewed.');
@@ -42,7 +58,7 @@ class AirtimeToCashSettlementService
             $transaction = Transaction::create([
                 'user_id' => $user->id,
                 'transaction_type' => Transaction::TYPE_AIRTIME_TO_CASH,
-                'provider' => 'admin',
+                'provider' => $automated ? $request->provider : 'admin',
                 'account_or_phone' => $user->phone,
                 'amount' => $amount,
                 'plan_type' => 'credit',
@@ -50,7 +66,7 @@ class AirtimeToCashSettlementService
                 'transaction_reference' => TransactionService::generateTransactionReference(),
                 'related_reference' => $request->transaction_reference,
                 'airtime_to_cash_request_id' => $request->id,
-                'funding_method' => 'manual',
+                'funding_method' => $automated ? 'provider' : 'manual',
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
                 'completed_at' => now(),
@@ -60,6 +76,12 @@ class AirtimeToCashSettlementService
             ]);
 
             $user->increment('wallet_balance', $amount);
+
+            if ($automated) {
+                $request->provider_status = 'completed';
+                $request->active_session_key = null;
+                $request->provider_identifier = null;
+            }
 
             $request->update([
                 'status' => 'approved',
@@ -71,5 +93,4 @@ class AirtimeToCashSettlementService
             return $request->fresh(['payoutTransaction']);
         });
     }
-
 }

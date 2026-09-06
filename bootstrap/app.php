@@ -47,6 +47,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'user_type' => EnsureUserType::class,
             'staff' => EnsureUserIsAdmin::class,
             'permission' => EnsurePermission::class,
+            'atc.https' => \App\Http\Middleware\RequireSecureAirtimeToCash::class,
+            'atc.secrets' => \App\Http\Middleware\SanitizeAirtimeToCashSecrets::class,
             'not.impersonating' => RejectImpersonatedSession::class,
             'secure.session' => EnforceSecureSession::class,
             'recent.auth' => RequireRecentAuthentication::class,
@@ -55,6 +57,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        $exceptions->dontFlash(['pin', 'otp', 'transfer_pin', 'provider_identifier']);
         // Safety net: an API client must never receive raw SQL/PDO internals
         // (schema names, the failing query, SQLSTATE codes). Log the real
         // exception for debugging and return the standard envelope with a

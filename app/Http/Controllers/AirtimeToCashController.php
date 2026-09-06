@@ -136,7 +136,7 @@ class AirtimeToCashController extends Controller
             ->latest()
             ->get();
 
-        return $this->success($requests);
+        return $this->success($requests->map(fn ($item) => [...$item->toArray(), 'provider' => $item->provider]));
     }
 
     /** Atomically credit the payout and mark this request approved. */
@@ -172,7 +172,7 @@ class AirtimeToCashController extends Controller
 
         $atc = DB::transaction(function () use ($atc, $validated) {
             $locked = AirtimeToCashRequest::query()->lockForUpdate()->findOrFail($atc->id);
-            if ($locked->status !== 'pending'
+            if ($locked->processing_mode === 'provider' || $locked->status !== 'pending'
                 || $locked->payoutTransaction()->exists()
                 || $locked->payout_transaction_reference) {
                 return null;
