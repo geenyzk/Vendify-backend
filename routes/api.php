@@ -262,6 +262,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
 
         // Airtime to cash — manually reviewed, not an instant purchase (see
         // AirtimeToCashController), so it's not routed through /vtu/{service}.
+        Route::get('/airtime-to-cash/networks', [AirtimeToCashController::class, 'catalog']);
         Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'myRequests']);
         Route::post('/airtime-to-cash', [AirtimeToCashController::class, 'submit'])->middleware('not.impersonating');
 
@@ -396,6 +397,8 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // "transactions" (which covers status overrides/refunds on already-
         // completed purchases), so it gets its own permission slug.
         Route::middleware('permission:airtime_to_cash')->group(function () {
+            Route::get('/airtime-to-cash/configuration', [\App\Http\Controllers\AirtimeToCashConfigurationController::class, 'index']);
+            Route::put('/airtime-to-cash/configuration/{network}', [\App\Http\Controllers\AirtimeToCashConfigurationController::class, 'update']);
             Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'adminIndex']);
             Route::post('/airtime-to-cash/{atc}/approve', [AirtimeToCashController::class, 'approve']);
             Route::post('/airtime-to-cash/{atc}/reject', [AirtimeToCashController::class, 'reject']);

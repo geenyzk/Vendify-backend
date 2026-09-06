@@ -51,11 +51,14 @@ class Discount extends Model
             return $amount;
         }
 
-        $value = (float) $discount->value;
-        $reduction = $discount->discount_type === 'fixed'
-            ? min($value, $amount)
-            : $amount * ($value / 100);
+        return $discount->payoutFor($amount);
+    }
 
+    /** Apply this exact rule once, avoiding a second lookup during a quote. */
+    public function payoutFor(float $amount): float
+    {
+        $value = (float) $this->value;
+        $reduction = $this->discount_type === 'fixed' ? min($value, $amount) : $amount * ($value / 100);
         return round(max(0, $amount - $reduction), 2);
     }
 
@@ -67,6 +70,12 @@ class Discount extends Model
      */
     public static function findApplicable(string $serviceType, ?string $network): ?self
     {
+        if ($serviceType === 'airtimeToCash') {
+            $policy = app(\App\Services\AirtimeToCashAvailabilityService::class);
+            $resolved = $policy->resolve(null, $network);
+            return $resolved ? $policy->rate($resolved) : null;
+        }
+
         $normalizedNetwork = $network === null ? null : strtolower(trim($network));
 
         $candidates = static::where('service_type', $serviceType)

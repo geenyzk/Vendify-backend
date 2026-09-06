@@ -650,6 +650,10 @@ class AdminController extends Controller
                     continue;
                 }
 
+                if ($realTable === 'networks' && collect(array_keys($item))->contains(fn ($key) => str_starts_with($key, 'airtime_to_cash_'))) {
+                    throw ValidationException::withMessages(['network' => 'Manage conversion settings under Airtime to Cash → Configuration.']);
+                }
+
                 $isUpdate = isset($item['id']) && $item['id'] != 0;
                 if ($modelClass === DataPlan::class && ! $isUpdate) {
                     $categoryId = $item['manual_category_id'] ?? null;
@@ -864,6 +868,7 @@ class AdminController extends Controller
         }
 
         $column = $request->input('column', 'sort_order');
+        if ($realTable === 'networks' && str_starts_with($column, 'airtime_to_cash_')) return $this->fail([], 'Use Airtime to Cash Configuration.', 422);
         $tableColumns = Schema::getColumnListing($realTable);
         if (! in_array($column, $tableColumns)) {
             return $this->fail([], "Column {$column} not found on table {$table}", 400);
