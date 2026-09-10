@@ -7,15 +7,15 @@ use App\Models\AirtimeToCashRequest;
 final class ProviderState
 {
     private const NEXT = [
-        'created' => ['awaiting_otp', 'ready_to_transfer', 'manual_review', 'failed'],
+        'created' => ['expired', 'awaiting_otp', 'ready_to_transfer', 'manual_review', 'failed'],
         'awaiting_otp' => ['verifying_otp', 'expired'],
         'verifying_otp' => ['awaiting_otp', 'ready_to_transfer', 'expired', 'manual_review', 'failed'],
         'ready_to_transfer' => ['processing', 'expired'],
         'processing' => ['ready_to_transfer', 'provider_confirmed', 'provider_pending', 'failed', 'session_expired'],
         'provider_pending' => ['provider_confirmed', 'failed', 'manual_review'],
-        'manual_review' => ['provider_confirmed', 'failed'],
-        'session_expired' => ['created'],
-        'expired' => ['created'],
+        'manual_review' => ['provider_confirmed', 'failed', 'expired'],
+        'session_expired' => [],
+        'expired' => [],
         'provider_confirmed' => ['settlement_pending', 'completed'],
         'settlement_pending' => ['completed'],
         'completed' => [], 'failed' => [],
@@ -30,7 +30,7 @@ final class ProviderState
             throw new \DomainException('Invalid conversion state transition.');
         }
         $request->provider_status = $state;
-        if (in_array($state, ['failed', 'completed'], true)) {
+        if (in_array($state, ['failed', 'completed', 'expired', 'session_expired'], true)) {
             $request->active_session_key = null;
             $request->provider_identifier = null;
         }

@@ -267,6 +267,8 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         Route::middleware(['not.impersonating', 'atc.https', 'throttle:10,1'])->group(function () {
             Route::get('/airtime-to-cash/provider/options', [AirtimeToCashProviderController::class, 'options']);
             Route::get('/airtime-to-cash/provider/quote', [AirtimeToCashProviderController::class, 'quote']);
+            Route::get('/airtime-to-cash/provider/active', [AirtimeToCashProviderController::class, 'active']);
+            Route::post('/airtime-to-cash/{id}/resume', [AirtimeToCashProviderController::class, 'resume'])->whereNumber('id');
             Route::post('/airtime-to-cash/provider/start', [AirtimeToCashProviderController::class, 'start']);
             Route::post('/airtime-to-cash/{id}/verify-otp', [AirtimeToCashProviderController::class, 'verify'])->whereNumber('id')->middleware('atc.secrets');
             Route::post('/airtime-to-cash/{id}/restart-otp', [AirtimeToCashProviderController::class, 'restart'])->whereNumber('id');

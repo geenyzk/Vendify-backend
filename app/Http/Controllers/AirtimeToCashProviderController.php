@@ -86,6 +86,21 @@ final class AirtimeToCashProviderController extends Controller
         }
     }
 
+    public function active(Request $request)
+    {
+        return $this->success($this->flow->active((string) $request->user()->id)
+            ->map(fn ($atc) => $this->customerView($atc))->all());
+    }
+
+    public function resume(Request $request, int $id)
+    {
+        try {
+            return $this->success($this->customerView($this->flow->resume($id, (string) $request->user()->id)->setAttribute('resumed', true)));
+        } catch (\DomainException $e) {
+            return $this->fail([], $e->getMessage(), 422);
+        }
+    }
+
     public function status(Request $request, int $id)
     {
         $atc = AirtimeToCashRequest::where('user_id', $request->user()->id)->where('processing_mode', 'provider')->findOrFail($id);
@@ -107,12 +122,12 @@ final class AirtimeToCashProviderController extends Controller
             'failed' => $atc->provider_message === 'recipient_unavailable'
                 ? 'No receiving line is available for this conversion. Your wallet has not been credited.'
                 : 'Conversion failed. Your wallet has not been credited.',
-            'expired', 'session_expired' => 'Verification expired. Restart verification to continue.',
+            'expired', 'session_expired' => 'Verification expired. Start a new conversion with a fresh quote.',
             'provider_confirmed', 'settlement_pending' => 'Conversion confirmed. Wallet credit is being completed.',
             default => 'Your conversion needs confirmation. Do not send another transfer.',
         };
 
-        return ['id' => $atc->id, 'network_id' => $atc->network_id, 'network' => $atc->network, 'processing_mode' => 'provider',
+        return ['resumed' => (bool) $atc->getAttribute('resumed'), 'id' => $atc->id, 'network_id' => $atc->network_id, 'network' => $atc->network, 'processing_mode' => 'provider',
             'amount' => (float) $atc->amount, 'payout_amount' => (float) $atc->payout_amount, 'sender_phone' => $atc->sender_phone,
             'status' => $atc->status,
             'state' => $atc->provider_status, 'message' => $message, 'reference' => $atc->transaction_reference,

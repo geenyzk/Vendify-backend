@@ -15,6 +15,7 @@ use App\Services\AirtimeToCash\ProviderResult;
 use App\Services\AirtimeToCash\Providers\AutomationProvider;
 use App\Services\AirtimeToCash\Providers\TwoFastProvider;
 use App\Services\AirtimeToCashSettlementService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request as ClientRequest;
@@ -657,5 +658,227 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         }
         Http::fake();
         Http::assertNothingSent();
+    }
+
+    public function test_new_start_key_returns_owned_active_conversion_without_creating_another_session(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 2000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $first = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $again = $flow->start($user->id, $network->id, 1000, 950, '08012345678', (string) Str::uuid());
+        $this->assertSame($first->id, $again->id);
+        $this->assertSame('awaiting_otp', $again->provider_status);
+        $this->assertEquals(500, $again->amount);
+        $this->assertTrue($again->resumed);
+        Http::assertSentCount(2);
+        $this->assertDatabaseCount('airtime_to_cash_requests', 1);
+    }
+
+    public function test_resume_restores_otp_pin_and_processing_without_transfer_or_credit(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 4000]);
+        Http::fake(['*/login/with/session/id' => Http::response(['code' => 2000, 'data' => ['sessionId' => 'safe-session-id']], 200)]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $first = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->assertSame('awaiting_otp', $flow->resume($first->id, $user->id)->provider_status);
+        $flow->verify($first->id, $user->id, '123456');
+        $this->assertSame('ready_to_transfer', $flow->resume($first->id, $user->id)->provider_status);
+        $flow->convert($first->id, $user->id, '1234');
+        $this->travel(20)->minutes();
+        $this->assertSame('provider_pending', $flow->resume($first->id, $user->id)->provider_status);
+        $this->assertNotNull($first->fresh()->active_session_key);
+        $flow->convert($first->id, $user->id, '1234');
+        $this->assertCount(1, Http::recorded(fn ($r) => str_ends_with($r->url(), '/transfer/airtime')));
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_local_expiry_releases_sim_but_never_reopens_old_reference(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 2000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $old = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->travel(20)->minutes();
+        $this->assertSame('expired', $flow->resume($old->id, $user->id)->provider_status);
+        $new = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->assertNotSame($old->id, $new->id);
+        $this->assertNull($old->fresh()->active_session_key);
+        $this->expectException(\DomainException::class);
+        $flow->restartOtp($old->id, $user->id);
+    }
+
+    public function test_provider_expiry_and_unknown_session_check_are_distinguished(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 2000]);
+        Http::fake(['*/login/with/session/id' => Http::sequence()->push(['code' => 5000], 500)->push(['code' => 4010], 200)]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $old = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $flow->verify($old->id, $user->id, '123456');
+        $this->assertSame('ready_to_transfer', $flow->resume($old->id, $user->id)->provider_status);
+        $this->assertNotNull($old->fresh()->active_session_key);
+        $this->assertSame('expired', $flow->resume($old->id, $user->id)->provider_status);
+        $this->assertNull($old->fresh()->provider_identifier);
+        $this->assertNotSame($old->id, $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id);
+        Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/transfer/airtime'));
+    }
+
+    public function test_legacy_terminal_reservations_do_not_block_or_reopen(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 2000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        foreach ([['pending', 'failed'], ['approved', 'completed'], ['rejected', 'awaiting_otp'], ['pending', 'cancelled'], ['pending', 'session_expired']] as $i => [$status, $state]) {
+            $phone = '0801234567'.$i;
+            $old = $flow->start($user->id, $network->id, 500, 475, $phone, (string) Str::uuid());
+            // Simulate historical rows, bypassing current saving guards.
+            DB::table('airtime_to_cash_requests')->where('id', $old->id)->update(['status' => $status, 'provider_status' => $state]);
+            $new = $flow->start($user->id, $network->id, 500, 475, $phone, (string) Str::uuid());
+            $this->assertNotSame($old->id, $new->id);
+            $this->assertNull($old->fresh()->active_session_key);
+            $this->assertSame($state, $flow->resume($old->id, $user->id)->provider_status);
+            $flow->convert($old->id, $user->id, '1234');
+        }
+        Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/transfer/airtime'));
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_active_and_resume_endpoints_are_owner_scoped_and_hide_secrets(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $other = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 2000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $old = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->withoutMiddleware()->actingAs($other);
+        $this->getJson('/api/customer/airtime-to-cash/provider/active')->assertOk()->assertJsonPath('data', []);
+        $this->postJson('/api/customer/airtime-to-cash/'.$old->id.'/resume')->assertNotFound();
+        $this->actingAs($user);
+        $response = $this->postJson('/api/customer/airtime-to-cash/'.$old->id.'/resume')->assertOk()->assertJsonPath('data.id', $old->id)->assertJsonPath('data.resumed', true);
+        $this->assertArrayNotHasKey('provider_identifier', $response->json('data'));
+        $this->assertArrayNotHasKey('active_session_key', $response->json('data'));
+        $this->expectException(\DomainException::class);
+        $flow->start($other->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+    }
+
+    public function test_resume_completed_conversion_never_credits_twice(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 2000, 'data' => ['amountConverted' => 500]]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $old = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $flow->verify($old->id, $user->id, '123456');
+        $flow->convert($old->id, $user->id, '1234');
+        $this->assertSame('approved', $flow->resume($old->id, $user->id)->status);
+        $flow->resume($old->id, $user->id);
+        $flow->convert($old->id, $user->id, '1234');
+        $this->assertDatabaseCount('transactions', 1);
+        $this->assertEquals(1475, $user->fresh()->wallet_balance);
+        $this->assertCount(1, Http::recorded(fn ($r) => str_ends_with($r->url(), '/transfer/airtime')));
+    }
+
+    public function test_twofast_resume_reconciles_unknown_then_success_without_repeating_transfer(): void
+    {
+        $this->enable('2fast');
+        $user = $this->user();
+        $network = $this->network();
+        Http::fakeSequence('https://2fast.com.ng/api/Airtime-To-Cash')
+            ->push(['status' => 'success', 'skip_otp' => true, 'identifier' => 'twofast-session', 'airtime_balance' => 1000])
+            ->push(['status' => 'success', 'message' => 'Awaiting airtime confirmation. You will be credited once received.']);
+        $flow = app(AirtimeToCashProviderService::class);
+        $old = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->assertSame('ready_to_transfer', $flow->resume($old->id, $user->id)->provider_status);
+        Http::assertSentCount(1);
+        $flow->convert($old->id, $user->id, '1234');
+        $this->assertCount(1, Http::recorded(fn ($r) => str_ends_with($r->url(), '/Airtime-To-Cash') && (int) $r['step'] === 3));
+        Http::fake(['*/transaction-history' => Http::sequence()
+            ->push(['status' => 'error', 'message' => 'Not found'])
+            ->push(['status' => 'success', 'source' => 'wallet_history', 'data' => [
+                'reference' => $old->provider_reference, 'type' => 'Airtime To Cash', 'status' => 'Successful',
+            ]])]);
+        $this->travel(20)->minutes();
+        $this->assertSame('provider_pending', $flow->resume($old->id, $user->id)->provider_status);
+        $this->assertNotNull($old->fresh()->active_session_key);
+        $this->assertDatabaseCount('transactions', 0);
+        $this->travel(2)->minutes();
+        $this->assertSame('approved', $flow->resume($old->id, $user->id)->status);
+        $flow->resume($old->id, $user->id);
+        $this->assertDatabaseCount('transactions', 1);
+        Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/Airtime-To-Cash'));
+        Http::assertSentCount(2);
+    }
+
+    public function test_session_expiry_check_cannot_overwrite_a_concurrent_transfer(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 4000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $old = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $flow->verify($old->id, $user->id, '123456');
+        Http::fake(['*/login/with/session/id' => function () use ($flow, $old, $user) {
+            $flow->convert($old->id, $user->id, '1234');
+
+            return Http::response(['code' => 4010]);
+        }]);
+        $this->assertSame('provider_pending', $flow->resume($old->id, $user->id)->provider_status);
+        $this->assertNotNull($old->fresh()->active_session_key);
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_expired_otp_submit_returns_expired_state_and_manual_records_are_not_discovered(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 2000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $old = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->travel(20)->minutes();
+        $this->assertSame('expired', $flow->verify($old->id, $user->id, '123456')->provider_status);
+        $manual = AirtimeToCashRequest::create([
+            'user_id' => $user->id, 'network' => 'mtn', 'sender_phone' => '08012345678',
+            'destination_number' => '08030000000', 'amount' => 500, 'payout_amount' => 475,
+            'transaction_reference' => 'ATC-MANUAL-'.Str::uuid(), 'status' => 'pending',
+        ]);
+        $this->assertCount(0, $flow->active($user->id));
+        $this->assertSame('pending', $manual->fresh()->status);
+        $this->expectException(ModelNotFoundException::class);
+        $flow->resume($manual->id, $user->id);
+    }
+
+    public function test_resume_retries_only_local_confirmed_settlement_once(): void
+    {
+        $this->enable();
+        $user = $this->user();
+        $network = $this->network();
+        $this->automationSequence(['code' => 2000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $old = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        DB::table('airtime_to_cash_requests')->where('id', $old->id)->update([
+            'provider_status' => 'settlement_pending', 'provider_confirmed_at' => now(),
+        ]);
+        $this->assertSame('approved', $flow->resume($old->id, $user->id)->status);
+        $flow->resume($old->id, $user->id);
+        $this->assertDatabaseCount('transactions', 1);
+        $this->assertEquals(1475, $user->fresh()->wallet_balance);
+        Http::assertSentCount(2); // Only the original quota and OTP calls.
     }
 }

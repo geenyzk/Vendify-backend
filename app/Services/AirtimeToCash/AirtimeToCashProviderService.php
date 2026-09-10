@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\AirtimeToCashAvailabilityService;
 use App\Services\AirtimeToCashSettlementService;
 use DomainException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -37,7 +38,7 @@ final class AirtimeToCashProviderService
                 throw new DomainException('This start reference belongs to a different conversion.');
             }
 
-            return $existing;
+            return $this->resume($existing->id, $userId)->setAttribute('resumed', true);
         }
         $quote = $this->quote($networkId, $amount);
         if ($quote['payout_amount'] !== $payout) {
@@ -52,8 +53,13 @@ final class AirtimeToCashProviderService
                 return [$existing, false];
             }
             $activeKey = hash('sha256', $name.':'.$phone);
-            if (AirtimeToCashRequest::where('active_session_key', $activeKey)->exists()) {
-                throw new DomainException('An active conversion already exists for this SIM. Resume it before starting another.');
+            $active = AirtimeToCashRequest::where('active_session_key', $activeKey)->lockForUpdate()->first();
+            if ($active && $this->retainReservation($active)) {
+                if ((string) $active->user_id !== $userId) {
+                    throw new DomainException('This SIM has an unresolved conversion. Contact support for help.');
+                }
+
+                return [$active, false];
             }
             $reference = 'ATC-'.Str::uuid();
 
@@ -69,7 +75,7 @@ final class AirtimeToCashProviderService
         });
         [$request, $created] = $record;
         if (! $created) {
-            return $request;
+            return $this->resume($request->id, $userId)->setAttribute('resumed', true);
         }
         // The durable reservation precedes ANY external call. A crash must not
         // cause a second start/OTP session when this idempotency key is replayed.
@@ -88,6 +94,82 @@ final class AirtimeToCashProviderService
         return $this->finishPreTransfer($request->id, 'created', $result);
     }
 
+    /** Called under a row lock. Never infer transfer failure from elapsed time. */
+    private function retainReservation(AirtimeToCashRequest $request): bool
+    {
+        $terminal = in_array($request->status, ['failed', 'approved', 'rejected', 'cancelled'], true)
+            || in_array($request->provider_status, ['failed', 'completed', 'expired', 'session_expired', 'rejected', 'cancelled'], true);
+        if (! $terminal && ! $request->provider_confirmed_at && ! $request->payout_transaction_reference
+            && $request->expires_at?->isPast()
+            && (in_array($request->provider_status, ['created', 'awaiting_otp', 'verifying_otp', 'ready_to_transfer'], true)
+                || ($request->provider_status === 'manual_review' && (int) $request->provider_attempt_count === 0))) {
+            // Only verification expires; no claim about an unknown transfer outcome.
+            ProviderState::move($request, 'expired');
+            $terminal = true;
+        }
+        if ($terminal) {
+            $request->active_session_key = null;
+            $request->provider_identifier = null;
+            $request->save();
+        }
+
+        return ! $terminal;
+    }
+
+    public function active(string $userId): Collection
+    {
+        // Discovery is local only, including when new conversions are disabled.
+        return DB::transaction(function () use ($userId) {
+            return AirtimeToCashRequest::where('user_id', $userId)->where('processing_mode', 'provider')
+                ->whereNotNull('active_session_key')->lockForUpdate()->get()
+                ->filter(fn ($request) => $this->retainReservation($request))->values();
+        });
+    }
+
+    public function resume(int $id, string $userId): AirtimeToCashRequest
+    {
+        $request = DB::transaction(function () use ($id, $userId) {
+            $request = $this->owned($id, $userId);
+            $this->retainReservation($request);
+
+            return $request;
+        });
+        if ($request->status !== 'pending' || ! $request->active_session_key) {
+            return $request;
+        }
+        if (in_array($request->provider_status, ['provider_confirmed', 'settlement_pending'], true)) {
+            return $this->settleConfirmed($request);
+        }
+        $provider = $this->manager->bound($request);
+        if ($request->provider_status === 'ready_to_transfer' && $provider instanceof ChecksSession && $request->provider_identifier) {
+            // Read-only session validation. Unknown/auth/network errors are not expiry evidence.
+            try {
+                $result = $provider->checkSession($this->availability::canonicalName($request->network), $request->sender_phone, $request->provider_identifier);
+            } catch (\Throwable) {
+                $result = new ProviderResult('unknown');
+            }
+            if ($result->state === 'session_expired') {
+                return DB::transaction(function () use ($id, $userId) {
+                    $locked = $this->owned($id, $userId);
+                    // A concurrent PIN submission may already have claimed the transfer.
+                    if ($locked->status === 'pending' && $locked->provider_status === 'ready_to_transfer') {
+                        ProviderState::move($locked, 'expired');
+                        $locked->save();
+                    }
+
+                    return $locked;
+                });
+            }
+        }
+        if ($provider instanceof LooksUpTransactions
+            && in_array($request->provider_status, ['processing', 'provider_pending', 'manual_review'], true)
+            && ! $request->last_provider_check_at?->gt(now()->subMinute())) {
+            return app(AirtimeToCashReconciliationService::class)->reconcile($id);
+        }
+
+        return $request->fresh();
+    }
+
     private function owned(int $id, string $userId): AirtimeToCashRequest
     {
         return AirtimeToCashRequest::where('user_id', $userId)->where('processing_mode', 'provider')->lockForUpdate()->findOrFail($id);
@@ -97,7 +179,7 @@ final class AirtimeToCashProviderService
     {
         $request = DB::transaction(function () use ($id, $userId) {
             $request = $this->owned($id, $userId);
-            if ($request->provider_status !== 'awaiting_otp') {
+            if ($request->status !== 'pending' || $request->provider_status !== 'awaiting_otp') {
                 throw new DomainException('This conversion is not awaiting an OTP.');
             }
             if ($request->expires_at?->isPast()) {
@@ -116,7 +198,7 @@ final class AirtimeToCashProviderService
             return $request;
         });
         if ($request->provider_status === 'expired') {
-            throw new DomainException('Verification expired. Restart verification.');
+            return $request;
         }
         try {
             $result = $this->manager->bound($request)->verifyOtp($this->availability::canonicalName($request->network), $request->sender_phone, $otp);
@@ -133,7 +215,7 @@ final class AirtimeToCashProviderService
     {
         return DB::transaction(function () use ($id, $from, $result) {
             $request = AirtimeToCashRequest::lockForUpdate()->findOrFail($id);
-            if ($request->provider_status !== $from) {
+            if ($request->status !== 'pending' || $request->provider_status !== $from) {
                 return $request;
             }
             if ($result->state === 'success') {
@@ -163,7 +245,7 @@ final class AirtimeToCashProviderService
     {
         $request = DB::transaction(function () use ($id, $userId) {
             $request = $this->owned($id, $userId);
-            if ($request->provider_status !== 'ready_to_transfer') {
+            if ($request->status !== 'pending' || $request->provider_status !== 'ready_to_transfer') {
                 return $request;
             } // Duplicate submit never calls telecom twice.
             if ($request->expires_at?->isPast()) {
@@ -207,7 +289,7 @@ final class AirtimeToCashProviderService
     {
         $request = DB::transaction(function () use ($id, $result) {
             $request = AirtimeToCashRequest::where('processing_mode', 'provider')->lockForUpdate()->findOrFail($id);
-            if (! in_array($request->provider_status, ['processing', 'provider_pending', 'manual_review'], true)) {
+            if ($request->status !== 'pending' || ! in_array($request->provider_status, ['processing', 'provider_pending', 'manual_review'], true)) {
                 return $request;
             }
             $state = $result->state;
@@ -221,7 +303,7 @@ final class AirtimeToCashProviderService
                 $state === 'auth_error' && $request->provider_status === 'processing' => 'failed',
                 $state === 'unavailable' && $result->reason === 'recipient_unavailable' => 'failed',
                 default => match ($state) {
-                    'success' => 'provider_confirmed', 'failed' => 'failed', 'session_expired' => 'session_expired', default => 'provider_pending'
+                    'success' => 'provider_confirmed', 'failed' => 'failed', 'session_expired' => $request->provider_status === 'processing' ? 'session_expired' : 'provider_pending', default => 'provider_pending'
                 },
             };
             if ($request->provider_status === 'manual_review' && $next === 'provider_pending') {
@@ -270,24 +352,8 @@ final class AirtimeToCashProviderService
 
     public function restartOtp(int $id, string $userId): AirtimeToCashRequest
     {
-        $request = DB::transaction(function () use ($id, $userId) {
-            $request = $this->owned($id, $userId);
-            if (! in_array($request->provider_status, ['expired', 'session_expired'], true)) {
-                throw new DomainException('This conversion cannot restart verification safely.');
-            }
-            ProviderState::move($request, 'created');
-            $request->expires_at = now()->addMinutes(config('airtime_to_cash.session_minutes'));
-            $request->provider_identifier = null;
-            $request->save();
-
-            return $request;
-        });
-        try {
-            $result = $this->manager->bound($request)->requestOtp($this->availability::canonicalName($request->network), $request->sender_phone);
-        } catch (\Throwable) {
-            $result = new ProviderResult('unknown');
-        }
-
-        return $this->finishPreTransfer($id, 'created', $result);
+        // Expired sessions release their SIM. Never reopen an old reference after release.
+        $this->owned($id, $userId);
+        throw new DomainException('Verification expired. Start a new conversion with a fresh quote.');
     }
 }
