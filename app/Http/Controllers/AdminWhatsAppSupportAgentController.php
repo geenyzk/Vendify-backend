@@ -71,7 +71,7 @@ class AdminWhatsAppSupportAgentController extends Controller
     {
         return $request->validate([
             'display_name' => [$agent ? 'sometimes' : 'required', 'string', 'max:120'],
-            'phone_number' => [$agent ? 'sometimes' : 'required', 'string', 'max:16', Rule::unique('whatsapp_support_agents', 'phone_number')->ignore($agent?->id)],
+            'phone_number' => [$agent ? 'sometimes' : 'required', 'string', 'max:16', Rule::unique((new WhatsAppSupportAgent)->getTable(), 'phone_number')->ignore($agent?->id)],
             'enabled' => 'sometimes|boolean',
             'availability' => ['sometimes', Rule::in(WhatsAppSupportAgent::AVAILABILITIES)],
             'sort_order' => 'sometimes|integer|min:0|max:100000',

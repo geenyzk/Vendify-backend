@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\AirtimeToCashProviderController;
 use App\Models\AirtimeToCashProviderSetting;
 use App\Models\AirtimeToCashRequest;
 use App\Models\Discount;
@@ -257,6 +258,38 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             $this->assertEquals(1000, $user->fresh()->wallet_balance);
             $this->assertDatabaseMissing('transactions', ['airtime_to_cash_request_id' => $request->id]);
         }
+    }
+
+    public function test_definitive_pin_rejection_can_be_corrected_without_restarting_sim_verification(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        Http::fake([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/generate/otp' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/verify/otp' => Http::response([
+                'code' => 2000,
+                'data' => ['sessionId' => 'safe-session-id', 'airtimeBalance' => 'NGN 1,000'],
+            ], 200),
+            'https://automation.airtimetocash.com/api/v1/transfer/airtime' => Http::sequence()
+                ->push(['code' => 3000, 'message' => 'You have entered an invalid pin. Please double-check the pin and try again.'], 200)
+                ->push(['code' => 2000, 'data' => ['amountConverted' => 'NGN 500']], 200),
+        ]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $request = $flow->verify($request->id, $user->id, '123456');
+
+        $request = $flow->convert($request->id, $user->id, '0000');
+        $this->assertSame('ready_to_transfer', $request->provider_status);
+        $this->assertSame('invalid_pin', $request->provider_message);
+        $this->assertNotNull($request->provider_identifier);
+        $this->assertStringContainsString('PIN was rejected', app(AirtimeToCashProviderController::class)->customerView($request)['message']);
+        $this->assertEquals(1000, $user->fresh()->wallet_balance);
+
+        $request = $flow->convert($request->id, $user->id, '1234');
+        $this->assertSame('completed', $request->provider_status);
+        $this->assertEquals(1475, $user->fresh()->wallet_balance);
     }
 
     public function test_low_verified_airtime_balance_blocks_transfer_call(): void

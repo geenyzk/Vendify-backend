@@ -98,9 +98,15 @@ final class AirtimeToCashProviderController extends Controller
     {
         $message = match ($atc->provider_status) {
             'awaiting_otp' => $atc->provider_message === 'failed' ? 'Verification failed. Check the code and try again.' : 'Enter the code sent to your SIM.',
-            'ready_to_transfer' => 'SIM verified. Review your payout before confirming.',
+            'ready_to_transfer' => match ($atc->provider_message) {
+                'invalid_pin' => 'The transfer PIN was rejected. Check the PIN and try again. Your wallet has not been credited.',
+                'low_balance' => 'Your SIM does not have enough airtime for this conversion. Recharge it, then try again.',
+                default => 'SIM verified. Review your payout before confirming.',
+            },
             'completed' => 'Conversion complete. Your wallet has been credited.',
-            'failed' => 'Conversion failed. Your wallet has not been credited.',
+            'failed' => $atc->provider_message === 'recipient_unavailable'
+                ? 'No receiving line is available for this conversion. Your wallet has not been credited.'
+                : 'Conversion failed. Your wallet has not been credited.',
             'expired', 'session_expired' => 'Verification expired. Restart verification to continue.',
             'provider_confirmed', 'settlement_pending' => 'Conversion confirmed. Wallet credit is being completed.',
             default => 'Your conversion needs confirmation. Do not send another transfer.',

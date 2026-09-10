@@ -13,6 +13,7 @@ final readonly class ProviderResult
         public bool $skipOtp = false,
         public ?float $convertedAmount = null,
         public ?float $cost = null,
+        public ?string $reason = null,
     ) {}
 
     public function identifier(): ?string
@@ -22,7 +23,7 @@ final readonly class ProviderResult
 
     public function __debugInfo(): array
     {
-        return ['state' => $this->state];
+        return ['state' => $this->state, 'reason' => $this->reason];
     }
 
     public function terminal(): bool

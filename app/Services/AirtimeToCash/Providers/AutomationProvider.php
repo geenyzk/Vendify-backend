@@ -94,6 +94,13 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
             '5030' => 'unavailable', default => 'unknown',
         };
         $data = is_array($body['data'] ?? null) ? $body['data'] : [];
+        $message = strtolower((string) ($body['message'] ?? ''));
+        $reason = match (true) {
+            $state === 'failed' && str_contains($message, 'invalid pin') => 'invalid_pin',
+            $state === 'failed' && str_contains($message, 'balance is low') => 'low_balance',
+            $state === 'unavailable' && str_contains($message, 'unavailability of recipient') => 'recipient_unavailable',
+            default => null,
+        };
         $identifier = is_string($data['sessionId'] ?? null) && strlen($data['sessionId']) <= 2048 ? $data['sessionId'] : null;
         $amount = ProviderResult::number($data['amountConverted'] ?? null);
         if ($state === 'success' && in_array($operation, ['verify', 'session'], true) && ! $identifier) {
@@ -104,7 +111,7 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         }
 
         return new ProviderResult($state, $identifier, ProviderResult::number($data['airtimeBalance'] ?? null),
-            ProviderResult::number($data['automationCharges'] ?? null), convertedAmount: $amount);
+            ProviderResult::number($data['automationCharges'] ?? null), convertedAmount: $amount, reason: $reason);
     }
 
     public function requestOtp(string $network, string $phone): ProviderResult

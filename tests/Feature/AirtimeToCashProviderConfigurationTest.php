@@ -134,6 +134,10 @@ class AirtimeToCashProviderConfigurationTest extends TestCase
         $this->assertSame($replacement, AirtimeToCashProviderSetting::findOrFail('airtime_to_cash_automation')->token);
 
         $audit = DB::table('audit_logs')->get()->toJson();
+        $this->assertDatabaseHas('audit_logs', [
+            'auditable_type' => AirtimeToCashProviderSetting::class,
+            'auditable_id' => 'airtime_to_cash_automation',
+        ]);
         $this->assertStringNotContainsString($secret, $audit);
         $this->assertStringNotContainsString($replacement, $audit);
     }

@@ -214,14 +214,19 @@ final class AirtimeToCashProviderService
             if ($state === 'success' && $result->convertedAmount !== null && $result->convertedAmount !== (float) $request->amount) {
                 $state = 'unknown';
             }
-            $next = match ($state) {
-                'success' => 'provider_confirmed', 'failed' => 'failed', 'session_expired' => 'session_expired', default => 'provider_pending'
+            $retryableRejection = $state === 'failed' && in_array($result->reason, ['invalid_pin', 'low_balance'], true);
+            $next = match (true) {
+                $retryableRejection => 'ready_to_transfer',
+                $state === 'unavailable' && $result->reason === 'recipient_unavailable' => 'failed',
+                default => match ($state) {
+                    'success' => 'provider_confirmed', 'failed' => 'failed', 'session_expired' => 'session_expired', default => 'provider_pending'
+                },
             };
             if ($request->provider_status === 'manual_review' && $next === 'provider_pending') {
                 return $request;
             }
             ProviderState::move($request, $next);
-            $request->provider_message = $state;
+            $request->provider_message = $result->reason ?? $state;
             if ($next === 'provider_confirmed') {
                 $request->provider_confirmed_at = now();
                 $request->provider_identifier = null;
