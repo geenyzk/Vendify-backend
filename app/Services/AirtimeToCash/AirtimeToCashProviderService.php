@@ -3,6 +3,7 @@
 namespace App\Services\AirtimeToCash;
 
 use App\Models\AirtimeToCashRequest;
+use App\Models\Network;
 use App\Models\User;
 use App\Services\AirtimeToCashAvailabilityService;
 use App\Services\AirtimeToCashSettlementService;
@@ -15,10 +16,22 @@ final class AirtimeToCashProviderService
 {
     public function __construct(private AirtimeToCashProviderManager $manager, private AirtimeToCashAvailabilityService $availability) {}
 
+    /** Automated availability: provider support and limits plus the Vendify rate, never manual destination settings. */
+    public function inspect(?Network $network, ?float $amount = null): array
+    {
+        try {
+            $limits = $network ? $this->manager->automatedLimits($this->availability::canonicalName($network->name)) : null;
+        } catch (DomainException) {
+            $limits = null;
+        }
+
+        return $this->availability->inspect($network, $amount, 'provider', $limits);
+    }
+
     public function quote(int $networkId, float $amount): array
     {
         $network = $this->availability->resolve($networkId);
-        $quote = $this->availability->inspect($network, $amount, 'provider');
+        $quote = $this->inspect($network, $amount);
         if (! $quote['available']) {
             throw new DomainException($quote['reason']);
         }

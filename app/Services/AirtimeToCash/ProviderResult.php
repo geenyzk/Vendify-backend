@@ -14,6 +14,11 @@ final readonly class ProviderResult
         public ?float $convertedAmount = null,
         public ?float $cost = null,
         public ?string $reason = null,
+        // Allowlisted diagnostics only: a semantic label, which body field carried
+        // the message, and known vocabulary words it contained. Never prose.
+        public ?string $semantic = null,
+        public ?string $messageField = null,
+        public ?array $messageTerms = null,
     ) {}
 
     public function identifier(): ?string
@@ -23,7 +28,7 @@ final readonly class ProviderResult
 
     public function __debugInfo(): array
     {
-        return ['state' => $this->state, 'reason' => $this->reason];
+        return ['state' => $this->state, 'reason' => $this->reason, 'semantic' => $this->semantic];
     }
 
     public function terminal(): bool

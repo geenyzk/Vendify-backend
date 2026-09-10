@@ -31,6 +31,11 @@ final class ProviderCallTrace
                 'provider_code' => is_scalar($code) && in_array((string) $code, ['2000', '3000', '4000', '4030', '4010', '4290', '5030'], true) ? (string) $code : null,
                 // Allowlisted semantic message, never arbitrary provider text (which can echo secrets).
                 'sanitized_message' => $result->reason ?? $result->state,
+                // Quota 5030 classification, e.g. recipients_available or unrecognised_5030;
+                // message_terms holds only words from the adapter's fixed vocabulary.
+                'semantic_outcome' => $result->semantic,
+                'message_field' => $result->messageField,
+                'message_terms' => $result->messageTerms,
                 'succeeded' => $result->state === 'success',
                 'dispatch_attempted' => $attempted,
                 'transfer_submitted' => $operation === 'convert' && $attempted,

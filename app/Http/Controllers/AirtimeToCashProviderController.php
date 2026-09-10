@@ -25,17 +25,8 @@ final class AirtimeToCashProviderController extends Controller
         $networks = \App\Models\Network::query()
             ->when(isset($input['network_id']), fn ($query) => $query->whereKey($input['network_id']))->get();
         $manual = $networks->contains(fn ($network) => $policy->inspect($network)['available']);
-        $automated = $networks->contains(function ($network) use ($policy) {
-            if (! $policy->inspect($network, null, 'provider')['available']) {
-                return false;
-            }
-            try {
-                return $this->manager->availableForNetwork($policy::canonicalName($network->name),
-                    (float) $network->airtime_to_cash_min, (float) $network->airtime_to_cash_max);
-            } catch (\DomainException) {
-                return false;
-            }
-        });
+        // Each method has its own availability; a manual destination is not required for automation.
+        $automated = $networks->contains(fn ($network) => $this->flow->inspect($network)['available']);
 
         // Explicit allowlist: never serialize administrative configuration to customers.
         return $this->success(['provider_available' => $automated,

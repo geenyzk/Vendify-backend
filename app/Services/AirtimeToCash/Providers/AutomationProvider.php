@@ -13,6 +13,10 @@ use App\Services\AirtimeToCash\ProviderTransport;
 
 final class AutomationProvider implements AirtimeToCashProviderInterface, ChecksQuota, ChecksSession
 {
+    /** Generic words that may be logged from quota prose. Digits, names and tokens never match. */
+    private const QUOTA_TERMS = ['recipient', 'recipients', 's', 'available', 'unavailable', 'unavailability', 'service',
+        'not', 'no', 'quota', 'insufficient', 'exhausted', 'limit', 'amount', 'network', 'moment', 'currently', 'invalid', 'error'];
+
     public function __construct(private ProviderTransport $transport, private ProviderCallTrace $trace) {}
 
     public function key(): string
@@ -104,11 +108,11 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
             return new ProviderResult('failed');
         }
         // Quota documentation reuses 5030 for both available and unavailable.
-        // Only the exact documented positive quota response permits OTP start;
-        // this exception never proves that a transfer succeeded.
-        if ($operation === 'quota' && $http === 200 && $code === '5030'
-            && ($body['message'] ?? null) === 'Recipient(s) Available') {
-            return new ProviderResult('success');
+        // Only the documented positive quota meaning permits OTP start; this
+        // exception never proves that a transfer succeeded.
+        $quota = $operation === 'quota' && $http === 200 && $code === '5030' ? $this->quotaSemantics($body) : null;
+        if ($quota && $quota['outcome'] === 'recipients_available') {
+            return new ProviderResult('success', semantic: $quota['outcome'], messageField: $quota['field'], messageTerms: $quota['terms']);
         }
         $state = match ($code) {
             '2000' => 'success', '3000' => 'failed', '4000' => 'pending',
@@ -133,7 +137,38 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         }
 
         return new ProviderResult($state, $identifier, ProviderResult::number($data['airtimeBalance'] ?? null),
-            ProviderResult::number($data['automationCharges'] ?? null), convertedAmount: $amount, reason: $reason);
+            ProviderResult::number($data['automationCharges'] ?? null), convertedAmount: $amount, reason: $reason,
+            semantic: $quota['outcome'] ?? null, messageField: $quota['field'] ?? null, messageTerms: $quota['terms'] ?? null);
+    }
+
+    /**
+     * Documented quota success is {"code": 5030, "message": "Recipient(s) Available"};
+     * any other 5030 means "Service/Recipient is unavailable". Case, whitespace and
+     * punctuation are harmless differences, other wording is not proof of recipients.
+     *
+     * @return array{outcome: string, field: string, terms: list<string>}
+     */
+    private function quotaSemantics(#[\SensitiveParameter] array $body): array
+    {
+        // The documented top-level field wins; data.message is read only when it is absent.
+        [$field, $message] = match (true) {
+            isset($body['message']) => ['message', $body['message']],
+            is_array($body['data'] ?? null) && isset($body['data']['message']) => ['data.message', $body['data']['message']],
+            default => ['none', null],
+        };
+        if (is_array($message) && array_is_list($message) && count($message) === 1) {
+            $message = $message[0];
+        }
+        $words = is_string($message) ? preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($message), -1, PREG_SPLIT_NO_EMPTY) : false;
+        $words = is_array($words) ? $words : [];
+        $terms = array_values(array_unique(array_intersect($words, self::QUOTA_TERMS)));
+        sort($terms);
+
+        return ['field' => $field, 'terms' => $terms, 'outcome' => match (true) {
+            in_array(implode(' ', $words), ['recipient s available', 'recipients available'], true) => 'recipients_available',
+            array_intersect($words, ['unavailable', 'unavailability', 'not', 'no']) !== [] => 'recipients_unavailable',
+            default => 'unrecognised_5030',
+        }];
     }
 
     public function requestOtp(string $network, string $phone): ProviderResult

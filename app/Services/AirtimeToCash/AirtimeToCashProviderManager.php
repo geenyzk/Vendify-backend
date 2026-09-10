@@ -46,19 +46,26 @@ final class AirtimeToCashProviderManager
             && $this->configuration->liveCallsEnabled();
     }
 
-    public function availableForNetwork(string $network, float $min, float $max): bool
+    /**
+     * Whole-naira range that enabled, configured providers accept for this network,
+     * or null when automation cannot serve it. Manual destination settings play no part.
+     *
+     * @return array{0: float, 1: float}|null
+     */
+    public function automatedLimits(string $network): ?array
     {
         if (! $this->modeAvailable()) {
-            return false;
+            return null;
         }
-        foreach ($this->settings() as $setting) {
-            $limit = $setting['networks'][$network] ?? null;
-            if ($setting['enabled'] && $setting['configured'] && $limit
-                && ceil(max($min, $limit['min'] ?? 1)) <= floor(min($max, $limit['max']))) {
-                return true;
-            }
+        $limits = collect($this->settings())
+            ->filter(fn ($setting) => $setting['enabled'] && $setting['configured'] && isset($setting['networks'][$network]))
+            ->map(fn ($setting) => $setting['networks'][$network]);
+        if ($limits->isEmpty()) {
+            return null;
         }
-        return false;
+        [$min, $max] = [ceil($limits->min(fn ($limit) => $limit['min'] ?? 1)), floor($limits->max('max'))];
+
+        return $min <= $max ? [(float) $min, (float) $max] : null;
     }
 
     public function testConnection(string $provider): ProviderHealthResult

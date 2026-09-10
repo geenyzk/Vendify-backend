@@ -14,6 +14,7 @@ use App\Services\AirtimeToCash\AirtimeToCashReconciliationService;
 use App\Services\AirtimeToCash\ProviderResult;
 use App\Services\AirtimeToCash\Providers\AutomationProvider;
 use App\Services\AirtimeToCash\Providers\TwoFastProvider;
+use App\Services\AirtimeToCashAvailabilityService;
 use App\Services\AirtimeToCashSettlementService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -162,6 +163,205 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         $this->assertSame('unavailable', $provider->normalize('convert', 200, ['code' => 5030, 'message' => 'Recipient(s) Available'])->state);
         $this->assertSame('unknown', $provider->normalize('quota', 500, ['code' => 5030, 'message' => 'Recipient(s) Available'])->state);
         $this->assertSame('auth_error', $provider->normalize('otp', 400, ['code' => 4030])->state);
+    }
+
+    public function test_production_quota_trace_with_recipients_available_continues_to_otp_then_pin_and_credits_once(): void
+    {
+        // Mirrors ATC-e8029664-a34e-4912-b2de-1c6f811ed1d1: quota HTTP 200 with provider_code "5030".
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        Http::fake([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::response(['code' => '5030', 'message' => 'Recipient(s) Available'], 200),
+            'https://automation.airtimetocash.com/api/v1/generate/otp' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/verify/otp' => Http::response(['code' => 2000, 'data' => ['sessionId' => 'safe-session-id', 'airtimeBalance' => '₦1,000']], 200),
+            'https://automation.airtimetocash.com/api/v1/transfer/airtime' => Http::response(['code' => 2000, 'data' => ['amountConverted' => '₦500', 'automationCharges' => '₦2']], 200),
+        ]);
+        $flow = app(AirtimeToCashProviderService::class);
+
+        $request = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->assertSame('pending', $request->status);
+        $this->assertSame('awaiting_otp', $request->provider_status);
+        $this->assertFalse($request->lifecycle['transfer_submitted']);
+        $this->assertSame(['/api/v1/check/quota/availability', '/api/v1/generate/otp'],
+            Http::recorded()->map(fn ($pair) => parse_url($pair[0]->url(), PHP_URL_PATH))->all());
+        $quota = collect($logs)->firstWhere('operation', 'quota');
+        $this->assertSame(['5030', 200, true, 'recipients_available', 'message', false], [$quota['provider_code'], $quota['http_status'],
+            $quota['succeeded'], $quota['semantic_outcome'], $quota['message_field'], $quota['transfer_submitted']]);
+        $this->assertSame([[null, 'created'], ['created', 'awaiting_otp']], collect($logs)->where('event', 'airtime_to_cash.lifecycle')
+            ->map(fn ($log) => [$log['from'], $log['to']])->values()->all());
+        $this->assertDatabaseCount('transactions', 0);
+
+        $request = $flow->verify($request->id, $user->id, '123456');
+        $this->assertSame('ready_to_transfer', $request->provider_status);
+        Http::assertSentCount(3);
+        $this->assertSame('approved', $flow->convert($request->id, $user->id, '1234')->status);
+        $flow->convert($request->id, $user->id, '1234');
+        Http::assertSentCount(4);
+        $this->assertDatabaseCount('transactions', 1);
+        $this->assertEquals(1475, $user->fresh()->wallet_balance);
+    }
+
+    public function test_quota_5030_tolerates_harmless_formatting_but_only_for_quota(): void
+    {
+        $provider = app(AutomationProvider::class);
+        foreach ([
+            ['code' => '5030', 'message' => 'Recipient(s) Available'],
+            ['code' => 5030, 'message' => '  recipient(s) available  '],
+            ['code' => 5030, 'message' => "RECIPIENT(S)\u{00A0}AVAILABLE."],
+            ['code' => 5030, 'message' => "Recipient(s)\tAvailable!"],
+            ['code' => 5030, 'message' => 'Recipients Available'],
+            ['code' => 5030, 'message' => ['Recipient(s) Available']],
+            ['code' => 5030, 'data' => ['message' => 'Recipient(s) Available']],
+        ] as $body) {
+            $result = $provider->normalize('quota', 200, $body);
+            $this->assertSame(['success', 'recipients_available'], [$result->state, $result->semantic], json_encode($body));
+            foreach (['otp', 'verify', 'session', 'convert'] as $operation) {
+                $other = $provider->normalize($operation, 200, $body);
+                $this->assertSame(['unavailable', null], [$other->state, $other->semantic], $operation);
+            }
+            $this->assertSame('unknown', $provider->normalize('quota', 500, $body)->state);
+            $this->assertSame('failed', $provider->normalize('quota', 422, $body)->state);
+        }
+        foreach ([
+            'recipients_unavailable' => ['Unavailability of recipient!', 'Service/Recipient is unavailable at the moment',
+                'Recipient(s) Unavailable', 'Not Recipient(s) Available', 'No Recipient(s) Available'],
+            'unrecognised_5030' => ['', 5030, 'Recipient(s) Available but transfer pending', 'Recipient Available',
+                'Recipient(s) Avail able', ['Recipient(s) Available', 'Pending']],
+        ] as $semantic => $messages) {
+            foreach ($messages as $message) {
+                $result = $provider->normalize('quota', 200, ['code' => 5030, 'message' => $message]);
+                $this->assertSame(['unavailable', $semantic], [$result->state, $result->semantic], json_encode($message));
+            }
+        }
+        $missing = $provider->normalize('quota', 200, ['code' => 5030]);
+        $this->assertSame(['unavailable', 'unrecognised_5030', 'none'], [$missing->state, $missing->semantic, $missing->messageField]);
+        // The documented top-level field wins over a nested fallback.
+        $conflict = $provider->normalize('quota', 200, ['code' => 5030, 'message' => 'Service unavailable', 'data' => ['message' => 'Recipient(s) Available']]);
+        $this->assertSame(['unavailable', 'recipients_unavailable', 'message'], [$conflict->state, $conflict->semantic, $conflict->messageField]);
+    }
+
+    public function test_unrelated_quota_5030_fails_before_otp_and_logs_only_a_safe_classification(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        $cases = [
+            ['Recipient 08012345678 unavailable, token test-automation-token', 'recipients_unavailable', ['recipient', 'unavailable']],
+            ['Recipient(s) Available but transfer pending', 'unrecognised_5030', ['available', 'recipient', 's']],
+        ];
+        Http::fake(['https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::sequence()
+            ->push(['code' => 5030, 'message' => $cases[0][0]], 200)->push(['code' => 5030, 'message' => $cases[1][0]], 200)]);
+        foreach ($cases as $index => [$message, $semantic, $terms]) {
+            $logs = [];
+            $request = app(AirtimeToCashProviderService::class)->start($this->user()->id, $network->id, 500, 475, "0801234567{$index}", (string) Str::uuid());
+            $this->assertSame(['failed', false], [$request->status, $request->lifecycle['transfer_submitted']]);
+            Http::assertNotSent(fn (ClientRequest $sent) => ! str_ends_with($sent->url(), '/check/quota/availability'));
+            $quota = collect($logs)->firstWhere('operation', 'quota');
+            $this->assertSame(['5030', false, 'unavailable', $semantic, $terms], [$quota['provider_code'], $quota['succeeded'],
+                $quota['sanitized_message'], $quota['semantic_outcome'], $quota['message_terms']]);
+            foreach (['08012345678', "0801234567{$index}", 'test-automation-token', 'but transfer pending', 'Recipient'] as $prose) {
+                $this->assertStringNotContainsString($prose, json_encode($logs));
+            }
+        }
+    }
+
+    private function automatedOnlyNetwork(string $name): Network
+    {
+        // The reported admin state: manual method disabled, no destination, manual limits narrower than the provider's.
+        $network = Network::create(['name' => $name, 'active' => true, 'airtime_to_cash_active' => false,
+            'airtime_to_cash_destination_number' => null, 'airtime_to_cash_min' => 100, 'airtime_to_cash_max' => 500]);
+        Discount::create(['name' => "$name Airtime to Cash", 'service_type' => 'airtimeToCash',
+            'network' => AirtimeToCashAvailabilityService::canonicalName($name), 'discount_type' => 'percentage', 'value' => 5, 'active' => true]);
+
+        return $network;
+    }
+
+    public function test_automated_networks_do_not_depend_on_manual_toggle_destination_or_limits(): void
+    {
+        Http::fake();
+        $this->enable();
+        $this->network();
+        $maximums = ['AIRTEL' => 20000, 'GLO' => 1000, '9MOBILE' => 20000];
+        $networks = collect($maximums)->map(fn ($maximum, $name) => $this->automatedOnlyNetwork($name));
+        $this->actingAs($this->user());
+        $catalog = collect($this->getJson('/api/customer/airtime-to-cash/networks')->assertOk()->json('data'))->keyBy('name');
+        $this->assertSame([true, true], [$catalog['MTN']['available'], $catalog['MTN']['automated_available']]);
+        foreach ($maximums as $name => $maximum) {
+            $this->assertSame([false, true, null], [$catalog[$name]['available'], $catalog[$name]['automated_available'], $catalog[$name]['automated_reason']], $name);
+            $this->assertStringContainsString('disabled', $catalog[$name]['reason']);
+            $id = $networks[$name]->id;
+            $this->getJson("/api/customer/airtime-to-cash/provider/options?network_id=$id")->assertOk()
+                ->assertJsonPath('data.automated_available', true)->assertJsonPath('data.manual_available', false);
+            $this->assertEquals($maximum * 0.95, $this->getJson("https://localhost/api/customer/airtime-to-cash/provider/quote?network_id=$id&amount=$maximum")
+                ->assertOk()->json('data.payout_amount'));
+            $this->getJson("https://localhost/api/customer/airtime-to-cash/provider/quote?network_id=$id&amount=".($maximum + 1))->assertUnprocessable();
+            // Manual conversion still requires its own configuration.
+            $this->postJson('/api/customer/airtime-to-cash', ['network_id' => $id, 'amount' => 200, 'sender_phone' => '08012345678'])->assertUnprocessable();
+        }
+        $this->assertDatabaseCount('airtime_to_cash_requests', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_automated_airtel_starts_without_a_manual_destination(): void
+    {
+        $this->enable();
+        $airtel = $this->automatedOnlyNetwork('AIRTEL');
+        Http::fake([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::response(['code' => 5030, 'message' => 'Recipient(s) Available'], 200),
+            'https://automation.airtimetocash.com/api/v1/generate/otp' => Http::response(['code' => 2000], 200),
+        ]);
+        $request = app(AirtimeToCashProviderService::class)->start($this->user()->id, $airtel->id, 15000, 14250, '08012345678', (string) Str::uuid());
+        $this->assertSame(['pending', 'awaiting_otp', ''], [$request->status, $request->provider_status, $request->destination_number]);
+        Http::assertSent(fn (ClientRequest $sent) => str_ends_with($sent->url(), '/check/quota/availability')
+            && $sent['networkName'] === 'AIRTEL' && $sent['amount'] == 15000);
+        Http::assertSentCount(2);
+    }
+
+    public function test_automated_network_availability_still_requires_provider_support_rate_and_runtime(): void
+    {
+        Http::fake();
+        foreach (['AIRTEL', 'GLO', 'SMILE'] as $name) {
+            $this->automatedOnlyNetwork($name); // SMILE is outside the provider contract.
+        }
+        $this->actingAs($this->user());
+        $automated = fn () => collect($this->getJson('/api/customer/airtime-to-cash/networks')->assertOk()->json('data'))
+            ->pluck('automated_available', 'name')->all();
+        $this->assertSame(['AIRTEL' => false, 'GLO' => false, 'SMILE' => false], $automated());
+        $this->enable('2fast'); // 2FAST documents MTN and Airtel only.
+        $this->assertSame(['AIRTEL' => true, 'GLO' => false, 'SMILE' => false], $automated());
+        $this->enable();
+        $this->assertSame(['AIRTEL' => true, 'GLO' => true, 'SMILE' => false], $automated());
+        Discount::where('network', 'glo')->update(['active' => false]);
+        $this->assertSame(['AIRTEL' => true, 'GLO' => false, 'SMILE' => false], $automated());
+        config(['airtime_to_cash.live_calls_enabled' => false]);
+        $this->assertSame(['AIRTEL' => false, 'GLO' => false, 'SMILE' => false], $automated());
+        Http::assertNothingSent();
+    }
+
+    public function test_manual_availability_still_requires_its_own_destination_when_automation_is_available(): void
+    {
+        Http::fake();
+        $this->enable();
+        $network = $this->network();
+        $network->update(['airtime_to_cash_destination_number' => null]);
+        $this->actingAs($this->user());
+        $this->getJson('/api/customer/airtime-to-cash/provider/options')->assertOk()
+            ->assertJsonPath('data.automated_available', true)->assertJsonPath('data.manual_available', false);
+        $entry = $this->getJson('/api/customer/airtime-to-cash/networks')->assertOk()->json('data.0');
+        $this->assertSame([false, true], [$entry['available'], $entry['automated_available']]);
+        $this->assertStringContainsString('destination', $entry['reason']);
+        $this->getJson('/api/vtu/airtimeToCash/discount?network_id='.$network->id.'&amount=500')->assertUnprocessable();
+        $this->postJson('/api/customer/airtime-to-cash', ['network_id' => $network->id, 'amount' => 500, 'sender_phone' => '08012345678'])->assertUnprocessable();
+        $this->assertDatabaseCount('airtime_to_cash_requests', 0);
+        Http::assertNothingSent();
     }
 
     public function test_twofast_steps_skip_otp_and_conservative_conversion_states(): void
@@ -1032,9 +1232,10 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             $this->actingAs($user)->getJson('/api/admin/airtime-to-cash/providers')->assertForbidden();
         }
         Http::assertNothingSent();
+        // Disabling the manual method must not withdraw automated conversion.
         $network->update(['airtime_to_cash_active' => false]);
         $this->getJson('/api/customer/airtime-to-cash/provider/options')
-            ->assertOk()->assertJsonPath('data.automated_available', false)->assertJsonPath('data.manual_available', false);
+            ->assertOk()->assertJsonPath('data.automated_available', true)->assertJsonPath('data.manual_available', false);
     }
 
     public function test_customer_availability_checks_runtime_network_and_configuration_without_secrets(): void

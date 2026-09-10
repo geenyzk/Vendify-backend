@@ -9,6 +9,7 @@ use App\Models\AirtimeToCashRequest;
 use App\Models\Network;
 use App\Models\User;
 use App\Notifications\AppNotification;
+use App\Services\AirtimeToCash\AirtimeToCashProviderService;
 use App\Services\AirtimeToCashAvailabilityService;
 use App\Services\AirtimeToCashSettlementService;
 use DomainException;
@@ -46,15 +47,23 @@ class AirtimeToCashController extends Controller
     public function catalog(): JsonResponse
     {
         $policy = app(AirtimeToCashAvailabilityService::class);
+        $automation = app(AirtimeToCashProviderService::class);
 
-        return $this->success(Network::orderBy('name')->get()->map(fn ($network) => [
-            'id' => $network->id, 'name' => $network->name,
-            'airtime_to_cash_active' => $network->airtime_to_cash_active,
-            'airtime_to_cash_destination_number' => $network->airtime_to_cash_destination_number,
-            'airtime_to_cash_min' => $network->airtime_to_cash_min,
-            'airtime_to_cash_max' => $network->airtime_to_cash_max,
-            ...$policy->inspect($network),
-        ]))->header('Cache-Control', 'private, no-store');
+        // Top-level availability fields describe manual conversion; automated_* is independent of them.
+        return $this->success(Network::orderBy('name')->get()->map(function ($network) use ($policy, $automation) {
+            $automated = $automation->inspect($network);
+
+            return [
+                'id' => $network->id, 'name' => $network->name,
+                'airtime_to_cash_active' => $network->airtime_to_cash_active,
+                'airtime_to_cash_destination_number' => $network->airtime_to_cash_destination_number,
+                'airtime_to_cash_min' => $network->airtime_to_cash_min,
+                'airtime_to_cash_max' => $network->airtime_to_cash_max,
+                ...$policy->inspect($network),
+                'automated_available' => $automated['available'],
+                'automated_reason' => $automated['reason'],
+            ];
+        }))->header('Cache-Control', 'private, no-store');
     }
 
     /**
