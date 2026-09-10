@@ -20,11 +20,11 @@ final class ProviderCallTrace
         }
     }
 
-    public function record(string $operation, ?int $http, mixed $code, ProviderResult $result, bool $attempted): void
+    public function record(string $operation, ?int $http, mixed $code, ProviderResult $result, bool $attempted, string $provider = 'airtime_to_cash_automation'): void
     {
         try {
             Log::info('airtime_to_cash.provider_call', [
-                'provider' => 'airtime_to_cash_automation',
+                'provider' => $provider,
                 'operation' => $operation,
                 'internal_reference' => $this->reference,
                 'http_status' => $http,
@@ -33,6 +33,7 @@ final class ProviderCallTrace
                 'sanitized_message' => $result->reason ?? $result->state,
                 'succeeded' => $result->state === 'success',
                 'dispatch_attempted' => $attempted,
+                'transfer_submitted' => $operation === 'convert' && $attempted,
                 'delivery_confirmed' => $operation === 'convert' && $result->state === 'success',
                 'provider_transaction_id' => null, // No such field in the documented Automation response.
             ]);

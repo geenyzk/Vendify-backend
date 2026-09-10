@@ -43,7 +43,22 @@ final class AirtimeToCashProviderManager
     public function modeAvailable(): bool
     {
         return $this->configuration->providerModeEnabled()
-            && (app()->environment('testing') || $this->configuration->liveCallsEnabled());
+            && $this->configuration->liveCallsEnabled();
+    }
+
+    public function availableForNetwork(string $network, float $min, float $max): bool
+    {
+        if (! $this->modeAvailable()) {
+            return false;
+        }
+        foreach ($this->settings() as $setting) {
+            $limit = $setting['networks'][$network] ?? null;
+            if ($setting['enabled'] && $setting['configured'] && $limit
+                && ceil(max($min, $limit['min'] ?? 1)) <= floor(min($max, $limit['max']))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public function testConnection(string $provider): ProviderHealthResult

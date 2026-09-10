@@ -372,4 +372,19 @@ class AirtimeToCashTest extends TestCase
         $admin->role->permissions()->detach();
         $this->actingAs($admin)->getJson('/api/admin/airtime-to-cash/configuration')->assertForbidden();
     }
+    public function test_duplicate_manual_submission_with_same_key_creates_one_review_request(): void
+    {
+        $network = $this->mtn();
+        $this->rate();
+        $payload = ['network_id' => $network->id, 'amount' => 100, 'sender_phone' => '08012345678',
+            'idempotency_key' => (string) \Illuminate\Support\Str::uuid()];
+        $this->actingAs($this->user());
+        $first = $this->postJson('/api/customer/airtime-to-cash', $payload)->assertCreated();
+        $second = $this->postJson('/api/customer/airtime-to-cash', $payload)->assertCreated();
+        $this->assertSame($first->json('data.id'), $second->json('data.id'));
+        $this->assertDatabaseCount('airtime_to_cash_requests', 1);
+        $this->assertDatabaseCount('transactions', 0);
+        $this->postJson('/api/customer/airtime-to-cash', [...$payload, 'amount' => 200])->assertUnprocessable();
+    }
+
 }

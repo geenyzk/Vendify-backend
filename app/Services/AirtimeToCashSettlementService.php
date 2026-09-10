@@ -52,6 +52,9 @@ class AirtimeToCashSettlementService
 
             $user = User::query()->lockForUpdate()->findOrFail($request->user_id);
             $amount = (float) $request->payout_amount;
+            if (! is_finite($amount) || $amount <= 0) {
+                throw new DomainException('A positive confirmed payout is required.');
+            }
             $balanceBefore = (float) $user->wallet_balance;
             $balanceAfter = $balanceBefore + $amount;
 

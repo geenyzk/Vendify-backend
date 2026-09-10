@@ -18,9 +18,29 @@ final class AirtimeToCashProviderController extends Controller
         private AirtimeToCashProviderConfiguration $configuration,
     ) {}
 
-    public function options()
+    public function options(Request $request)
     {
-        return $this->success(['provider_available' => $this->manager->modeAvailable() && collect($this->manager->settings())->contains(fn ($item) => $item['enabled'] && $item['configured'])]);
+        $input = $request->validate(['network_id' => 'sometimes|integer|min:1']);
+        $policy = app(\App\Services\AirtimeToCashAvailabilityService::class);
+        $networks = \App\Models\Network::query()
+            ->when(isset($input['network_id']), fn ($query) => $query->whereKey($input['network_id']))->get();
+        $manual = $networks->contains(fn ($network) => $policy->inspect($network)['available']);
+        $automated = $networks->contains(function ($network) use ($policy) {
+            if (! $policy->inspect($network, null, 'provider')['available']) {
+                return false;
+            }
+            try {
+                return $this->manager->availableForNetwork($policy::canonicalName($network->name),
+                    (float) $network->airtime_to_cash_min, (float) $network->airtime_to_cash_max);
+            } catch (\DomainException) {
+                return false;
+            }
+        });
+
+        // Explicit allowlist: never serialize administrative configuration to customers.
+        return $this->success(['provider_available' => $automated,
+            'automated_available' => $automated, 'manual_available' => $manual])
+            ->header('Cache-Control', 'private, no-store');
     }
 
     public function quote(Request $request)
@@ -111,11 +131,7 @@ final class AirtimeToCashProviderController extends Controller
 
     public function customerView(AirtimeToCashRequest $atc): array
     {
-        $state = $atc->provider_status;
-        // Historical pre-transfer manual_review rows must not imply a submitted transfer.
-        if ($state === 'manual_review' && (int) $atc->provider_attempt_count === 0) {
-            $state = 'setup_review';
-        }
+        $state = $atc->lifecycle['state'];
         $message = match ($atc->status === 'failed' ? 'failed' : $state) {
             'created' => 'Preparing SIM verification. No transfer has been submitted.',
             'verifying_otp' => 'Checking your verification code. No transfer has been submitted.',
@@ -135,7 +151,7 @@ final class AirtimeToCashProviderController extends Controller
             default => 'Your conversion needs confirmation. Do not send another transfer.',
         };
 
-        return ['resumed' => (bool) $atc->getAttribute('resumed'), 'id' => $atc->id, 'network_id' => $atc->network_id, 'network' => $atc->network, 'processing_mode' => 'provider',
+        return ['lifecycle' => $atc->lifecycle, 'resumed' => (bool) $atc->getAttribute('resumed'), 'id' => $atc->id, 'network_id' => $atc->network_id, 'network' => $atc->network, 'processing_mode' => 'provider',
             'amount' => (float) $atc->amount, 'payout_amount' => (float) $atc->payout_amount, 'sender_phone' => $atc->sender_phone,
             'status' => $atc->status,
             'transfer_attempted' => (int) $atc->provider_attempt_count > 0, 'state' => $state, 'message' => $message, 'reference' => $atc->transaction_reference,

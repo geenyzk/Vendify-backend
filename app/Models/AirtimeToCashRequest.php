@@ -31,8 +31,66 @@ class AirtimeToCashRequest extends Model
     protected $hidden = ['provider', 'provider_reference', 'provider_identifier', 'provider_message',
         'provider_cost', 'provider_fee', 'provider_metadata', 'rate_snapshot', 'start_key', 'active_session_key'];
 
+    protected $appends = ['lifecycle'];
+
+    /** One public lifecycle projection shared by customer and administrative APIs. */
+    public function getLifecycleAttribute(): array
+    {
+        $automated = $this->processing_mode === 'provider';
+        $state = $this->provider_status;
+        $attempted = (int) $this->provider_attempt_count > 0;
+        if ($state === 'manual_review' && ! $attempted) {
+            $state = 'setup_review';
+        }
+        $terminal = in_array($this->status, ['approved', 'failed', 'rejected', 'cancelled'], true)
+            || in_array($state, ['failed', 'completed', 'expired', 'session_expired'], true);
+        $label = match (true) {
+            $this->status === 'approved' => 'Successful',
+            $this->status === 'failed' || $state === 'failed' => 'Failed',
+            $this->status === 'rejected' => 'Rejected',
+            $this->status === 'cancelled' => 'Cancelled',
+            ! $automated => 'Awaiting admin review',
+            in_array($state, ['expired', 'session_expired'], true) => 'Verification expired',
+            $state === 'ready_to_transfer' => 'Awaiting transfer PIN',
+            $state === 'setup_review' => 'Needs attention',
+            in_array($state, ['provider_pending', 'manual_review'], true) => 'Needs confirmation',
+            in_array($state, ['processing', 'provider_confirmed', 'settlement_pending'], true) => 'Processing',
+            default => 'Awaiting verification',
+        };
+        return [
+            'state' => $state,
+            'label' => $label,
+            'terminal' => $terminal,
+            'resumable' => $automated && ! $terminal,
+            'transfer_submitted' => $attempted,
+            'can_change_method' => $terminal || ! $attempted,
+            'stage' => $this->status === 'approved' ? 3 : ($state === 'ready_to_transfer' ? 1 : ($attempted ? 2 : 0)),
+            'can_approve' => ! $automated && $this->status === 'pending',
+            'can_reconcile' => $automated && ! $terminal && $attempted && $this->provider === '2fast'
+                && in_array($state, ['processing', 'provider_pending', 'manual_review'], true),
+        ];
+    }
+
     protected static function booted(): void
     {
+        static::saved(function (self $request) {
+            if (! $request->wasChanged(['provider_status', 'status']) && ! $request->wasRecentlyCreated) {
+                return;
+            }
+            try {
+                \Illuminate\Support\Facades\Log::info('airtime_to_cash.lifecycle', [
+                    'internal_reference' => $request->transaction_reference,
+                    'provider' => $request->provider,
+                    'operation' => 'lifecycle_transition',
+                    'from' => $request->getRawOriginal('provider_status'),
+                    'to' => $request->provider_status,
+                    'status' => $request->status,
+                    'transfer_submitted' => (int) $request->provider_attempt_count > 0,
+                ]);
+            } catch (\Throwable) {
+                // Observability cannot change a settlement outcome.
+            }
+        });
         static::saving(function (self $request) {
             if ($request->processing_mode === 'provider') {
                 if ($request->exists && ($request->getRawOriginal('status') === 'failed'

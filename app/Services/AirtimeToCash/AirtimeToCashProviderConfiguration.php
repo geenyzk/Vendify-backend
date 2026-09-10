@@ -55,6 +55,11 @@ final class AirtimeToCashProviderConfiguration
         }
 
         $configured = ! $credentialError && ! empty($storedToken ?: $definition['token']);
+        try {
+            $this->validatedBaseUrl((string) ($setting?->base_url ?: $definition['base_url']), $definition['allowed_host']);
+        } catch (\DomainException) {
+            $configured = false;
+        }
 
         return [
             'base_url' => $setting?->base_url ?: $definition['base_url'],

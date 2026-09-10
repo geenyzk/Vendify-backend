@@ -53,12 +53,18 @@ final class AirtimeToCashProviderService
                 return [$existing, false];
             }
             $activeKey = hash('sha256', $name.':'.$phone);
-            $active = AirtimeToCashRequest::where('active_session_key', $activeKey)->lockForUpdate()->first();
-            if ($active && $this->retainReservation($active)) {
+            $candidates = AirtimeToCashRequest::where('processing_mode', 'provider')
+                ->where(fn ($query) => $query->where('active_session_key', $activeKey)
+                    ->orWhere(fn ($query) => $query->where('network_id', $networkId)
+                        ->where('sender_phone', $phone)->where('status', 'pending')))
+                ->lockForUpdate()->get();
+            foreach ($candidates as $active) {
+                if (! $this->retainReservation($active)) {
+                    continue;
+                }
                 if ((string) $active->user_id !== $userId) {
                     throw new DomainException('This SIM has an unresolved conversion. Contact support for help.');
                 }
-
                 return [$active, false];
             }
             $reference = 'ATC-'.Str::uuid();
@@ -121,7 +127,8 @@ final class AirtimeToCashProviderService
         // Discovery is local only, including when new conversions are disabled.
         return DB::transaction(function () use ($userId) {
             return AirtimeToCashRequest::where('user_id', $userId)->where('processing_mode', 'provider')
-                ->whereNotNull('active_session_key')->lockForUpdate()->get()
+                ->where(fn ($query) => $query->where('status', 'pending')->orWhereNotNull('active_session_key'))
+                ->lockForUpdate()->get()
                 ->filter(fn ($request) => $this->retainReservation($request))->values();
         });
     }
@@ -218,6 +225,9 @@ final class AirtimeToCashProviderService
             if ($request->status !== 'pending' || $request->provider_status !== $from) {
                 return $request;
             }
+            if ($result->state === 'success' && ($from === 'verifying_otp' || $result->skipOtp) && ! $result->identifier()) {
+                $result = new ProviderResult('unknown');
+            }
             if ($result->state === 'success') {
                 $ready = $from === 'verifying_otp' || $result->skipOtp;
                 ProviderState::move($request, $ready ? 'ready_to_transfer' : 'awaiting_otp');
@@ -279,6 +289,8 @@ final class AirtimeToCashProviderService
         try {
             $result = app(ProviderCallTrace::class)->within($request->transaction_reference, fn () => $this->manager->bound($request)->convert($this->availability::canonicalName($request->network), $request->sender_phone,
                 (float) $request->amount, $request->provider_reference, $request->provider_identifier, $pin));
+        } catch (ProviderRequestNotSent) {
+            $result = new ProviderResult('not_sent', reason: 'transport_preflight_rejected');
         } catch (\Throwable) {
             $result = new ProviderResult('unknown');
         } finally {
@@ -303,15 +315,18 @@ final class AirtimeToCashProviderService
                 && $state === 'failed' && in_array($result->reason, ['invalid_pin', 'low_balance'], true);
             $next = match (true) {
                 $retryableRejection => 'ready_to_transfer',
-                $state === 'not_sent' => 'failed',
+                $state === 'not_sent' => 'setup_review',
                 $state === 'auth_error' && $request->provider_status === 'processing' => 'failed',
                 $state === 'unavailable' && $result->reason === 'recipient_unavailable' => 'failed',
                 default => match ($state) {
                     'success' => 'provider_confirmed', 'failed' => 'failed', 'session_expired' => $request->provider_status === 'processing' ? 'session_expired' : 'provider_pending', default => 'provider_pending'
                 },
             };
-            if (in_array($request->provider_status, ['setup_review', 'manual_review'], true) && $next === 'provider_pending') {
+            if ($request->provider_status === 'manual_review' && $next === 'provider_pending') {
                 return $request;
+            }
+            if ($state === 'not_sent') {
+                $request->provider_attempt_count = max(0, (int) $request->provider_attempt_count - 1);
             }
             ProviderState::move($request, $next);
             $request->provider_message = $result->reason ?? $state;

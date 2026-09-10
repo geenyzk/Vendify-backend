@@ -68,6 +68,7 @@ class AirtimeToCashController extends Controller
     {
         $validated = $request->validate([
             'network_id' => 'nullable|integer',
+            'idempotency_key' => 'sometimes|uuid',
             // Kept for clients deployed before network_id was introduced.
             'network' => 'required_without:network_id|string',
             'amount' => 'required|numeric|min:1',
@@ -91,24 +92,39 @@ class AirtimeToCashController extends Controller
         }
         $payoutAmount = $quote['payout_amount'];
 
-        $proofPath = null;
-        if ($request->hasFile('proof_image')) {
-            $proofPath = url(Storage::url($request->file('proof_image')->store('airtime-to-cash-proofs', 'public')));
+        $startKey = isset($validated['idempotency_key'])
+            ? hash('sha256', Auth::id().':manual:'.$validated['idempotency_key']) : null;
+        $atc = DB::transaction(function () use ($startKey, $network, $validated, $payoutAmount, $request) {
+            User::lockForUpdate()->findOrFail(Auth::id());
+            if ($startKey && ($existing = AirtimeToCashRequest::where('start_key', $startKey)->first())) {
+                if ((int) $existing->network_id !== (int) $network->id || (float) $existing->amount !== (float) $validated['amount']
+                    || $existing->sender_phone !== $validated['sender_phone']) {
+                    throw ValidationException::withMessages(['idempotency_key' => ['This submission reference belongs to another conversion.']]);
+                }
+                return $existing;
+            }
+            $proofPath = $request->hasFile('proof_image')
+                ? url(Storage::url($request->file('proof_image')->store('airtime-to-cash-proofs', 'public'))) : null;
+
+            return AirtimeToCashRequest::create([
+                'start_key' => $startKey,
+                'user_id' => Auth::id(),
+                'network_id' => $network->id,
+                'processing_mode' => 'manual',
+                'network' => $network->name,
+                'amount' => $validated['amount'],
+                'sender_phone' => $validated['sender_phone'],
+                'destination_number' => $network->airtime_to_cash_destination_number,
+                'payout_amount' => $payoutAmount,
+                'status' => 'pending',
+                'proof_image' => $proofPath,
+                'transaction_reference' => TransactionService::generateTransactionReference(),
+            ]);
+        });
+
+        if ($atc->wasRecentlyCreated) {
+            AdminNotifier::notifyAirtimeToCashPending($atc);
         }
-
-        $atc = AirtimeToCashRequest::create([
-            'user_id' => Auth::id(),
-            'network' => $network->name,
-            'amount' => $validated['amount'],
-            'sender_phone' => $validated['sender_phone'],
-            'destination_number' => $network->airtime_to_cash_destination_number,
-            'payout_amount' => $payoutAmount,
-            'status' => 'pending',
-            'proof_image' => $proofPath,
-            'transaction_reference' => TransactionService::generateTransactionReference(),
-        ]);
-
-        AdminNotifier::notifyAirtimeToCashPending($atc);
 
         return $this->success($atc, 'Request submitted for review', 201);
     }

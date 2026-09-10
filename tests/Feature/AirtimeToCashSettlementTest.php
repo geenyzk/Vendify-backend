@@ -207,3 +207,18 @@ test('existing customer and admin history actions still list conversion requests
     expect(collect($customerData)->pluck('id')->all())->toBe([$request->id])
         ->and(collect($adminData)->pluck('id')->all())->toContain($request->id, $other->id);
 });
+
+
+it('refuses nonpositive payouts before writing a ledger entry', function () {
+    [$user, $reviewer, $request] = airtimeToCashFixture();
+    $request->update(['payout_amount' => 0]);
+    try {
+        app(AirtimeToCashSettlementService::class)->settle($request->id, $reviewer->id);
+        $this->fail('Invalid payout was accepted');
+    } catch (\DomainException $exception) {
+        expect($exception->getMessage())->toBe('A positive confirmed payout is required.');
+    }
+    expect((float) $user->fresh()->wallet_balance)->toBe(1000.0);
+    $this->assertDatabaseCount('transactions', 0);
+    expect($request->fresh()->status)->toBe('pending');
+});

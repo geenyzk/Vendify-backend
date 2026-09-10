@@ -42,7 +42,7 @@ final class AirtimeToCashReconciliationService
         }
         $provider = $this->manager->bound($request);
         try {
-            $result = $provider->lookup($request->provider_reference);
+            $result = app(ProviderCallTrace::class)->within($request->transaction_reference, fn () => $provider->lookup($request->provider_reference));
         } catch (\Throwable) {
             $result = new ProviderResult('unknown');
         }

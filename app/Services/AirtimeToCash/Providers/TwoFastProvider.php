@@ -5,6 +5,8 @@ namespace App\Services\AirtimeToCash\Providers;
 use App\Services\AirtimeToCash\AirtimeToCashProviderInterface;
 use App\Services\AirtimeToCash\LooksUpTransactions;
 use App\Services\AirtimeToCash\ProviderHealthResult;
+use App\Services\AirtimeToCash\ProviderCallTrace;
+use App\Services\AirtimeToCash\ProviderRequestNotSent;
 use App\Services\AirtimeToCash\ProviderResult;
 use App\Services\AirtimeToCash\ProviderTransport;
 use Illuminate\Support\Str;
@@ -63,9 +65,16 @@ final class TwoFastProvider implements AirtimeToCashProviderInterface, LooksUpTr
 
     private function call(string $operation, #[\SensitiveParameter] array $payload): ProviderResult
     {
-        [$http, $body] = $this->transport->post($this->key(), '/api/Airtime-To-Cash', $payload);
-
-        return $this->normalize($operation, $http, $body);
+        try {
+            [$http, $body] = $this->transport->post($this->key(), '/api/Airtime-To-Cash', $payload);
+        } catch (ProviderRequestNotSent) {
+            $result = new ProviderResult('not_sent', reason: 'transport_preflight_rejected');
+            app(ProviderCallTrace::class)->record($operation, null, null, $result, false, $this->key());
+            return $result;
+        }
+        $result = $this->normalize($operation, $http, $body);
+        app(ProviderCallTrace::class)->record($operation, $http ?: null, null, $result, true, $this->key());
+        return $result;
     }
 
     public function normalize(string $operation, int $http, #[\SensitiveParameter] array $body): ProviderResult

@@ -264,16 +264,19 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
 
         // Airtime to cash — manually reviewed, not an instant purchase (see
         // AirtimeToCashController), so it's not routed through /vtu/{service}.
-        Route::middleware(['not.impersonating', 'atc.https', 'throttle:10,1'])->group(function () {
-            Route::get('/airtime-to-cash/provider/options', [AirtimeToCashProviderController::class, 'options']);
+        // Safe discovery has no SIM secrets or provider side effects, including impersonation.
+        Route::get('/airtime-to-cash/provider/options', [AirtimeToCashProviderController::class, 'options']);
+        Route::middleware(['atc.https', 'throttle:60,1'])->group(function () {
             Route::get('/airtime-to-cash/provider/quote', [AirtimeToCashProviderController::class, 'quote']);
             Route::get('/airtime-to-cash/provider/active', [AirtimeToCashProviderController::class, 'active']);
+            Route::get('/airtime-to-cash/{id}/status', [AirtimeToCashProviderController::class, 'status'])->whereNumber('id');
+        });
+        Route::middleware(['not.impersonating', 'atc.https', 'throttle:10,1'])->group(function () {
             Route::post('/airtime-to-cash/{id}/resume', [AirtimeToCashProviderController::class, 'resume'])->whereNumber('id');
             Route::post('/airtime-to-cash/provider/start', [AirtimeToCashProviderController::class, 'start']);
             Route::post('/airtime-to-cash/{id}/verify-otp', [AirtimeToCashProviderController::class, 'verify'])->whereNumber('id')->middleware('atc.secrets');
             Route::post('/airtime-to-cash/{id}/restart-otp', [AirtimeToCashProviderController::class, 'restart'])->whereNumber('id');
             Route::post('/airtime-to-cash/{id}/convert', [AirtimeToCashProviderController::class, 'convert'])->whereNumber('id')->middleware('atc.secrets');
-            Route::get('/airtime-to-cash/{id}/status', [AirtimeToCashProviderController::class, 'status'])->whereNumber('id');
         });
         Route::get('/airtime-to-cash/networks', [AirtimeToCashController::class, 'catalog']);
         Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'myRequests']);

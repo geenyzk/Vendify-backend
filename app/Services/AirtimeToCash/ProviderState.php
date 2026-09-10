@@ -11,7 +11,7 @@ final class ProviderState
         'awaiting_otp' => ['verifying_otp', 'expired'],
         'verifying_otp' => ['awaiting_otp', 'ready_to_transfer', 'expired', 'setup_review', 'failed'],
         'ready_to_transfer' => ['processing', 'expired'],
-        'processing' => ['ready_to_transfer', 'provider_confirmed', 'provider_pending', 'failed', 'session_expired'],
+        'processing' => ['setup_review', 'ready_to_transfer', 'provider_confirmed', 'provider_pending', 'failed', 'session_expired'],
         'provider_pending' => ['provider_confirmed', 'failed', 'manual_review'],
         'setup_review' => ['expired', 'failed'],
         'manual_review' => ['provider_confirmed', 'failed', 'expired'],

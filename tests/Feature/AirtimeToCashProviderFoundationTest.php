@@ -34,7 +34,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         parent::setUp();
         config([
             'airtime_to_cash.provider_mode_enabled' => true,
-            'airtime_to_cash.live_calls_enabled' => false,
+            'airtime_to_cash.live_calls_enabled' => true,
             'airtime_to_cash.providers.airtime_to_cash_automation.token' => 'test-automation-token',
             'airtime_to_cash.providers.2fast.token' => 'test-twofast-token',
         ]);
@@ -1001,16 +1001,105 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         $flow->verify($request->id, $user->id, '123456');
         config(['airtime_to_cash.providers.airtime_to_cash_automation.token' => '']);
         $failed = $flow->convert($request->id, $user->id, '1234');
-        $this->assertSame('failed', $failed->status);
+        $this->assertSame('pending', $failed->status);
+        $this->assertSame('setup_review', $failed->provider_status);
+        $this->assertFalse($failed->lifecycle['transfer_submitted']);
         Http::assertSentCount(3);
         $this->assertDatabaseCount('transactions', 0);
+        $allLogs = $logs;
+        $logs = array_values(array_filter($logs, fn ($log) => $log['operation'] !== 'lifecycle_transition'));
         $this->assertCount(4, $logs);
         $this->assertSame(['quota', 'otp', 'verify', 'convert'], array_column($logs, 'operation'));
         $this->assertSame([$request->transaction_reference], array_values(array_unique(array_column($logs, 'internal_reference'))));
         $this->assertFalse($logs[3]['dispatch_attempted']);
         $this->assertSame('transport_preflight_rejected', $logs[3]['sanitized_message']);
         foreach (['123456', '1234', 'safe-session-id', 'test-automation-token', '08012345678'] as $secret) {
-            $this->assertStringNotContainsString($secret, json_encode($logs));
+            $this->assertStringNotContainsString($secret, json_encode($allLogs));
         }
     }
+    public function test_customer_availability_is_identical_for_customer_owner_admin_and_support_without_permissions(): void
+    {
+        Http::fake();
+        $this->enable();
+        $network = $this->network();
+        foreach (['customer', 'owner', 'admin', 'support'] as $name) {
+            $role = \App\Models\Role::create(['name' => $name, 'slug' => $name, 'is_active' => true, 'is_staff' => $name !== 'customer']);
+            $user = $this->user();
+            $user->update(['role_id' => $role->id, 'wallet_balance' => 0, 'is_verified' => false]);
+            $response = $this->actingAs($user)->getJson('/api/customer/airtime-to-cash/provider/options');
+            $response->assertOk();
+            $this->assertSame(['provider_available' => true, 'automated_available' => true, 'manual_available' => true], $response->json('data'));
+            $this->actingAs($user)->getJson('/api/admin/airtime-to-cash/providers')->assertForbidden();
+        }
+        Http::assertNothingSent();
+        $network->update(['airtime_to_cash_active' => false]);
+        $this->getJson('/api/customer/airtime-to-cash/provider/options')
+            ->assertOk()->assertJsonPath('data.automated_available', false)->assertJsonPath('data.manual_available', false);
+    }
+
+    public function test_customer_availability_checks_runtime_network_and_configuration_without_secrets(): void
+    {
+        Http::fake();
+        $this->enable();
+        $network = $this->network();
+        $this->actingAs($this->user());
+        config(['airtime_to_cash.provider_mode_enabled' => false]);
+        $this->getJson('/api/customer/airtime-to-cash/provider/options')->assertOk()
+            ->assertJsonPath('data.automated_available', false)->assertJsonPath('data.manual_available', true);
+        config(['airtime_to_cash.provider_mode_enabled' => true, 'airtime_to_cash.providers.airtime_to_cash_automation.base_url' => 'https://invalid.example']);
+        $this->getJson('/api/customer/airtime-to-cash/provider/options')->assertOk()->assertJsonPath('data.automated_available', false);
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.base_url' => 'https://automation.airtimetocash.com']);
+        $this->getJson('/api/customer/airtime-to-cash/provider/options?network_id='.$network->id)->assertOk()->assertJsonPath('data.automated_available', true);
+        $this->getJson('/api/customer/airtime-to-cash/provider/options?network_id=999999')->assertOk()->assertJsonPath('data.automated_available', false);
+        Http::assertNothingSent();
+    }
+
+    public function test_impersonated_customer_can_discover_methods_but_cannot_start_a_transfer(): void
+    {
+        Http::fake();
+        $this->enable();
+        $this->network();
+        $user = $this->user();
+        $token = $user->createToken('impersonated-test');
+        $session = \App\Models\AuthSession::create([
+            'user_id' => $user->id, 'channel' => 'impersonation', 'access_token_id' => $token->accessToken->id,
+            'last_active_at' => now(), 'idle_expires_at' => now()->addMinutes(10),
+            'absolute_expires_at' => now()->addHour(),
+        ]);
+        $this->withToken($token->plainTextToken)
+            ->getJson('/api/customer/airtime-to-cash/provider/options')->assertOk()
+            ->assertJsonPath('data.automated_available', true)->assertJsonPath('data.manual_available', true);
+        $this->getJson('https://localhost/api/customer/airtime-to-cash/provider/active')->assertOk();
+        $this->postJson('https://localhost/api/customer/airtime-to-cash/provider/start', [])->assertForbidden();
+        Http::assertNothingSent();
+    }
+
+    public function test_live_call_flag_applies_to_customer_availability_even_with_configured_provider(): void
+    {
+        $this->enable();
+        $this->network();
+        config(['airtime_to_cash.live_calls_enabled' => false]);
+        $this->actingAs($this->user())->getJson('/api/customer/airtime-to-cash/provider/options')
+            ->assertOk()->assertJsonPath('data.automated_available', false)->assertJsonPath('data.manual_available', true);
+    }
+
+    public function test_discovery_uses_canonical_state_even_if_a_reservation_key_is_missing(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->automationSequence(['code' => 4000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $request->update(['active_session_key' => null]);
+        $this->assertSame([$request->id], $flow->active($user->id)->pluck('id')->all());
+        $replayed = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->assertSame($request->id, $replayed->id);
+        $this->assertDatabaseCount('airtime_to_cash_requests', 1);
+        $this->assertSame('Awaiting verification', $request->lifecycle['label']);
+        $this->assertFalse($request->lifecycle['can_approve']);
+        $this->assertFalse($request->lifecycle['can_reconcile']);
+        Http::assertSentCount(2);
+    }
+
 }
