@@ -1,14 +1,16 @@
 <?php
 
 use App\Http\Middleware\AiMonitor;
-use App\Http\Middleware\EnsurePermission;
-use App\Http\Middleware\EnsureUserType;
 use App\Http\Middleware\EnforceSecureSession;
+use App\Http\Middleware\EnsurePermission;
+use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Http\Middleware\EnsureUserType;
 use App\Http\Middleware\HandleRequest;
 use App\Http\Middleware\ProfilePerformance;
-use App\Http\Middleware\RequireRecentAuthentication;
 use App\Http\Middleware\RejectImpersonatedSession;
-use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Http\Middleware\RequireRecentAuthentication;
+use App\Http\Middleware\RequireSecureAirtimeToCash;
+use App\Http\Middleware\SanitizeAirtimeToCashSecrets;
 use App\Http\Middleware\TrackLastSeen;
 use App\Http\Middleware\VerifyChildSignature;
 use App\Http\Middleware\VerifySimDeviceSignature;
@@ -33,7 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->append([
             ProfilePerformance::class,
-            HandleRequest::class
+            HandleRequest::class,
         ]);
 
         // Presence heartbeat for the admin "online now" stat — throttled
@@ -47,8 +49,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'user_type' => EnsureUserType::class,
             'staff' => EnsureUserIsAdmin::class,
             'permission' => EnsurePermission::class,
-            'atc.https' => \App\Http\Middleware\RequireSecureAirtimeToCash::class,
-            'atc.secrets' => \App\Http\Middleware\SanitizeAirtimeToCashSecrets::class,
+            'atc.https' => RequireSecureAirtimeToCash::class,
+            'atc.secrets' => SanitizeAirtimeToCashSecrets::class,
             'not.impersonating' => RejectImpersonatedSession::class,
             'secure.session' => EnforceSecureSession::class,
             'recent.auth' => RequireRecentAuthentication::class,
@@ -57,14 +59,14 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        $exceptions->dontFlash(['pin', 'otp', 'transfer_pin', 'provider_identifier']);
+        $exceptions->dontFlash(['pin', 'otp', 'transfer_pin', 'provider_identifier', 'token', 'api_key']);
         // Safety net: an API client must never receive raw SQL/PDO internals
         // (schema names, the failing query, SQLSTATE codes). Log the real
         // exception for debugging and return the standard envelope with a
         // message a person can act on. Validation/auth/404/429 keep Laravel's
         // own handling — only database faults are rewritten here.
         $exceptions->render(function (QueryException $e, Request $request) {
-            if (!$request->is('api/*') && !$request->expectsJson()) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
                 return null;
             }
 

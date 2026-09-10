@@ -1,12 +1,12 @@
 # Airtime-to-Cash Phase 2 provider foundation
 
-Prepared locally on 7 September 2026. This phase adds a disabled provider architecture around the Phase 1 manual flow. It has not contacted either provider, collected production credentials, modified production rate data, or been deployed.
+Prepared locally on 7 September 2026 and extended with admin-managed provider configuration on 10 September 2026. This phase adds a disabled provider architecture around the Phase 1 manual flow. It has not contacted either provider, collected production credentials, modified production rate data, or been deployed.
 
 ## Architecture
 
 `AirtimeToCashProviderInterface` defines provider identity, supported networks and limits, capabilities, OTP request/verification, conversion, normalization, and retry/terminal decisions. Optional `ChecksQuota`, `ChecksSession`, and `LooksUpTransactions` interfaces keep provider-specific abilities explicit.
 
-`AirtimeToCashProviderManager` merges server configuration with safe database settings, selects an enabled/configured adapter by priority before a session starts, validates network and provider limits, and resolves an existing request only from its persisted provider key. It never fails over a started conversion. Provider mode requires both global gates in production; tests may exercise adapters while live calls remain disabled.
+`AirtimeToCashProviderManager` merges server configuration with safe database settings, selects an enabled/configured adapter by priority before a session starts, validates network and provider limits, and resolves an existing request only from its persisted provider key. It never fails over a started conversion. Provider mode requires both global gates in production; tests may exercise adapters while live calls remain disabled. `AirtimeToCashProviderConfiguration` owns the supported-provider allowlist, database/environment precedence, official-host validation, encrypted credential replacement, runtime gates, safe metadata, persisted health status, and audit events.
 
 `AirtimeToCashProviderService` owns quote, start, OTP verification, conversion, and settlement handoff. A hashed client idempotency key prevents duplicate starts, and a unique active-SIM key prevents simultaneous sessions for the same network/SIM. The provider choice, amount, payout, rate snapshot, and provider reference become immutable once the request is created. The same reference is used for every conversion or lookup.
 
@@ -48,13 +48,17 @@ The same documented `status: success` appears in both completed and awaiting-con
 
 Migration `2026_09_06_000000_add_airtime_to_cash_provider_foundation.php` adds `processing_mode` with a `manual` default; nullable network/provider/reference/encrypted identifier/status/message/timestamps; attempt counters; a rate snapshot; allowlisted provider metadata; nullable provider cost/fee; and unique start/active-session keys. It also creates `airtime_to_cash_provider_settings` for safe enable/priority values.
 
+Migration `2026_09_10_000000_add_admin_configuration_to_airtime_to_cash_providers.php` extends that table with `base_url`, encrypted `token`, `health_status`, a sanitised `health_message`, and `last_health_check_at`. It adds nullable provider-mode and live-call overrides to the existing singleton `settings` table. A null override preserves the environment value; a value saved by an admin takes precedence.
+
 Existing records receive `processing_mode = manual` and nullable provider fields, so the Phase 1 approval/rejection path remains valid. Rollback refuses to remove the schema if provider-mode evidence exists. No rate seeder or production data mutation is part of this phase.
 
 ## Security
 
 OTP and PIN routes require authenticated secure sessions, reject impersonation, require HTTPS, and are throttled. `SanitizeAirtimeToCashSecrets` removes PIN/OTP/secret-like fields from request input and JSON before the controller, passes them in a short-lived memory-only `RequestSecrets` object, clears that object in `finally`, and Laravel is configured never to flash those fields. PIN and OTP parameters use PHP sensitive-parameter annotations and are unset after each adapter call.
 
-PIN and OTP are absent from request fillable fields, database columns, audit metadata, responses, notifications, jobs, and logs. Provider identifiers use an encrypted model cast and are hidden from serialization; only an allowlisted numeric airtime balance may enter provider metadata. Tokens live only in environment configuration, never appear in the admin/customer contracts, and transport exceptions are reduced to controlled states without raw bodies or exception context.
+PIN and OTP are absent from request fillable fields, database columns, audit metadata, responses, notifications, jobs, and logs. Provider identifiers and admin-managed provider tokens use Laravel encrypted model casts and are hidden from serialization; only an allowlisted numeric airtime balance may enter provider metadata. Admin responses contain only a boolean `configured` marker and provider-specific credential label. Leaving the replacement input blank preserves the current database or environment credential. Audit changes are centrally redacted by field name, and transport exceptions are reduced to controlled states without raw bodies or exception context.
+
+Base URLs must use HTTPS, the exact official provider host, no embedded credentials, query, fragment or path, and port 443 when a port is supplied. The configuration endpoint accepts only `enabled`, `priority`, `base_url`, and the allowlisted token replacement. Provider slugs resolve through a fixed adapter allowlist.
 
 ## Settlement
 
@@ -68,7 +72,18 @@ Pending, unknown, malformed, HTTP 500, or unproven duplicate responses never cre
 
 ## Admin
 
-Admin → Airtime to Cash → Configuration now shows the two adapters, configured/credential state, enable switch, priority, capabilities, supported networks, and documented limits. It never exposes or accepts tokens and does not run health calls while rendering. Provider mode and the independent live-call gate are visible. Automatic failover is explicitly shown as disabled.
+Admin → Airtime to Cash → Configuration shows the two adapters, configured/credential state, health, enable switch, priority, capabilities, supported networks, and documented limits. Each row has a collapsed configuration panel for its official base URL and the credential the integration actually uses: API token for AirtimeToCash Automation and API key for 2FAST. Existing secrets are never returned; the password field starts empty and only sends a value when replacing a credential. Provider mode and the independent live-call gate can be saved from this page. Automatic failover is explicitly shown as disabled because there is no automatic failover implementation.
+
+The permission-gated admin API is:
+
+```text
+GET  /api/admin/airtime-to-cash/providers
+PUT  /api/admin/airtime-to-cash/providers
+PUT  /api/admin/airtime-to-cash/providers/{provider}
+POST /api/admin/airtime-to-cash/providers/{provider}/test
+```
+
+Connection tests are explicit, throttled admin actions. AirtimeToCash Automation uses the documented quota request with the minimum MTN amount; 2FAST looks up a randomly generated reference that cannot correspond to a Vendify conversion. Neither test calls an OTP or transfer endpoint. Only a controlled connected/failed message and timestamp reach the browser; health status and the last check time are stored. Rendering the configuration page never contacts a provider.
 
 The Requests queue distinguishes automated state from the legacy status. Manual requests retain approve/reject controls. Automated requests cannot be manually approved or rejected through those controls; eligible uncertain requests expose explicit reconciliation.
 
@@ -89,13 +104,14 @@ npx eslint <changed Phase 2 TypeScript files>
 git diff --check
 ```
 
-Final local results:
+Final local results after the admin-configuration extension:
 
-- `php artisan test --compact --filter=AirtimeToCash`: 65 tests, 361 assertions, exit 0. The runner labels them deprecated because the repository emits existing PHP 8.5 PDO constant deprecations; it also discovers an unrelated existing ineffective import warning in `WhatsAppSupportRoutingTest`.
-- Focused frontend Vitest command: 3 files, 16 tests, exit 0.
+- `php artisan test --compact --filter=AirtimeToCash`: 71 tests, 422 assertions, exit 0. The runner labels them deprecated because the repository emits existing PHP 8.5 PDO constant deprecations; it also discovers an unrelated existing ineffective import warning in `WhatsAppSupportRoutingTest`.
+- Full frontend Vitest suite: 18 files, 79 tests, exit 0.
 - `npm run build`: TypeScript and Vite production build passed.
-- Targeted ESLint across the eight changed Phase 2 TypeScript files: exit 0.
-- Pint check across the Phase 2 PHP files and `git diff --check` in both repositories: exit 0.
+- Targeted ESLint across the three changed admin TypeScript files: exit 0. Repository-wide lint still reports 124 pre-existing errors in unrelated files.
+- A clean in-memory SQLite migration run, the four provider route registrations, Pint, and `git diff --check` passed.
+- No connected browser was available for visual QA. The layout uses the existing responsive dashboard primitives and the automated component test exercises expand/save/test/runtime interactions; complete the 320–375px live check in the deployment steps below.
 
 The backend suite uses Laravel HTTP fakes with stray-request prevention; frontend suites mock API calls. No test contacted a live provider.
 
@@ -114,7 +130,7 @@ AIRTIME_TO_CASH_2FAST_TOKEN
 AIRTIME_TO_CASH_2FAST_ENABLED
 ```
 
-All enable flags default to false and token values are blank in `.env.example`.
+All enable flags default to false and token values are blank in `.env.example`. Database values saved from the admin page take precedence for base URL, credential, enabled state, priority and the two global gates. Existing environment credentials remain active as fallback until an admin saves a replacement, and are never copied into a response.
 
 ## Deployment plan
 
@@ -126,9 +142,11 @@ After a separate deployment authorization and live-activation review:
 2. Run `php artisan migrate --force`. Do not run an Airtime-to-Cash seeder and do not modify rate rows automatically.
 3. Keep every new provider flag false; verify Phase 1 manual requests, approval, and idempotent settlement.
 4. Deploy the frontend commit and verify manual mode remains the only customer path while provider mode is off.
-5. Configure credentials server-side only, then validate each provider in an approved sandbox/test account using controlled amounts.
-6. Enable one provider setting and provider-mode gate only after the remaining contract questions are resolved. Enable the independent live-call gate as the final deliberate activation step.
-7. Perform customer/admin desktop and mobile checks, and verify pending/unknown results do not credit or enable retry.
+5. In Admin → Airtime to Cash → Configuration, expand one provider, confirm its official base URL, enter its API token/key, and save. Do not enter production credentials until the page is served over the intended HTTPS admin domain.
+6. Click Test connection and confirm the status, safe message, and checked time update. In browser developer tools, confirm the GET response contains `configured: true` but no token/key value, and confirm the test makes one call to Vendify's admin endpoint only.
+7. Save provider enablement and priority. Confirm the network limits shown before and after the save are unchanged.
+8. Enable Provider mode. Enable Live provider calls only as the final deliberate activation step; the backend refuses live calls unless provider mode is on and at least one provider is enabled and configured.
+9. Perform customer/admin desktop and mobile checks. At 320–375px, verify the runtime controls, provider actions, base URL, credential field, and test/save buttons fit without horizontal scrolling. Verify pending/unknown results do not credit or enable retry.
 
 Rollback the code by reverting the frontend and backend commits. The migration down command is unsafe after any provider request exists and deliberately refuses; retain transaction evidence and roll forward instead.
 

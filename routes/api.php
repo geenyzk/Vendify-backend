@@ -1,14 +1,15 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\AdminBettingController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdminSupportTicketController;
 use App\Http\Controllers\AdminWhatsAppSupportAgentController;
 use App\Http\Controllers\AiManagerController;
+use App\Http\Controllers\AirtimeToCashConfigurationController;
 use App\Http\Controllers\AirtimeToCashController;
+use App\Http\Controllers\AirtimeToCashProviderController;
 use App\Http\Controllers\AnalyticsController;
-use App\Http\Controllers\AdminBettingController;
-use App\Http\Controllers\BettingController;
 use App\Http\Controllers\AppReleaseController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -18,33 +19,32 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\SessionSecurityController;
 use App\Http\Controllers\Auth\VerifyEmailController;
+use App\Http\Controllers\BettingController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\BroadcastController;
-use App\Http\Controllers\ChildCustomerContactController;
 use App\Http\Controllers\ChildCustomerActivityController;
+use App\Http\Controllers\ChildCustomerContactController;
 use App\Http\Controllers\ChildCustomerMigrationController;
 use App\Http\Controllers\ChildDirectiveController;
 use App\Http\Controllers\ChildFundingController;
 use App\Http\Controllers\ChildRegistrationController;
 use App\Http\Controllers\ChildTunnelController;
-use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerCatalogController;
+use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerDashboardController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\GeneralController;
 use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\RecentRecipientController;
 use App\Http\Controllers\OgdamsWebhookController;
 use App\Http\Controllers\PayscribeController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\PromotionController;
 use App\Http\Controllers\PublicCatalogController;
+use App\Http\Controllers\RecentRecipientController;
 use App\Http\Controllers\ResetWebsiteController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SearchController;
-use App\Http\Controllers\SupportTicketController;
-use App\Http\Controllers\WhatsAppSupportController;
 use App\Http\Controllers\ServiceControlController;
 use App\Http\Controllers\ServiceCostMarginController;
 use App\Http\Controllers\ServiceRoutingController;
@@ -52,6 +52,7 @@ use App\Http\Controllers\SimDeviceAdminController;
 use App\Http\Controllers\SimDeviceController;
 use App\Http\Controllers\SimDeviceRegistrationController;
 use App\Http\Controllers\SimJobController;
+use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\TemplateController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UserController;
@@ -60,6 +61,7 @@ use App\Http\Controllers\WalletTransferController;
 use App\Http\Controllers\WalletWithdrawalController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\WelcomeMessageController;
+use App\Http\Controllers\WhatsAppSupportController;
 use Illuminate\Support\Facades\Route;
 
 // Public — read before login (landing page, auth screens) so they can show
@@ -263,13 +265,13 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // Airtime to cash — manually reviewed, not an instant purchase (see
         // AirtimeToCashController), so it's not routed through /vtu/{service}.
         Route::middleware(['not.impersonating', 'atc.https', 'throttle:10,1'])->group(function () {
-            Route::get('/airtime-to-cash/provider/options', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'options']);
-            Route::get('/airtime-to-cash/provider/quote', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'quote']);
-            Route::post('/airtime-to-cash/provider/start', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'start']);
-            Route::post('/airtime-to-cash/{id}/verify-otp', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'verify'])->whereNumber('id')->middleware('atc.secrets');
-            Route::post('/airtime-to-cash/{id}/restart-otp', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'restart'])->whereNumber('id');
-            Route::post('/airtime-to-cash/{id}/convert', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'convert'])->whereNumber('id')->middleware('atc.secrets');
-            Route::get('/airtime-to-cash/{id}/status', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'status'])->whereNumber('id');
+            Route::get('/airtime-to-cash/provider/options', [AirtimeToCashProviderController::class, 'options']);
+            Route::get('/airtime-to-cash/provider/quote', [AirtimeToCashProviderController::class, 'quote']);
+            Route::post('/airtime-to-cash/provider/start', [AirtimeToCashProviderController::class, 'start']);
+            Route::post('/airtime-to-cash/{id}/verify-otp', [AirtimeToCashProviderController::class, 'verify'])->whereNumber('id')->middleware('atc.secrets');
+            Route::post('/airtime-to-cash/{id}/restart-otp', [AirtimeToCashProviderController::class, 'restart'])->whereNumber('id');
+            Route::post('/airtime-to-cash/{id}/convert', [AirtimeToCashProviderController::class, 'convert'])->whereNumber('id')->middleware('atc.secrets');
+            Route::get('/airtime-to-cash/{id}/status', [AirtimeToCashProviderController::class, 'status'])->whereNumber('id');
         });
         Route::get('/airtime-to-cash/networks', [AirtimeToCashController::class, 'catalog']);
         Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'myRequests']);
@@ -406,11 +408,13 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // "transactions" (which covers status overrides/refunds on already-
         // completed purchases), so it gets its own permission slug.
         Route::middleware('permission:airtime_to_cash')->group(function () {
-            Route::get('/airtime-to-cash/providers', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'adminSettings']);
-            Route::put('/airtime-to-cash/providers/{provider}', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'updateSettings']);
-            Route::post('/airtime-to-cash/{id}/reconcile', [\App\Http\Controllers\AirtimeToCashProviderController::class, 'reconcile'])->whereNumber('id')->middleware('throttle:5,1');
-            Route::get('/airtime-to-cash/configuration', [\App\Http\Controllers\AirtimeToCashConfigurationController::class, 'index']);
-            Route::put('/airtime-to-cash/configuration/{network}', [\App\Http\Controllers\AirtimeToCashConfigurationController::class, 'update']);
+            Route::get('/airtime-to-cash/providers', [AirtimeToCashProviderController::class, 'adminSettings']);
+            Route::put('/airtime-to-cash/providers', [AirtimeToCashProviderController::class, 'updateRuntime']);
+            Route::put('/airtime-to-cash/providers/{provider}', [AirtimeToCashProviderController::class, 'updateSettings']);
+            Route::post('/airtime-to-cash/providers/{provider}/test', [AirtimeToCashProviderController::class, 'testConnection'])->middleware('throttle:5,1');
+            Route::post('/airtime-to-cash/{id}/reconcile', [AirtimeToCashProviderController::class, 'reconcile'])->whereNumber('id')->middleware('throttle:5,1');
+            Route::get('/airtime-to-cash/configuration', [AirtimeToCashConfigurationController::class, 'index']);
+            Route::put('/airtime-to-cash/configuration/{network}', [AirtimeToCashConfigurationController::class, 'update']);
             Route::get('/airtime-to-cash', [AirtimeToCashController::class, 'adminIndex']);
             Route::post('/airtime-to-cash/{atc}/approve', [AirtimeToCashController::class, 'approve']);
             Route::post('/airtime-to-cash/{atc}/reject', [AirtimeToCashController::class, 'reject']);
@@ -420,18 +424,18 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // permission — affiliate management is owner-level surface, same
         // as /stats below.
         Route::middleware('permission:settings')->group(function () {
-        Route::get('/child-instances/{id}/secret', [AdminController::class, 'childInstanceSecret']);
-        Route::post('/child-instances/{id}/regenerate-secret', [AdminController::class, 'regenerateChildInstanceSecret']);
-        Route::post('/child-instances/generate-code', [AdminController::class, 'generateChildRegistrationCode']);
-        Route::post('/child-instances/{id}/directives', [AdminController::class, 'createChildDirective']);
-        Route::delete('/child-instances/{id}/directives/{directiveId}', [AdminController::class, 'deleteChildDirective']);
-        Route::post('/child-instances/{id}/customers/email-and-migrate', [ChildCustomerMigrationController::class, 'emailAndMigrate']);
-        Route::post('/child-instances/{id}/customers/bulk-migrate', [ChildCustomerMigrationController::class, 'bulkMigrate']);
-        Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
-        Route::post('/child-instances/{id}/customers/messages', [ChildCustomerContactController::class, 'sendBulk']);
-        Route::get('/child-instances/{id}/customers/recent-activity', [ChildCustomerActivityController::class, 'index']);
-        Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
-        Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);
+            Route::get('/child-instances/{id}/secret', [AdminController::class, 'childInstanceSecret']);
+            Route::post('/child-instances/{id}/regenerate-secret', [AdminController::class, 'regenerateChildInstanceSecret']);
+            Route::post('/child-instances/generate-code', [AdminController::class, 'generateChildRegistrationCode']);
+            Route::post('/child-instances/{id}/directives', [AdminController::class, 'createChildDirective']);
+            Route::delete('/child-instances/{id}/directives/{directiveId}', [AdminController::class, 'deleteChildDirective']);
+            Route::post('/child-instances/{id}/customers/email-and-migrate', [ChildCustomerMigrationController::class, 'emailAndMigrate']);
+            Route::post('/child-instances/{id}/customers/bulk-migrate', [ChildCustomerMigrationController::class, 'bulkMigrate']);
+            Route::post('/child-instances/{id}/customers/{customerId}/migrate', [ChildCustomerMigrationController::class, 'migrate']);
+            Route::post('/child-instances/{id}/customers/messages', [ChildCustomerContactController::class, 'sendBulk']);
+            Route::get('/child-instances/{id}/customers/recent-activity', [ChildCustomerActivityController::class, 'index']);
+            Route::get('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'index']);
+            Route::post('/child-instances/{id}/customers/{customerId}/messages', [ChildCustomerContactController::class, 'send']);
         });
 
         // SIM vending fleet — its own admin section, deliberately separate
@@ -439,13 +443,13 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
         // platform's own SIMs/agent phones, not a configurable vendor.
         // Owner-level surface like child-instances (no permission slug).
         Route::middleware('permission:settings')->group(function () {
-        Route::get('/sim-vending/overview', [SimDeviceAdminController::class, 'overview']);
-        Route::post('/sim-vending/devices/generate-code', [SimDeviceAdminController::class, 'generateCode']);
-        Route::post('/sim-vending/devices/{id}/regenerate-secret', [SimDeviceAdminController::class, 'regenerateSecret']);
-        Route::put('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'updateDevice']);
-        Route::delete('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'deleteDevice']);
-        Route::post('/sim-vending/devices/{id}/sims', [SimDeviceAdminController::class, 'createSim']);
-        Route::put('/sim-vending/devices/{id}/sims/{simId}', [SimDeviceAdminController::class, 'updateSim']);
+            Route::get('/sim-vending/overview', [SimDeviceAdminController::class, 'overview']);
+            Route::post('/sim-vending/devices/generate-code', [SimDeviceAdminController::class, 'generateCode']);
+            Route::post('/sim-vending/devices/{id}/regenerate-secret', [SimDeviceAdminController::class, 'regenerateSecret']);
+            Route::put('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'updateDevice']);
+            Route::delete('/sim-vending/devices/{id}', [SimDeviceAdminController::class, 'deleteDevice']);
+            Route::post('/sim-vending/devices/{id}/sims', [SimDeviceAdminController::class, 'createSim']);
+            Route::put('/sim-vending/devices/{id}/sims/{simId}', [SimDeviceAdminController::class, 'updateSim']);
         });
 
         Route::post('/reset-website', [ResetWebsiteController::class, 'reset'])->middleware(['permission:manage_system_roles', 'recent.auth']);

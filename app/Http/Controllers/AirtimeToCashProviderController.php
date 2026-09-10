@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AirtimeToCashProviderSetting;
 use App\Models\AirtimeToCashRequest;
+use App\Services\AirtimeToCash\AirtimeToCashProviderConfiguration;
 use App\Services\AirtimeToCash\AirtimeToCashProviderManager;
 use App\Services\AirtimeToCash\AirtimeToCashProviderService;
 use App\Services\AirtimeToCash\AirtimeToCashReconciliationService;
@@ -12,7 +12,11 @@ use Illuminate\Support\Facades\Validator;
 
 final class AirtimeToCashProviderController extends Controller
 {
-    public function __construct(private AirtimeToCashProviderService $flow, private AirtimeToCashProviderManager $manager) {}
+    public function __construct(
+        private AirtimeToCashProviderService $flow,
+        private AirtimeToCashProviderManager $manager,
+        private AirtimeToCashProviderConfiguration $configuration,
+    ) {}
 
     public function options()
     {
@@ -110,17 +114,55 @@ final class AirtimeToCashProviderController extends Controller
 
     public function adminSettings()
     {
-        return $this->success(['mode_enabled' => (bool) config('airtime_to_cash.provider_mode_enabled'),
-            'live_calls_enabled' => (bool) config('airtime_to_cash.live_calls_enabled'), 'providers' => $this->manager->settings()]);
+        return $this->success([...$this->configuration->runtime(), 'providers' => $this->manager->settings()]);
     }
 
     public function updateSettings(Request $request, string $provider)
     {
-        $this->manager->get($provider);
-        $input = $request->validate(['enabled' => 'required|boolean', 'priority' => 'required|integer|min:1|max:100']);
-        AirtimeToCashProviderSetting::updateOrCreate(['provider' => $provider], $input);
+        $input = $request->validate([
+            'enabled' => 'required|boolean',
+            'priority' => 'required|integer|min:1|max:100',
+            'base_url' => 'sometimes|string|max:255',
+            'token' => 'sometimes|nullable|string|max:4096',
+        ]);
+        try {
+            $this->manager->get($provider);
+            $this->configuration->updateProvider($provider, $input);
+        } catch (\DomainException $e) {
+            return $this->fail([], $e->getMessage(), 422);
+        }
 
         return $this->adminSettings();
+    }
+
+    public function updateRuntime(Request $request)
+    {
+        $input = $request->validate([
+            'mode_enabled' => 'required|boolean',
+            'live_calls_enabled' => 'required|boolean',
+        ]);
+        try {
+            $this->configuration->updateRuntime($input['mode_enabled'], $input['live_calls_enabled']);
+        } catch (\DomainException $e) {
+            return $this->fail([], $e->getMessage(), 422);
+        }
+
+        return $this->adminSettings();
+    }
+
+    public function testConnection(string $provider)
+    {
+        try {
+            $result = $this->manager->testConnection($provider);
+
+            return $this->success([
+                'connected' => $result->connected,
+                'message' => $result->message,
+                'checked_at' => now()->toIso8601String(),
+            ], $result->message);
+        } catch (\DomainException $e) {
+            return $this->fail([], $e->getMessage(), 422);
+        }
     }
 
     public function reconcile(int $id, AirtimeToCashReconciliationService $reconciliation)

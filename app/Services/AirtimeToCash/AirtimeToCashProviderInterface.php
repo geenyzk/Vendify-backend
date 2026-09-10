@@ -11,6 +11,12 @@ interface AirtimeToCashProviderInterface
 
     public function capabilities(): array;
 
+    /** Safe admin-facing field schema; values are never included. */
+    public function credentialRequirements(bool $configured = false): array;
+
+    /** Authentication-only check that cannot initiate an airtime conversion. */
+    public function healthCheck(): ProviderHealthResult;
+
     public function requestOtp(string $network, string $phone): ProviderResult;
 
     public function verifyOtp(string $network, string $phone, #[\SensitiveParameter] string $otp): ProviderResult;

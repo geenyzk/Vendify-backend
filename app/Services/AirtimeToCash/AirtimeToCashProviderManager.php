@@ -2,13 +2,14 @@
 
 namespace App\Services\AirtimeToCash;
 
-use App\Models\AirtimeToCashProviderSetting;
 use App\Models\AirtimeToCashRequest;
 use App\Services\AirtimeToCash\Providers\AutomationProvider;
 use App\Services\AirtimeToCash\Providers\TwoFastProvider;
 
 final class AirtimeToCashProviderManager
 {
+    public function __construct(private AirtimeToCashProviderConfiguration $configuration) {}
+
     public function get(string $key): AirtimeToCashProviderInterface
     {
         return match ($key) {
@@ -20,15 +21,19 @@ final class AirtimeToCashProviderManager
 
     public function settings(): array
     {
-        $saved = AirtimeToCashProviderSetting::all()->keyBy('provider');
         $result = [];
         foreach (config('airtime_to_cash.providers') as $key => $config) {
             $adapter = $this->get((string) $key);
-            $result[] = ['key' => (string) $key, 'name' => $config['name'],
-                'enabled' => (bool) ($saved->get($key)?->enabled ?? $config['enabled']),
-                'priority' => $saved->get($key)?->priority ?? $config['priority'],
-                'configured' => ! empty($config['token']), 'networks' => $adapter->networks(), 'capabilities' => $adapter->capabilities(),
-                'health' => 'not_checked']; // Never contact providers to render config.
+            $safe = $this->configuration->safeMetadata((string) $key);
+            $result[] = [
+                'key' => (string) $key,
+                'name' => $config['name'],
+                ...$safe,
+                'credentials' => $adapter->credentialRequirements($safe['configured']),
+                'networks' => $adapter->networks(),
+                'capabilities' => $adapter->capabilities(),
+                'automatic_failover' => false,
+            ]; // Rendering configuration never contacts a provider.
         }
         usort($result, fn ($a, $b) => [$a['priority'], $a['key']] <=> [$b['priority'], $b['key']]);
 
@@ -37,7 +42,20 @@ final class AirtimeToCashProviderManager
 
     public function modeAvailable(): bool
     {
-        return config('airtime_to_cash.provider_mode_enabled') && (app()->environment('testing') || config('airtime_to_cash.live_calls_enabled'));
+        return $this->configuration->providerModeEnabled()
+            && (app()->environment('testing') || $this->configuration->liveCallsEnabled());
+    }
+
+    public function testConnection(string $provider): ProviderHealthResult
+    {
+        $resolved = $this->configuration->resolved($provider);
+        if (empty($resolved['token'])) {
+            throw new \DomainException('Add a provider credential before testing the connection.');
+        }
+        $result = $this->get($provider)->healthCheck();
+        $this->configuration->recordHealth($provider, $result);
+
+        return $result;
     }
 
     public function select(string $network, float $amount): AirtimeToCashProviderInterface

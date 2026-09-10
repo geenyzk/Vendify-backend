@@ -12,6 +12,8 @@ return [
             'token' => env('AIRTIME_TO_CASH_AUTOMATION_TOKEN'),
             'enabled' => env('AIRTIME_TO_CASH_AUTOMATION_ENABLED', false),
             'priority' => 1,
+            'allowed_host' => 'automation.airtimetocash.com',
+            'credential_label' => 'API token',
         ],
         '2fast' => [
             'name' => '2FAST',
@@ -19,6 +21,8 @@ return [
             'token' => env('AIRTIME_TO_CASH_2FAST_TOKEN'),
             'enabled' => env('AIRTIME_TO_CASH_2FAST_ENABLED', false),
             'priority' => 2,
+            'allowed_host' => '2fast.com.ng',
+            'credential_label' => 'API key',
         ],
     ],
 ];

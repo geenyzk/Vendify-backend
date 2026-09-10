@@ -19,6 +19,7 @@ class Setting extends Model
         'wallet_transfer_min', 'wallet_transfer_max',
         'wallet_withdrawal_auto_approve', 'wallet_withdrawal_min', 'wallet_withdrawal_max',
         'notify_admin_on_airtime_to_cash', 'notify_admin_on_wallet_withdrawal',
+        'airtime_to_cash_provider_mode_enabled', 'airtime_to_cash_live_calls_enabled',
     ];
 
     protected $casts = [
@@ -41,6 +42,8 @@ class Setting extends Model
         'wallet_withdrawal_max' => 'decimal:2',
         'notify_admin_on_airtime_to_cash' => 'boolean',
         'notify_admin_on_wallet_withdrawal' => 'boolean',
+        'airtime_to_cash_provider_mode_enabled' => 'boolean',
+        'airtime_to_cash_live_calls_enabled' => 'boolean',
     ];
 
     // Mail password is sensitive but admin-only (mirrors how provider

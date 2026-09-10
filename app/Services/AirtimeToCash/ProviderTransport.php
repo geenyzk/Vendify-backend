@@ -6,10 +6,12 @@ use Illuminate\Support\Facades\Http;
 
 final class ProviderTransport
 {
-    public function post(string $provider, string $path, #[\SensitiveParameter] array $payload, bool $protected = true): array
+    public function __construct(private AirtimeToCashProviderConfiguration $configuration) {}
+
+    public function post(string $provider, string $path, #[\SensitiveParameter] array $payload, bool $protected = true, bool $healthCheck = false): array
     {
-        $config = config('airtime_to_cash.providers.'.$provider);
-        $expectedHost = $provider === '2fast' ? '2fast.com.ng' : 'automation.airtimetocash.com';
+        $config = $this->configuration->resolved($provider);
+        $expectedHost = $config['allowed_host'];
         $base = rtrim((string) ($config['base_url'] ?? ''), '/');
         $url = parse_url($base);
         if (! is_array($url) || ($url['scheme'] ?? null) !== 'https' || ($url['host'] ?? null) !== $expectedHost
@@ -20,7 +22,7 @@ final class ProviderTransport
         if (app()->environment('testing')) {
             // Testing always refuses un-faked traffic, even if a developer forgot the test guard.
             Http::preventStrayRequests();
-        } elseif (! config('airtime_to_cash.live_calls_enabled')) {
+        } elseif (! $healthCheck && ! $this->configuration->liveCallsEnabled()) {
             throw new \DomainException('Live conversion calls are disabled.');
         }
         if ($protected && empty($config['token'])) {

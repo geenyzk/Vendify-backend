@@ -4,8 +4,10 @@ namespace App\Services\AirtimeToCash\Providers;
 
 use App\Services\AirtimeToCash\AirtimeToCashProviderInterface;
 use App\Services\AirtimeToCash\LooksUpTransactions;
+use App\Services\AirtimeToCash\ProviderHealthResult;
 use App\Services\AirtimeToCash\ProviderResult;
 use App\Services\AirtimeToCash\ProviderTransport;
+use Illuminate\Support\Str;
 
 final class TwoFastProvider implements AirtimeToCashProviderInterface, LooksUpTransactions
 {
@@ -24,6 +26,34 @@ final class TwoFastProvider implements AirtimeToCashProviderInterface, LooksUpTr
     public function capabilities(): array
     {
         return ['quota' => false, 'session' => false, 'lookup' => true];
+    }
+
+    public function credentialRequirements(bool $configured = false): array
+    {
+        return [['key' => 'token', 'label' => 'API key', 'secret' => true, 'configured' => $configured]];
+    }
+
+    public function healthCheck(): ProviderHealthResult
+    {
+        [$http, $body] = $this->transport->post(
+            $this->key(),
+            '/api/transaction-history',
+            ['reference' => 'ATC-HEALTH-'.Str::uuid()],
+            true,
+            true,
+        );
+        if (in_array($http, [401, 403], true)) {
+            return new ProviderHealthResult(false, 'Authentication rejected by provider. Check the configured API key.');
+        }
+        if ($http === 429) {
+            return new ProviderHealthResult(false, 'Provider rate limit reached. Try the connection test later.');
+        }
+        $message = is_string($body['message'] ?? null) ? $body['message'] : '';
+        if ($http === 200 && ($body['status'] ?? null) === 'error' && str_starts_with($message, 'Transaction not found')) {
+            return new ProviderHealthResult(true, 'Authentication successful.');
+        }
+
+        return new ProviderHealthResult(false, 'Provider did not return a recognised health response.');
     }
 
     private function code(string $network): int

@@ -17,7 +17,19 @@ class AirtimeToCashProviderSetting extends Model
 
     protected $keyType = 'string';
 
-    protected $fillable = ['provider', 'enabled', 'priority'];
+    protected $fillable = [
+        'provider', 'enabled', 'priority', 'base_url', 'token',
+        'health_status', 'health_message', 'last_health_check_at',
+    ];
 
-    protected $casts = ['enabled' => 'boolean', 'priority' => 'integer'];
+    protected $hidden = ['token'];
+
+    protected array $auditExclude = ['health_status', 'health_message', 'last_health_check_at'];
+
+    protected $casts = [
+        'enabled' => 'boolean',
+        'priority' => 'integer',
+        'token' => 'encrypted',
+        'last_health_check_at' => 'datetime',
+    ];
 }

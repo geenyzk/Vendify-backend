@@ -5,6 +5,7 @@ namespace App\Services\AirtimeToCash\Providers;
 use App\Services\AirtimeToCash\AirtimeToCashProviderInterface;
 use App\Services\AirtimeToCash\ChecksQuota;
 use App\Services\AirtimeToCash\ChecksSession;
+use App\Services\AirtimeToCash\ProviderHealthResult;
 use App\Services\AirtimeToCash\ProviderResult;
 use App\Services\AirtimeToCash\ProviderTransport;
 
@@ -28,6 +29,34 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
     public function capabilities(): array
     {
         return ['quota' => true, 'session' => true, 'lookup' => false];
+    }
+
+    public function credentialRequirements(bool $configured = false): array
+    {
+        return [['key' => 'token', 'label' => 'API token', 'secret' => true, 'configured' => $configured]];
+    }
+
+    public function healthCheck(): ProviderHealthResult
+    {
+        [$http, $body] = $this->transport->post(
+            $this->key(),
+            '/api/v1/check/quota/availability',
+            ['networkName' => 'MTN', 'amount' => 50],
+            true,
+            true,
+        );
+        $code = (string) ($body['code'] ?? '');
+        if (in_array($http, [401, 403], true) || $code === '4030') {
+            return new ProviderHealthResult(false, 'Authentication rejected by provider. Check the configured token.');
+        }
+        if ($http === 429 || $code === '4290') {
+            return new ProviderHealthResult(false, 'Provider rate limit reached. Try the connection test later.');
+        }
+        if ($http === 200 && in_array($code, ['2000', '3000', '4000', '4010', '5030'], true)) {
+            return new ProviderHealthResult(true, 'Authentication successful.');
+        }
+
+        return new ProviderHealthResult(false, 'Provider did not return a recognised health response.');
     }
 
     private function code(string $network): string
