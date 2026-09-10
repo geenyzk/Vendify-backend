@@ -5,13 +5,15 @@ namespace App\Services\AirtimeToCash\Providers;
 use App\Services\AirtimeToCash\AirtimeToCashProviderInterface;
 use App\Services\AirtimeToCash\ChecksQuota;
 use App\Services\AirtimeToCash\ChecksSession;
+use App\Services\AirtimeToCash\ProviderCallTrace;
 use App\Services\AirtimeToCash\ProviderHealthResult;
+use App\Services\AirtimeToCash\ProviderRequestNotSent;
 use App\Services\AirtimeToCash\ProviderResult;
 use App\Services\AirtimeToCash\ProviderTransport;
 
 final class AutomationProvider implements AirtimeToCashProviderInterface, ChecksQuota, ChecksSession
 {
-    public function __construct(private ProviderTransport $transport) {}
+    public function __construct(private ProviderTransport $transport, private ProviderCallTrace $trace) {}
 
     public function key(): string
     {
@@ -38,13 +40,19 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
 
     public function healthCheck(): ProviderHealthResult
     {
-        [$http, $body] = $this->transport->post(
-            $this->key(),
-            '/api/v1/check/quota/availability',
-            ['networkName' => 'MTN', 'amount' => 50],
-            true,
-            true,
-        );
+        try {
+            [$http, $body] = $this->transport->post(
+                $this->key(),
+                '/api/v1/check/quota/availability',
+                ['networkName' => 'MTN', 'amount' => 50],
+                true,
+                true,
+            );
+        } catch (ProviderRequestNotSent $e) {
+            $this->trace->record('health', null, null, new ProviderResult('not_sent', reason: 'transport_preflight_rejected'), false);
+            throw $e;
+        }
+        $this->trace->record('health', $http ?: null, $body['code'] ?? null, $this->normalize('quota', $http, $body), true);
         $code = (string) ($body['code'] ?? '');
         if (in_array($http, [401, 403], true) || $code === '4030') {
             return new ProviderHealthResult(false, 'Authentication rejected by provider. Check the configured token.');
@@ -66,9 +74,18 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
 
     private function call(string $operation, string $path, #[\SensitiveParameter] array $payload, bool $protected = true): ProviderResult
     {
-        [$status, $body] = $this->transport->post($this->key(), '/api/v1/'.$path, $payload, $protected);
+        try {
+            [$status, $body] = $this->transport->post($this->key(), '/api/v1/'.$path, $payload, $protected);
+        } catch (ProviderRequestNotSent) {
+            $result = new ProviderResult('not_sent', reason: 'transport_preflight_rejected');
+            $this->trace->record($operation, null, null, $result, false);
 
-        return $this->normalize($operation, $status, $body);
+            return $result;
+        }
+        $result = $this->normalize($operation, $status, $body);
+        $this->trace->record($operation, $status ?: null, $body['code'] ?? null, $result, true);
+
+        return $result;
     }
 
     public function normalize(string $operation, int $http, #[\SensitiveParameter] array $body): ProviderResult

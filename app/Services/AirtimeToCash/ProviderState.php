@@ -7,12 +7,13 @@ use App\Models\AirtimeToCashRequest;
 final class ProviderState
 {
     private const NEXT = [
-        'created' => ['expired', 'awaiting_otp', 'ready_to_transfer', 'manual_review', 'failed'],
+        'created' => ['expired', 'awaiting_otp', 'ready_to_transfer', 'setup_review', 'failed'],
         'awaiting_otp' => ['verifying_otp', 'expired'],
-        'verifying_otp' => ['awaiting_otp', 'ready_to_transfer', 'expired', 'manual_review', 'failed'],
+        'verifying_otp' => ['awaiting_otp', 'ready_to_transfer', 'expired', 'setup_review', 'failed'],
         'ready_to_transfer' => ['processing', 'expired'],
         'processing' => ['ready_to_transfer', 'provider_confirmed', 'provider_pending', 'failed', 'session_expired'],
         'provider_pending' => ['provider_confirmed', 'failed', 'manual_review'],
+        'setup_review' => ['expired', 'failed'],
         'manual_review' => ['provider_confirmed', 'failed', 'expired'],
         'session_expired' => [],
         'expired' => [],

@@ -81,12 +81,12 @@ final class AirtimeToCashProviderService
         // cause a second start/OTP session when this idempotency key is replayed.
         try {
             if ($provider instanceof ChecksQuota) {
-                $quota = $provider->checkQuota($name, $amount);
+                $quota = app(ProviderCallTrace::class)->within($request->transaction_reference, fn () => $provider->checkQuota($name, $amount));
                 if ($quota->state !== 'success') {
                     return $this->finishPreTransfer($request->id, 'created', $quota);
                 }
             }
-            $result = $provider->requestOtp($name, $phone);
+            $result = app(ProviderCallTrace::class)->within($request->transaction_reference, fn () => $provider->requestOtp($name, $phone));
         } catch (\Throwable) {
             $result = new ProviderResult('unknown');
         }
@@ -102,7 +102,7 @@ final class AirtimeToCashProviderService
         if (! $terminal && ! $request->provider_confirmed_at && ! $request->payout_transaction_reference
             && $request->expires_at?->isPast()
             && (in_array($request->provider_status, ['created', 'awaiting_otp', 'verifying_otp', 'ready_to_transfer'], true)
-                || ($request->provider_status === 'manual_review' && (int) $request->provider_attempt_count === 0))) {
+                || (in_array($request->provider_status, ['setup_review', 'manual_review'], true) && (int) $request->provider_attempt_count === 0))) {
             // Only verification expires; no claim about an unknown transfer outcome.
             ProviderState::move($request, 'expired');
             $terminal = true;
@@ -144,7 +144,7 @@ final class AirtimeToCashProviderService
         if ($request->provider_status === 'ready_to_transfer' && $provider instanceof ChecksSession && $request->provider_identifier) {
             // Read-only session validation. Unknown/auth/network errors are not expiry evidence.
             try {
-                $result = $provider->checkSession($this->availability::canonicalName($request->network), $request->sender_phone, $request->provider_identifier);
+                $result = app(ProviderCallTrace::class)->within($request->transaction_reference, fn () => $provider->checkSession($this->availability::canonicalName($request->network), $request->sender_phone, $request->provider_identifier));
             } catch (\Throwable) {
                 $result = new ProviderResult('unknown');
             }
@@ -201,7 +201,7 @@ final class AirtimeToCashProviderService
             return $request;
         }
         try {
-            $result = $this->manager->bound($request)->verifyOtp($this->availability::canonicalName($request->network), $request->sender_phone, $otp);
+            $result = app(ProviderCallTrace::class)->within($request->transaction_reference, fn () => $this->manager->bound($request)->verifyOtp($this->availability::canonicalName($request->network), $request->sender_phone, $otp));
         } catch (\Throwable) {
             $result = new ProviderResult('unknown');
         } finally {
@@ -229,10 +229,10 @@ final class AirtimeToCashProviderService
                 }
             } elseif ($from === 'verifying_otp') {
                 ProviderState::move($request, match ($result->state) {
-                    'failed', 'rate_limited' => 'awaiting_otp', 'auth_error' => 'failed', 'session_expired' => 'expired', default => 'manual_review',
+                    'failed', 'rate_limited' => 'awaiting_otp', 'auth_error', 'not_sent' => 'failed', 'session_expired' => 'expired', default => 'setup_review',
                 });
             } else {
-                ProviderState::move($request, in_array($result->state, ['failed', 'auth_error'], true) ? 'failed' : 'manual_review');
+                ProviderState::move($request, in_array($result->state, ['failed', 'auth_error', 'not_sent', 'unavailable'], true) ? 'failed' : 'setup_review');
             }
             $request->provider_message = $result->state;
             $request->save();
@@ -243,6 +243,9 @@ final class AirtimeToCashProviderService
 
     public function convert(int $id, string $userId, #[\SensitiveParameter] string $pin): AirtimeToCashRequest
     {
+        if (! preg_match('/^[0-9]{4}$/D', $pin)) {
+            throw new DomainException('A four-digit SIM transfer PIN is required.');
+        }
         $request = DB::transaction(function () use ($id, $userId) {
             $request = $this->owned($id, $userId);
             if ($request->status !== 'pending' || $request->provider_status !== 'ready_to_transfer') {
@@ -274,8 +277,8 @@ final class AirtimeToCashProviderService
             return $request;
         }
         try {
-            $result = $this->manager->bound($request)->convert($this->availability::canonicalName($request->network), $request->sender_phone,
-                (float) $request->amount, $request->provider_reference, $request->provider_identifier, $pin);
+            $result = app(ProviderCallTrace::class)->within($request->transaction_reference, fn () => $this->manager->bound($request)->convert($this->availability::canonicalName($request->network), $request->sender_phone,
+                (float) $request->amount, $request->provider_reference, $request->provider_identifier, $pin));
         } catch (\Throwable) {
             $result = new ProviderResult('unknown');
         } finally {
@@ -289,7 +292,7 @@ final class AirtimeToCashProviderService
     {
         $request = DB::transaction(function () use ($id, $result) {
             $request = AirtimeToCashRequest::where('processing_mode', 'provider')->lockForUpdate()->findOrFail($id);
-            if ($request->status !== 'pending' || ! in_array($request->provider_status, ['processing', 'provider_pending', 'manual_review'], true)) {
+            if ($request->status !== 'pending' || (int) $request->provider_attempt_count === 0 || ! in_array($request->provider_status, ['processing', 'provider_pending', 'manual_review'], true)) {
                 return $request;
             }
             $state = $result->state;
@@ -300,13 +303,14 @@ final class AirtimeToCashProviderService
                 && $state === 'failed' && in_array($result->reason, ['invalid_pin', 'low_balance'], true);
             $next = match (true) {
                 $retryableRejection => 'ready_to_transfer',
+                $state === 'not_sent' => 'failed',
                 $state === 'auth_error' && $request->provider_status === 'processing' => 'failed',
                 $state === 'unavailable' && $result->reason === 'recipient_unavailable' => 'failed',
                 default => match ($state) {
                     'success' => 'provider_confirmed', 'failed' => 'failed', 'session_expired' => $request->provider_status === 'processing' ? 'session_expired' : 'provider_pending', default => 'provider_pending'
                 },
             };
-            if ($request->provider_status === 'manual_review' && $next === 'provider_pending') {
+            if (in_array($request->provider_status, ['setup_review', 'manual_review'], true) && $next === 'provider_pending') {
                 return $request;
             }
             ProviderState::move($request, $next);

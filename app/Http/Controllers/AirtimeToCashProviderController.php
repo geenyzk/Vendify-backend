@@ -111,7 +111,15 @@ final class AirtimeToCashProviderController extends Controller
 
     public function customerView(AirtimeToCashRequest $atc): array
     {
-        $message = match ($atc->status === 'failed' ? 'failed' : $atc->provider_status) {
+        $state = $atc->provider_status;
+        // Historical pre-transfer manual_review rows must not imply a submitted transfer.
+        if ($state === 'manual_review' && (int) $atc->provider_attempt_count === 0) {
+            $state = 'setup_review';
+        }
+        $message = match ($atc->status === 'failed' ? 'failed' : $state) {
+            'created' => 'Preparing SIM verification. No transfer has been submitted.',
+            'verifying_otp' => 'Checking your verification code. No transfer has been submitted.',
+            'setup_review' => 'SIM setup could not be confirmed. No transfer has been submitted. Contact support or start again after verification expires.',
             'awaiting_otp' => $atc->provider_message === 'failed' ? 'Verification failed. Check the code and try again.' : 'Enter the code sent to your SIM.',
             'ready_to_transfer' => match ($atc->provider_message) {
                 'invalid_pin' => 'The transfer PIN was rejected. Check the PIN and try again. Your wallet has not been credited.',
@@ -130,7 +138,7 @@ final class AirtimeToCashProviderController extends Controller
         return ['resumed' => (bool) $atc->getAttribute('resumed'), 'id' => $atc->id, 'network_id' => $atc->network_id, 'network' => $atc->network, 'processing_mode' => 'provider',
             'amount' => (float) $atc->amount, 'payout_amount' => (float) $atc->payout_amount, 'sender_phone' => $atc->sender_phone,
             'status' => $atc->status,
-            'state' => $atc->provider_status, 'message' => $message, 'reference' => $atc->transaction_reference,
+            'transfer_attempted' => (int) $atc->provider_attempt_count > 0, 'state' => $state, 'message' => $message, 'reference' => $atc->transaction_reference,
             'expires_at' => $atc->expires_at?->toIso8601String(), 'airtime_balance' => $atc->provider_metadata['airtime_balance'] ?? null];
     }
 

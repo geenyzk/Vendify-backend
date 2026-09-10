@@ -364,7 +364,8 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         $this->assertStringNotContainsString('test-automation-token', $json);
         $this->assertStringNotContainsString('safe-session-id', json_encode(AirtimeToCashRequest::findOrFail($request->id)));
         $this->assertDatabaseMissing('audit_logs', ['description' => '1234']);
-        Log::shouldNotHaveReceived('info');
+        Log::shouldHaveReceived('info')->withArgs(fn ($event, $context) => $event === 'airtime_to_cash.provider_call'
+            && ! array_intersect(['pin', 'otp', 'sessionId', 'token', 'authorization'], array_keys($context)))->atLeast()->once();
         Log::shouldNotHaveReceived('debug');
         Log::shouldNotHaveReceived('error');
     }
@@ -487,7 +488,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         Http::fake(['*' => Http::failedConnection()]);
         $request = app(AirtimeToCashProviderService::class)->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
         $this->assertSame('pending', $request->status);
-        $this->assertSame('manual_review', $request->provider_status);
+        $this->assertSame('setup_review', $request->provider_status);
         Http::assertSentCount(1);
     }
 
@@ -880,5 +881,136 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         $this->assertDatabaseCount('transactions', 1);
         $this->assertEquals(1475, $user->fresh()->wallet_balance);
         Http::assertSentCount(2); // Only the original quota and OTP calls.
+    }
+
+    public function test_documented_automation_flow_requires_pin_and_reaches_transfer_with_original_session_and_reference(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->automationSequence(['code' => 2000, 'message' => 'Yello! You have gifted N500.0', 'data' => [
+            'amountConverted' => '₦500', 'recipient' => '23481****89', 'automationCharges' => '₦2', 'sessionId' => 'safe-session-id',
+        ]]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->assertSame('awaiting_otp', $request->provider_status);
+        $request = $flow->verify($request->id, $user->id, '123456');
+        $this->assertSame('ready_to_transfer', $request->provider_status);
+        $view = app(AirtimeToCashProviderController::class)->customerView($request);
+        $this->assertFalse($view['transfer_attempted']);
+        $this->assertSame('safe-session-id', $request->provider_identifier);
+        Http::assertSentCount(3); // quota -> generate OTP -> verify OTP, no transfer yet.
+        $this->assertDatabaseCount('transactions', 0);
+        try {
+            $flow->convert($request->id, $user->id, '');
+            $this->fail('Missing PIN accepted');
+        } catch (\DomainException) {
+            Http::assertSentCount(3);
+        }
+        $completed = $flow->convert($request->id, $user->id, '1234');
+        $this->assertSame('approved', $completed->status);
+        $this->assertSame($request->provider_reference, $completed->provider_reference);
+        $this->assertGreaterThanOrEqual(10, strlen($request->provider_reference));
+        $this->assertLessThanOrEqual(40, strlen($request->provider_reference));
+        Http::assertSentCount(4);
+        $calls = Http::recorded();
+        $this->assertSame([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability',
+            'https://automation.airtimetocash.com/api/v1/generate/otp',
+            'https://automation.airtimetocash.com/api/v1/verify/otp',
+            'https://automation.airtimetocash.com/api/v1/transfer/airtime',
+        ], $calls->map(fn ($pair) => $pair[0]->url())->all());
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/transfer/airtime') && $r->method() === 'POST'
+            && $r->hasHeader('Authorization', 'Bearer test-automation-token') && $r->hasHeader('Accept', 'application/json')
+            && $r['reference'] === $request->provider_reference && $r['sessionId'] === 'safe-session-id'
+            && $r['pin'] === '1234' && $r['amount'] == 500 && $r['sender'] === '08012345678' && $r['networkName'] === 'MTN');
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/verify/otp') && ! $r->hasHeader('Authorization') && $r['otp'] === '123456');
+        $this->assertDatabaseCount('transactions', 1);
+    }
+
+    public function test_unknown_otp_verification_cannot_imply_a_transfer_or_be_reconciled(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->automationSequence(['code' => 2000], ['code' => 2000, 'data' => ['airtimeBalance' => '₦500']]); // Missing sessionId.
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $request = $flow->verify($request->id, $user->id, '123456');
+        $this->assertSame('setup_review', $request->provider_status);
+        $this->assertSame(0, (int) $request->provider_attempt_count);
+        $view = app(AirtimeToCashProviderController::class)->customerView($request);
+        $this->assertStringContainsString('No transfer has been submitted', $view['message']);
+        $this->assertSame('setup_review', $flow->convert($request->id, $user->id, '1234')->provider_status);
+        // Even a late/incorrect success result cannot settle a never-submitted transfer.
+        $flow->recordResult($request->id, new ProviderResult('success', convertedAmount: 500));
+        Http::assertSentCount(3);
+        $this->assertDatabaseCount('transactions', 0);
+        $this->expectException(\DomainException::class);
+        app(AirtimeToCashReconciliationService::class)->reconcile($request->id);
+    }
+
+    public function test_legacy_pre_transfer_manual_review_is_serialized_as_setup_and_reconciliation_is_rejected(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->automationSequence(['code' => 2000]);
+        $request = app(AirtimeToCashProviderService::class)->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        DB::table('airtime_to_cash_requests')->where('id', $request->id)->update(['provider_status' => 'manual_review']);
+        $view = app(AirtimeToCashProviderController::class)->customerView($request->fresh());
+        $this->assertSame('setup_review', $view['state']);
+        $this->assertFalse($view['transfer_attempted']);
+        $this->expectExceptionMessage('No transfer attempt is recorded');
+        app(AirtimeToCashReconciliationService::class)->reconcile($request->id);
+    }
+
+    public function test_automation_reconcile_reports_unsupported_lookup_without_faking_a_state_change(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->automationSequence(['code' => 4000]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $flow->verify($request->id, $user->id, '123456');
+        $flow->convert($request->id, $user->id, '1234');
+        try {
+            app(AirtimeToCashReconciliationService::class)->reconcile($request->id);
+            $this->fail('Unsupported lookup accepted');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('no documented transaction lookup', $e->getMessage());
+        }
+        $this->assertSame('provider_pending', $request->fresh()->provider_status);
+        Http::assertSentCount(4);
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_transport_preflight_failure_is_not_an_unknown_delivered_transfer_and_logs_are_safe(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = $context;
+        });
+        $this->automationSequence(['code' => 2000], ['code' => 2000, 'message' => 'echoed 123456 1234 safe-session-id test-automation-token', 'data' => ['sessionId' => 'safe-session-id', 'airtimeBalance' => '₦1,000']]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $flow->verify($request->id, $user->id, '123456');
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.token' => '']);
+        $failed = $flow->convert($request->id, $user->id, '1234');
+        $this->assertSame('failed', $failed->status);
+        Http::assertSentCount(3);
+        $this->assertDatabaseCount('transactions', 0);
+        $this->assertCount(4, $logs);
+        $this->assertSame(['quota', 'otp', 'verify', 'convert'], array_column($logs, 'operation'));
+        $this->assertSame([$request->transaction_reference], array_values(array_unique(array_column($logs, 'internal_reference'))));
+        $this->assertFalse($logs[3]['dispatch_attempted']);
+        $this->assertSame('transport_preflight_rejected', $logs[3]['sanitized_message']);
+        foreach (['123456', '1234', 'safe-session-id', 'test-automation-token', '08012345678'] as $secret) {
+            $this->assertStringNotContainsString($secret, json_encode($logs));
+        }
     }
 }

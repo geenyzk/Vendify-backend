@@ -20,6 +20,12 @@ final class AirtimeToCashReconciliationService
             if (! in_array($request->provider_status, ['processing', 'provider_pending', 'manual_review'], true)) {
                 throw new \DomainException('This conversion is not awaiting reconciliation.');
             }
+            if ((int) $request->provider_attempt_count === 0) {
+                throw new \DomainException('No transfer attempt is recorded. This is a setup/verification issue, not a transaction to reconcile.');
+            }
+            if (! $this->manager->bound($request) instanceof LooksUpTransactions) {
+                throw new \DomainException('Automation has no documented transaction lookup API. Check the provider dashboard/support and safe call logs; automatic reconciliation is unavailable. Do not retry an uncertain transfer.');
+            }
             if ($request->last_provider_check_at?->gt(now()->subMinute())) {
                 throw new \DomainException('Wait before checking this conversion again.');
             }
@@ -35,17 +41,6 @@ final class AirtimeToCashReconciliationService
             return $this->flow->settleConfirmed($request);
         }
         $provider = $this->manager->bound($request);
-        if (! $provider instanceof LooksUpTransactions) {
-            return DB::transaction(function () use ($id) {
-                $request = AirtimeToCashRequest::lockForUpdate()->findOrFail($id);
-                if ($request->provider_status === 'provider_pending') {
-                    ProviderState::move($request, 'manual_review');
-                    $request->save();
-                }
-
-                return $request;
-            });
-        }
         try {
             $result = $provider->lookup($request->provider_reference);
         } catch (\Throwable) {
