@@ -79,22 +79,27 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         if ($http === 429) {
             return new ProviderResult('rate_limited');
         }
-        if (in_array($http, [401, 403], true)) {
+        $code = is_scalar($body['code'] ?? null) ? (string) $body['code'] : '';
+        if (in_array($http, [401, 403], true) || ($http === 400 && $code === '4030')) {
             return new ProviderResult('auth_error');
         }
         if ($http < 200 || $http >= 300) {
             return new ProviderResult('failed');
         }
-        $code = (string) ($body['code'] ?? '');
-        // The published quota examples both use 5030. Fail closed; only a
-        // documented general-success code qualifies until the provider clarifies.
+        // Quota documentation reuses 5030 for both available and unavailable.
+        // Only the exact documented positive quota response permits OTP start;
+        // this exception never proves that a transfer succeeded.
+        if ($operation === 'quota' && $http === 200 && $code === '5030'
+            && ($body['message'] ?? null) === 'Recipient(s) Available') {
+            return new ProviderResult('success');
+        }
         $state = match ($code) {
             '2000' => 'success', '3000' => 'failed', '4000' => 'pending',
             '4030' => 'auth_error', '4010' => 'session_expired', '4290' => 'rate_limited',
             '5030' => 'unavailable', default => 'unknown',
         };
         $data = is_array($body['data'] ?? null) ? $body['data'] : [];
-        $message = strtolower((string) ($body['message'] ?? ''));
+        $message = is_string($body['message'] ?? null) ? strtolower($body['message']) : '';
         $reason = match (true) {
             $state === 'failed' && str_contains($message, 'invalid pin') => 'invalid_pin',
             $state === 'failed' && str_contains($message, 'balance is low') => 'low_balance',

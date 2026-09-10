@@ -34,7 +34,7 @@ Contract source reviewed: [AirtimeToCash Automation API documentation](https://a
 
 The `airtime_to_cash_automation` adapter implements the documented MTN, Airtel, Glo, and 9mobile mappings and limits, quota check, OTP request, OTP verification, session login support, and airtime transfer. Protected requests use the server-side Bearer token. Transport permits HTTPS to the configured provider host only, rejects redirects, has bounded timeouts, and does not automatically retry or log request/response bodies.
 
-Documented JSON codes normalize to internal states: 2000 success, 3000 failed, 4000 pending, 4030 authentication error, 4010 session expired, 4290 rate limited, and 5030 unavailable. HTTP 500 and malformed/ambiguous conversion responses are unknown. Conversion success also requires a positive converted amount; a mismatched amount cannot settle. The provider documentation currently uses code 5030 in contradictory quota examples, so this implementation treats every 5030 quota result as unavailable.
+Documented JSON codes normalize to internal states: 2000 success, 3000 failed, 4000 pending, 4030 authentication error, 4010 session expired, 4290 rate limited, and 5030 unavailable. HTTP 500 and malformed/ambiguous conversion responses are unknown. Conversion success also requires a positive converted amount; a mismatched amount cannot settle. The provider documentation reuses code 5030 in both quota examples. Only HTTP 200 with code 5030 and the exact message `Recipient(s) Available` is accepted as a positive quota check. All other 5030 responses remain unavailable; this exception never confirms a transfer.
 
 ## Provider B
 
@@ -154,7 +154,7 @@ Rollback the code by reverting the frontend and backend commits. The migration d
 
 Confirm with AirtimeToCash Automation before activation:
 
-- Which quota response definitively means recipient capacity is available, given the contradictory 5030 examples?
+- Will the provider offer distinct machine-readable quota codes? The adapter currently recognizes only the exact documented positive 5030 quota message.
 - Does HTTP 500 after `/transfer/airtime` mean accepted/pending, and what official reference-based status or support process proves the outcome?
 - Are OTP/session TTL, OTP attempt limits, and restart rules fixed by the provider?
 - Is `amountConverted` guaranteed on every successful transfer, and are charge/cost fields and units stable?
