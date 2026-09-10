@@ -34,6 +34,24 @@ class AirtimeToCashRequest extends Model
     protected static function booted(): void
     {
         static::saving(function (self $request) {
+            if ($request->processing_mode === 'provider') {
+                if ($request->exists && ($request->getRawOriginal('status') === 'failed'
+                    || $request->getRawOriginal('provider_status') === 'failed')
+                    && $request->provider_status !== 'failed') {
+                    throw new \DomainException('A failed conversion cannot be reopened.');
+                }
+                if ($request->provider_status === 'failed') {
+                    if ($request->status === 'approved' || $request->provider_confirmed_at
+                        || $request->payout_transaction_reference || ($request->exists && $request->payoutTransaction()->exists())) {
+                        throw new \DomainException('A confirmed or paid conversion cannot be marked failed.');
+                    }
+                    $request->status = 'failed';
+                    $request->active_session_key = null;
+                    $request->provider_identifier = null;
+                } elseif ($request->status === 'failed') {
+                    throw new \DomainException('A failed conversion requires a terminal provider failure.');
+                }
+            }
             foreach (['pin', 'otp', 'transfer_pin', 'token'] as $secret) {
                 if (array_key_exists($secret, $request->getAttributes())) {
                     throw new \DomainException('Sensitive conversion data cannot be persisted.');

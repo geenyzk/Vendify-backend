@@ -77,7 +77,7 @@ final class AirtimeToCashProviderService
             if ($provider instanceof ChecksQuota) {
                 $quota = $provider->checkQuota($name, $amount);
                 if ($quota->state !== 'success') {
-                    return $this->finishPreTransfer($request->id, 'created', new ProviderResult('failed'));
+                    return $this->finishPreTransfer($request->id, 'created', $quota);
                 }
             }
             $result = $provider->requestOtp($name, $phone);
@@ -147,10 +147,10 @@ final class AirtimeToCashProviderService
                 }
             } elseif ($from === 'verifying_otp') {
                 ProviderState::move($request, match ($result->state) {
-                    'failed', 'rate_limited' => 'awaiting_otp', 'session_expired' => 'expired', default => 'manual_review',
+                    'failed', 'rate_limited' => 'awaiting_otp', 'auth_error' => 'failed', 'session_expired' => 'expired', default => 'manual_review',
                 });
             } else {
-                ProviderState::move($request, in_array($result->state, ['failed', 'auth_error', 'unavailable', 'rate_limited'], true) ? 'failed' : 'manual_review');
+                ProviderState::move($request, in_array($result->state, ['failed', 'auth_error'], true) ? 'failed' : 'manual_review');
             }
             $request->provider_message = $result->state;
             $request->save();
@@ -214,9 +214,11 @@ final class AirtimeToCashProviderService
             if ($state === 'success' && $result->convertedAmount !== null && $result->convertedAmount !== (float) $request->amount) {
                 $state = 'unknown';
             }
-            $retryableRejection = $state === 'failed' && in_array($result->reason, ['invalid_pin', 'low_balance'], true);
+            $retryableRejection = $request->provider_status === 'processing'
+                && $state === 'failed' && in_array($result->reason, ['invalid_pin', 'low_balance'], true);
             $next = match (true) {
                 $retryableRejection => 'ready_to_transfer',
+                $state === 'auth_error' && $request->provider_status === 'processing' => 'failed',
                 $state === 'unavailable' && $result->reason === 'recipient_unavailable' => 'failed',
                 default => match ($state) {
                     'success' => 'provider_confirmed', 'failed' => 'failed', 'session_expired' => 'session_expired', default => 'provider_pending'
