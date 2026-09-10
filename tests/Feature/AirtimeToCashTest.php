@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AirtimeToCashProviderSetting;
 use App\Models\AirtimeToCashRequest;
 use App\Models\Discount;
 use App\Models\Network;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Services\AirtimeToCashSettlementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -298,6 +300,72 @@ class AirtimeToCashTest extends TestCase
         $this->putJson('/api/admin/airtime-to-cash/configuration/'.$network->id, $this->config($changes))->assertUnprocessable();
         $this->assertFalse($network->fresh()->airtime_to_cash_active);
         $this->assertDatabaseCount('discounts', 0);
+    }
+
+    public function test_admin_controls_manual_and_automated_enablement_independently(): void
+    {
+        $network = $this->mtn(false);
+        $this->actingAs($this->admin());
+        $url = '/api/admin/airtime-to-cash/configuration/'.$network->id;
+        $this->getJson('/api/admin/airtime-to-cash/configuration')->assertOk()
+            ->assertJsonPath('data.0.automated_enabled', false)->assertJsonStructure(['data' => [['automated_availability' => ['available', 'reason']]]]);
+
+        // Automated only: no manual destination is required.
+        $this->putJson($url, $this->config(['enabled' => false, 'destination_number' => null, 'automated_enabled' => true]))
+            ->assertOk()->assertJsonPath('data.enabled', false)->assertJsonPath('data.automated_enabled', true);
+        $this->assertSame([false, true, null], [$network->fresh()->airtime_to_cash_active,
+            $network->fresh()->airtime_to_cash_automated_active, $network->fresh()->airtime_to_cash_destination_number]);
+
+        // A client that predates the field keeps the stored automated setting.
+        $this->putJson($url, $this->config())->assertOk()->assertJsonPath('data.enabled', true)->assertJsonPath('data.automated_enabled', true);
+
+        // Manual only.
+        $this->putJson($url, $this->config(['automated_enabled' => false]))
+            ->assertOk()->assertJsonPath('data.enabled', true)->assertJsonPath('data.automated_enabled', false);
+        $this->assertSame([true, false], [$network->fresh()->airtime_to_cash_active, $network->fresh()->airtime_to_cash_automated_active]);
+
+        // Automation still needs an active Vendify rate.
+        $this->putJson($url, $this->config(['enabled' => false, 'automated_enabled' => true, 'rate_active' => false]))
+            ->assertUnprocessable()->assertJsonValidationErrors(['rate_active' => 'automated']);
+        $this->putJson($url, $this->config(['enabled' => false, 'automated_enabled' => true, 'rate_type' => null, 'rate_value' => null]))
+            ->assertUnprocessable()->assertJsonValidationErrors('rate_type');
+        $this->assertFalse($network->fresh()->airtime_to_cash_automated_active);
+    }
+
+    public function test_network_configuration_never_touches_provider_credentials_or_generic_writers(): void
+    {
+        $setting = AirtimeToCashProviderSetting::create(['provider' => 'airtime_to_cash_automation', 'enabled' => true,
+            'priority' => 2, 'token' => 'stored-secret-token']);
+        $before = (array) DB::table('airtime_to_cash_provider_settings')->where('id', $setting->id)->first();
+        $network = $this->mtn(false);
+        $this->actingAs($this->admin());
+        $this->putJson('/api/admin/airtime-to-cash/configuration/'.$network->id, $this->config(['automated_enabled' => true]))->assertOk();
+        $this->putJson('/api/admin/airtime-to-cash/configuration/'.$network->id, $this->config(['enabled' => false, 'automated_enabled' => false]))->assertOk();
+        $this->assertSame($before, (array) DB::table('airtime_to_cash_provider_settings')->where('id', $setting->id)->first());
+        $this->assertSame('stored-secret-token', $setting->fresh()->token);
+
+        $settings = Permission::firstOrCreate(['slug' => 'settings'], ['name' => 'Settings']);
+        auth()->user()->role->permissions()->attach($settings);
+        $this->putJson('/api/table/networks/'.$network->id, ['airtime_to_cash_automated_active' => true])->assertUnprocessable();
+        $this->assertFalse($network->fresh()->airtime_to_cash_automated_active);
+    }
+
+    public function test_migration_copies_the_manual_toggle_once_and_new_networks_default_to_off(): void
+    {
+        $migration = require database_path('migrations/2026_09_11_100000_add_automated_airtime_to_cash_toggle_to_networks.php');
+        $migration->down();
+        $row = fn (string $name, bool $manual) => DB::table('networks')->insertGetId(['name' => $name, 'active' => true,
+            'airtime_to_cash_active' => $manual, 'created_at' => now(), 'updated_at' => now()]);
+        [$mtn, $airtel] = [$row('MTN', true), $row('AIRTEL', false)];
+        $migration->up();
+        $this->assertTrue(Network::find($mtn)->airtime_to_cash_automated_active);
+        $this->assertFalse(Network::find($airtel)->airtime_to_cash_automated_active);
+        $this->assertFalse(Network::create(['name' => 'GLO', 'active' => true, 'airtime_to_cash_active' => true])->fresh()->airtime_to_cash_automated_active);
+
+        // A second run never re-copies over an admin's later choice.
+        Network::find($mtn)->update(['airtime_to_cash_automated_active' => false]);
+        $migration->up();
+        $this->assertFalse(Network::find($mtn)->airtime_to_cash_automated_active);
     }
 
     public function test_configuration_requires_admin_permission(): void

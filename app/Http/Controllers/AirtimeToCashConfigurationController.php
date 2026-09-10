@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Discount;
 use App\Models\Network;
+use App\Services\AirtimeToCash\AirtimeToCashProviderService;
 use App\Services\AirtimeToCashAvailabilityService;
 use App\Support\PerformanceCache;
 use Illuminate\Http\Request;
@@ -24,6 +25,9 @@ class AirtimeToCashConfigurationController extends Controller
         $rates = $policy->rates($network);
         $rate = $policy->rate($network) ?? $rates->first(fn ($rate) => $rate->network !== null) ?? $rates->first();
 
+        $automated = app(AirtimeToCashProviderService::class)->inspect($network);
+
+        // enabled/destination/limits/availability describe the manual method only.
         return [
             'id' => $network->id, 'name' => $network->name,
             'enabled' => $network->airtime_to_cash_active,
@@ -32,6 +36,8 @@ class AirtimeToCashConfigurationController extends Controller
             'max_amount' => (float) $network->airtime_to_cash_max,
             'rate' => $rate ? $rate->only(['id', 'network', 'discount_type', 'value', 'active', 'starts_at', 'ends_at']) : null,
             'availability' => $policy->inspect($network),
+            'automated_enabled' => (bool) $network->airtime_to_cash_automated_active,
+            'automated_availability' => ['available' => $automated['available'], 'reason' => $automated['reason']],
         ];
     }
 
@@ -39,22 +45,26 @@ class AirtimeToCashConfigurationController extends Controller
     {
         $input = $request->validate([
             'enabled' => 'required|boolean',
+            // Optional so older admin clients keep the stored automated setting.
+            'automated_enabled' => 'sometimes|boolean',
             'destination_number' => ['nullable', 'required_if:enabled,true', 'regex:/^0[789][0-9]{9}$/'],
             'min_amount' => 'required|numeric|gt:0',
             'max_amount' => 'required|numeric|gte:min_amount|max:99999999.99',
-            'rate_type' => 'nullable|required_if:enabled,true|in:percentage,fixed',
+            'rate_type' => ['nullable', 'required_if:enabled,true', 'required_if:automated_enabled,true', 'in:percentage,fixed'],
             'rate_value' => 'nullable|required_with:rate_type|numeric|min:0',
             'rate_active' => 'required|boolean',
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
         ]);
-        if ($input['enabled'] && ! $input['rate_active']) {
-            throw ValidationException::withMessages(['rate_active' => 'Cannot enable conversion without an active rate.']);
+        $automated = $input['automated_enabled'] ?? (bool) $network->airtime_to_cash_automated_active;
+        if (($input['enabled'] || $automated) && ! $input['rate_active']) {
+            throw ValidationException::withMessages(['rate_active' => $input['enabled']
+                ? 'Cannot enable conversion without an active rate.' : 'Cannot enable automated conversion without an active rate.']);
         }
-        $network = DB::transaction(function () use ($network, $input) {
+        $network = DB::transaction(function () use ($network, $input, $automated) {
             $network = Network::lockForUpdate()->findOrFail($network->id);
             $policy = app(AirtimeToCashAvailabilityService::class);
-            if ($input['enabled'] && Network::all()->filter(fn ($other) => $other->id !== $network->id && $policy::canonicalName($other->name) === $policy::canonicalName($network->name))->isNotEmpty()) {
+            if (($input['enabled'] || $automated) && Network::all()->filter(fn ($other) => $other->id !== $network->id && $policy::canonicalName($other->name) === $policy::canonicalName($network->name))->isNotEmpty()) {
                 throw ValidationException::withMessages(['enabled' => 'Duplicate network names must be resolved before enabling conversion.']);
             }
             if (! empty($input['rate_type'])) {
@@ -82,6 +92,7 @@ class AirtimeToCashConfigurationController extends Controller
                 'airtime_to_cash_active' => $input['enabled'],
                 'airtime_to_cash_destination_number' => $input['destination_number'] ?? null,
                 'airtime_to_cash_min' => $input['min_amount'], 'airtime_to_cash_max' => $input['max_amount'],
+                'airtime_to_cash_automated_active' => $automated,
             ]);
             $availability = $policy->inspect($network);
             if ($input['enabled'] && ! $availability['available']) {

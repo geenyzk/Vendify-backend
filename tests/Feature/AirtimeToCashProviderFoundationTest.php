@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AirtimeToCashProviderFoundationTest extends TestCase
@@ -64,6 +65,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             'name' => $name,
             'active' => true,
             'airtime_to_cash_active' => true,
+            'airtime_to_cash_automated_active' => true,
             'airtime_to_cash_destination_number' => '08030000000',
             'airtime_to_cash_min' => 50,
             'airtime_to_cash_max' => 50000,
@@ -277,7 +279,8 @@ class AirtimeToCashProviderFoundationTest extends TestCase
     {
         // The reported admin state: manual method disabled, no destination, manual limits narrower than the provider's.
         $network = Network::create(['name' => $name, 'active' => true, 'airtime_to_cash_active' => false,
-            'airtime_to_cash_destination_number' => null, 'airtime_to_cash_min' => 100, 'airtime_to_cash_max' => 500]);
+            'airtime_to_cash_automated_active' => true, 'airtime_to_cash_destination_number' => null,
+            'airtime_to_cash_min' => 100, 'airtime_to_cash_max' => 500]);
         Discount::create(['name' => "$name Airtime to Cash", 'service_type' => 'airtimeToCash',
             'network' => AirtimeToCashAvailabilityService::canonicalName($name), 'discount_type' => 'percentage', 'value' => 5, 'active' => true]);
 
@@ -344,6 +347,53 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         config(['airtime_to_cash.live_calls_enabled' => false]);
         $this->assertSame(['AIRTEL' => false, 'GLO' => false, 'SMILE' => false], $automated());
         Http::assertNothingSent();
+    }
+
+    public static function enablementCombinations(): array
+    {
+        return ['both enabled' => [true, true], 'manual only' => [true, false],
+            'automated only' => [false, true], 'both disabled' => [false, false]];
+    }
+
+    #[DataProvider('enablementCombinations')]
+    public function test_manual_and_automated_enablement_are_independent_per_network(bool $manual, bool $automated): void
+    {
+        Http::fake();
+        $this->enable();
+        $network = $this->network('AIRTEL');
+        $network->update(['airtime_to_cash_active' => $manual, 'airtime_to_cash_automated_active' => $automated]);
+        $this->actingAs($this->user());
+        $entry = collect($this->getJson('/api/customer/airtime-to-cash/networks')->assertOk()->json('data'))->firstWhere('id', $network->id);
+        $this->assertSame([$manual, $automated], [$entry['available'], $entry['automated_available']]);
+        $this->assertSame($automated ? null : 'Automated conversion is disabled for this network.', $entry['automated_reason']);
+        $this->assertSame($manual ? null : 'Airtime to cash is disabled for this network.', $entry['reason']);
+        $this->getJson("/api/customer/airtime-to-cash/provider/options?network_id={$network->id}")->assertOk()
+            ->assertJsonPath('data.manual_available', $manual)->assertJsonPath('data.automated_available', $automated);
+        $this->getJson("https://localhost/api/customer/airtime-to-cash/provider/quote?network_id={$network->id}&amount=500")->assertStatus($automated ? 200 : 422);
+        $this->getJson("/api/vtu/airtimeToCash/discount?network_id={$network->id}&amount=500")->assertStatus($manual ? 200 : 422);
+        $this->postJson('/api/customer/airtime-to-cash', ['network_id' => $network->id, 'amount' => 500, 'sender_phone' => '08012345678'])
+            ->assertStatus($manual ? 201 : 422);
+        Http::assertNothingSent();
+    }
+
+    public function test_provider_priority_still_selects_among_providers_for_an_automated_network(): void
+    {
+        $network = $this->network('AIRTEL'); // Both adapters document Airtel.
+        AirtimeToCashProviderSetting::create(['provider' => '2fast', 'enabled' => true, 'priority' => 1]);
+        AirtimeToCashProviderSetting::create(['provider' => 'airtime_to_cash_automation', 'enabled' => true, 'priority' => 2]);
+        $manager = app(AirtimeToCashProviderManager::class);
+        $flow = app(AirtimeToCashProviderService::class);
+        $this->assertSame('2fast', $manager->select('airtel', 500)->key());
+        $this->assertTrue($flow->quote($network->id, 500)['available']);
+        AirtimeToCashProviderSetting::where('provider', '2fast')->update(['priority' => 3]);
+        $this->assertSame('airtime_to_cash_automation', $manager->select('airtel', 500)->key());
+        $network->update(['airtime_to_cash_automated_active' => false]);
+        try {
+            $flow->quote($network->id, 500);
+            $this->fail('A network with automation switched off was quoted.');
+        } catch (\DomainException $e) {
+            $this->assertSame('Automated conversion is disabled for this network.', $e->getMessage());
+        }
     }
 
     public function test_manual_availability_still_requires_its_own_destination_when_automation_is_available(): void

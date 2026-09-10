@@ -43,8 +43,9 @@ class AirtimeToCashAvailabilityService
 
     /**
      * Manual mode needs the network's manual toggle, destination and limits.
-     * Provider mode needs only $automatedLimits (from the provider manager, null
-     * when automation cannot serve the network). Both share the Vendify payout rate.
+     * Provider mode needs the network's automated toggle and $automatedLimits (from
+     * the provider manager, null when automation cannot serve the network). Each
+     * mode ignores the other's settings; both share the Vendify payout rate.
      */
     public function inspect(?Network $network, ?float $amount = null, string $mode = 'manual', ?array $automatedLimits = null): array
     {
@@ -55,6 +56,8 @@ class AirtimeToCashAvailabilityService
             : [(float) $network?->airtime_to_cash_min, (float) $network?->airtime_to_cash_max];
         if (! $network) {
             $reason = 'Network not found or legacy network name is ambiguous. Select a network by ID.';
+        } elseif ($automated && ! $network->airtime_to_cash_automated_active) {
+            $reason = 'Automated conversion is disabled for this network.';
         } elseif ($automated && $automatedLimits === null) {
             $reason = 'Automated conversion is unavailable for this network.';
         } elseif (! $automated && ! $network->airtime_to_cash_active) {

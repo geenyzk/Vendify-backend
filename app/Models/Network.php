@@ -12,6 +12,7 @@ class Network extends Model
     protected $fillable = [
         'name', 'active', 'airtime_api_id', 'data_api_id', 'airtime_recharge_api_id', 'data_recharge_api_id',
         'airtime_to_cash_destination_number', 'airtime_to_cash_min', 'airtime_to_cash_max', 'airtime_to_cash_active',
+        'airtime_to_cash_automated_active',
     ];
 
     protected $casts = [
@@ -19,6 +20,7 @@ class Network extends Model
         'airtime_to_cash_min' => 'decimal:2',
         'airtime_to_cash_max' => 'decimal:2',
         'airtime_to_cash_active' => 'boolean',
+        'airtime_to_cash_automated_active' => 'boolean',
     ];
 
     // Expose the admin table's "status" ("active"/"inactive") off the boolean
