@@ -559,6 +559,8 @@ class VTUServicesController extends Controller
      */
     public function discountPreview(Request $request, string $service): JsonResponse
     {
+        if ($service === 'airtimeToCash') return app(AirtimeToCashController::class)->quote($request);
+
         $amount = (float) $request->query('amount', 0);
         $network = $request->query('network');
 
@@ -570,9 +572,6 @@ class VTUServicesController extends Controller
         }
 
         $discount = Discount::findApplicable($service, $network);
-        if ($service === 'airtimeToCash' && ! $discount) {
-            return $this->fail([], 'Airtime to cash is not available for this network yet.', 422);
-        }
 
         $discountedAmount = $discount
             ? Discount::getDiscountedAmount($amount, $service, $network)

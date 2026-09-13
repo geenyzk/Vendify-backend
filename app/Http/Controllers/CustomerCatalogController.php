@@ -51,6 +51,13 @@ class CustomerCatalogController extends Controller
             Cache::put($key, $networks, now()->addMinutes(10));
         }
 
+        // Time-windowed rates must be evaluated now, not cached for ten minutes.
+        $policy = app(\App\Services\AirtimeToCashAvailabilityService::class);
+        $current = Network::all()->keyBy('id');
+        $networks = array_map(function ($entry) use ($policy, $current) {
+            $availability = $policy->inspect($current->get($entry['id']));
+            return [...$entry, 'airtime_to_cash_available' => $availability['available'], 'airtime_to_cash_reason' => $availability['reason']];
+        }, $networks);
         $response = $this->success($networks);
         $response->headers->set('X-Cache', $cacheHit ? 'HIT' : 'MISS');
         // Application caching above is versioned and cheap; do not let the

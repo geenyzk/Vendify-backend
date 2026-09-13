@@ -1,0 +1,58 @@
+<?php
+
+namespace App\Services\AirtimeToCash;
+
+use Illuminate\Support\Facades\Log;
+
+/** Request-scoped correlation. Never retain payloads, credentials or provider prose. */
+final class ProviderCallTrace
+{
+    private ?string $reference = null;
+
+    public function within(string $reference, callable $operation): mixed
+    {
+        $previous = $this->reference;
+        $this->reference = $reference;
+        try {
+            return $operation();
+        } finally {
+            $this->reference = $previous;
+        }
+    }
+
+    /** @param array $request ProviderTransport's secret-free description of the sent request. */
+    public function record(string $operation, ?int $http, mixed $code, ProviderResult $result, bool $attempted, string $provider = 'airtime_to_cash_automation', array $request = []): void
+    {
+        try {
+            Log::info('airtime_to_cash.provider_call', [
+                'provider' => $provider,
+                'operation' => $operation,
+                'internal_reference' => $this->reference,
+                'http_status' => $http,
+                'provider_code' => is_scalar($code) && in_array((string) $code, ['2000', '3000', '4000', '4030', '4010', '4290', '5030'], true) ? (string) $code : null,
+                // Allowlisted semantic message, never arbitrary provider text (which can echo secrets).
+                'sanitized_message' => $result->reason ?? $result->state,
+                // Quota 5030 classification, e.g. recipients_available or unrecognised_5030;
+                // message_terms holds only words from the adapter's fixed vocabulary.
+                'semantic_outcome' => $result->semantic,
+                'message_field' => $result->messageField,
+                'message_terms' => $result->messageTerms,
+                // Names only: which auth headers went out and with which scheme, never values.
+                'request_host' => $request['request_host'] ?? null,
+                'request_path' => $request['request_path'] ?? null,
+                'request_header_names' => $request['request_header_names'] ?? null,
+                'auth_header_names' => $request['auth_header_names'] ?? null,
+                'auth_scheme' => $request['auth_scheme'] ?? null,
+                'auth_credential_present' => $request['auth_credential_present'] ?? null,
+                'credential_source' => $request['credential_source'] ?? null,
+                'succeeded' => $result->state === 'success',
+                'dispatch_attempted' => $attempted,
+                'transfer_submitted' => $operation === 'convert' && $attempted,
+                'delivery_confirmed' => $operation === 'convert' && $result->state === 'success',
+                'provider_transaction_id' => null, // No such field in the documented Automation response.
+            ]);
+        } catch (\Throwable) {
+            // Logging failure must never change a financial outcome or cause a retry.
+        }
+    }
+}

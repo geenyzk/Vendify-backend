@@ -296,17 +296,18 @@ class AdminController extends Controller
     // other users' PII (phone numbers, proof uploads, submitted amounts,
     // bank account details) needs its own permission-gated controller
     // instead — see AirtimeToCashController / WalletWithdrawalController.
-    private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'wallet_withdrawals', 'broadcasts'];
+    private const RESTRICTED_TABLES = ['airtime_to_cash_requests', 'airtime_to_cash_provider_settings', 'wallet_withdrawals', 'broadcasts'];
 
     // Security-sensitive records must go through their dedicated controllers,
     // where row-level authorization, audit logging, and invariants are enforced.
     // The generic writer uses forceFill/DB fallback and must never be an
     // alternate path around role, balance, transaction, session, or audit rules.
     private const RESTRICTED_WRITE_TABLES = [
+        'airtime_to_cash_requests', 'airtime_to_cash_provider_settings',
         'users', 'roles', 'permissions', 'permission_role', 'transactions',
         'audit_logs', 'auth_sessions', 'auth_refresh_tokens',
         'support_tickets', 'support_ticket_messages', 'support_ticket_notes',
-        'whatsapp_support_agents', 'whatsapp_support_assignments',
+        'whats_app_support_agents', 'whats_app_support_assignments',
     ];
 
     // The ONLY tables a non-admin (a logged-in customer) may read through the
@@ -650,6 +651,10 @@ class AdminController extends Controller
                     continue;
                 }
 
+                if ($realTable === 'networks' && collect(array_keys($item))->contains(fn ($key) => str_starts_with($key, 'airtime_to_cash_'))) {
+                    throw ValidationException::withMessages(['network' => 'Manage conversion settings under Airtime to Cash → Configuration.']);
+                }
+
                 $isUpdate = isset($item['id']) && $item['id'] != 0;
                 if ($modelClass === DataPlan::class && ! $isUpdate) {
                     $categoryId = $item['manual_category_id'] ?? null;
@@ -864,6 +869,7 @@ class AdminController extends Controller
         }
 
         $column = $request->input('column', 'sort_order');
+        if ($realTable === 'networks' && str_starts_with($column, 'airtime_to_cash_')) return $this->fail([], 'Use Airtime to Cash Configuration.', 422);
         $tableColumns = Schema::getColumnListing($realTable);
         if (! in_array($column, $tableColumns)) {
             return $this->fail([], "Column {$column} not found on table {$table}", 400);

@@ -48,6 +48,7 @@ class AppServiceProvider extends ServiceProvider
         // each request/job so a restarted process reads the active config.
         $this->app->singleton(VendifyDataPlanBrowser::class);
         $this->app->scoped(ToolRegistry::class, fn () => new ToolRegistry());
+        $this->app->scoped(\App\Services\AirtimeToCash\ProviderCallTrace::class);
 
     }
 
