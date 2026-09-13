@@ -1,11 +1,15 @@
 <?php
 
 use App\Http\Middleware\EnforceSecureSession;
+use App\Http\Middleware\RejectImpersonatedSession;
 use App\Http\Middleware\RequireRecentAuthentication;
+use App\Models\AuthSession;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Auth\SessionSecurityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
@@ -153,4 +157,51 @@ it('keeps capability and impersonation restrictions on the routes themselves', f
         ->and($impersonate->gatherMiddleware())->toContain('permission:switch_account')
         ->and($walletTransfer->gatherMiddleware())->toContain('not.impersonating')
         ->and($accountPassword->gatherMiddleware())->toContain('not.impersonating');
+});
+
+it('keeps owner account views unrestricted while retaining the guard for co-owner', function () {
+    $owner = matrixUser('unrestricted-owner', matrixRole('owner', true));
+    $coOwner = matrixUser('restricted-co-owner', matrixRole('co-owner', true));
+    $impersonationSession = new AuthSession(['channel' => 'impersonation']);
+    $middleware = app(RejectImpersonatedSession::class);
+    $security = app(SessionSecurityService::class);
+
+    $requestFor = function (User $impersonator) use ($impersonationSession): Request {
+        $request = Request::create('/sensitive-action', 'POST');
+        $store = app('session')->driver();
+        $store->start();
+        $store->put('impersonator_user_id', $impersonator->id);
+        $request->setLaravelSession($store);
+        $request->attributes->set('auth_session', $impersonationSession);
+
+        return $request;
+    };
+
+    $ownerRequest = $requestFor($owner);
+    $ownerResponse = $middleware->handle(
+        $ownerRequest,
+        fn () => response()->json(['allowed' => true]),
+    );
+    $ownerRestricted = $security->payload(
+        $impersonationSession,
+        null,
+        $ownerRequest,
+    )['impersonation_restricted'];
+
+    $coOwnerRequest = $requestFor($coOwner);
+    $coOwnerResponse = $middleware->handle(
+        $coOwnerRequest,
+        fn () => response()->json(['allowed' => true]),
+    );
+    $coOwnerRestricted = $security->payload(
+        $impersonationSession,
+        null,
+        $coOwnerRequest,
+    )['impersonation_restricted'];
+
+    expect($ownerResponse->getStatusCode())->toBe(200)
+        ->and($coOwnerResponse->getStatusCode())->toBe(403)
+        ->and($coOwnerResponse->getData(true)['code'])->toBe('IMPERSONATION_RESTRICTED')
+        ->and($ownerRestricted)->toBeFalse()
+        ->and($coOwnerRestricted)->toBeTrue();
 });

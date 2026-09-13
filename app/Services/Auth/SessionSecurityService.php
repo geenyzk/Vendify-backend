@@ -300,7 +300,11 @@ class SessionSecurityService
     }
 
     /** @return array<string,mixed> */
-    public function payload(AuthSession $session, ?string $currentSessionId = null): array
+    public function payload(
+        AuthSession $session,
+        ?string $currentSessionId = null,
+        ?Request $request = null,
+    ): array
     {
         return [
             'id' => $session->id,
@@ -313,7 +317,31 @@ class SessionSecurityService
             'last_active_at' => $session->last_active_at?->toIso8601String(),
             'expires_at' => (in_array($session->channel, ['web', 'impersonation'], true) ? $session->idle_expires_at : $session->absolute_expires_at)?->toIso8601String(),
             'current' => $session->id === $currentSessionId,
+            'impersonation_restricted' => $request
+                ? $this->impersonationRestrictionsApply($request, $session)
+                : $session->channel === 'impersonation',
         ];
+    }
+
+    /**
+     * Owner account views intentionally retain every customer capability.
+     * Other impersonators remain subject to the sensitive-action guard.
+     */
+    public function impersonationRestrictionsApply(Request $request, ?AuthSession $session = null): bool
+    {
+        $session ??= $this->currentSession($request);
+        if ($session?->channel !== 'impersonation') {
+            return false;
+        }
+
+        $impersonatorId = $request->hasSession()
+            ? $request->session()->get('impersonator_user_id')
+            : null;
+        $impersonator = $impersonatorId
+            ? User::with('role')->find($impersonatorId)
+            : null;
+
+        return strtolower((string) $impersonator?->role?->slug) !== 'owner';
     }
 
     private function touch(AuthSession $session, Request $request): void

@@ -34,14 +34,14 @@ class SessionSecurityController extends Controller
     public function status(Request $request)
     {
         $session = $this->sessions->ensureActive($request);
-        return $this->success(['session' => $this->sessions->payload($session, $session->id)]);
+        return $this->success(['session' => $this->sessions->payload($session, $session->id, $request)]);
     }
 
     public function extend(Request $request)
     {
         $session = $this->sessions->ensureActive($request);
         $session = $this->sessions->extend($session, $request);
-        return $this->success(['session' => $this->sessions->payload($session, $session->id)], 'Session extended');
+        return $this->success(['session' => $this->sessions->payload($session, $session->id, $request)], 'Session extended');
     }
 
     public function index(Request $request)
@@ -57,7 +57,11 @@ class SessionSecurityController extends Controller
             })
             ->latest('last_active_at')
             ->get()
-            ->map(fn (AuthSession $session) => $this->sessions->payload($session, $current?->id));
+            ->map(fn (AuthSession $session) => $this->sessions->payload(
+                $session,
+                $current?->id,
+                $session->id === $current?->id ? $request : null,
+            ));
 
         return $this->success(['sessions' => $items]);
     }
@@ -161,6 +165,6 @@ class SessionSecurityController extends Controller
         $this->sessions->markRecentlyAuthenticated($session, $request);
         AuditLogger::record('unlock_succeeded', subject: $user, actor: $user, description: 'The app was unlocked.');
 
-        return $this->success(['session' => $this->sessions->payload($session, $session->id)], 'App unlocked');
+        return $this->success(['session' => $this->sessions->payload($session, $session->id, $request)], 'App unlocked');
     }
 }

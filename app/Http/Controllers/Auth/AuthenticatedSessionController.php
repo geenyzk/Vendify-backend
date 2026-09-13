@@ -236,7 +236,7 @@ class AuthenticatedSessionController extends Controller
                 $request->user(),
                 $request->boolean('include_dashboard')
             ),
-            'session' => $session ? $security->payload($session, $session->id) : null,
+            'session' => $session ? $security->payload($session, $session->id, $request) : null,
         ]);
     }
 

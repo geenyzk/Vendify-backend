@@ -315,7 +315,7 @@ class UserController extends Controller
 
         return $this->success([
             "user" => $target,
-            "session" => $security->payload($session, $session->id),
+            "session" => $security->payload($session, $session->id, $request),
         ], "Impersonation session started.");
     }
 

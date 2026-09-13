@@ -14,7 +14,7 @@ class RejectImpersonatedSession
     public function handle(Request $request, Closure $next): Response
     {
         $session = $this->sessions->currentSession($request);
-        if ($session?->channel === 'impersonation') {
+        if ($this->sessions->impersonationRestrictionsApply($request, $session)) {
             return response()->json([
                 'message' => 'This sensitive action is unavailable while viewing a customer account.',
                 'success' => false,
