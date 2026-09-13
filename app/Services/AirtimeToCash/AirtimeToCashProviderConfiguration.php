@@ -36,6 +36,8 @@ final class AirtimeToCashProviderConfiguration
             ...$definition,
             'base_url' => $setting?->base_url ?: $definition['base_url'],
             'token' => $storedToken ?: $definition['token'],
+            // Safe to log: which source supplied the credential, never the credential.
+            'token_source' => $storedToken ? 'database' : ($definition['token'] ? 'environment' : 'none'),
             'enabled' => $setting?->enabled ?? (bool) $definition['enabled'],
             'priority' => $setting?->priority ?? (int) $definition['priority'],
         ];

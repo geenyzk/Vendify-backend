@@ -5,8 +5,9 @@ Compared against the API documentation pasted by the user (official base URL: ht
 | Contract | Vendify implementation |
 | --- | --- |
 | JSON POST requests under `/api/v1` | Matches all five documented endpoints; exact request shapes tested |
-| OTP generation/verification without Bearer token | Matches; only JSON headers sent |
+| OTP generation/verification without Bearer token | **Deviates in production.** Generate OTP without a token returned HTTP 401 (ATC-c6f3c3a5, 2026-09-13) while the same token passed quota. All five endpoints now send the Bearer token |
 | Quota, session login and transfer require Bearer token | Matches; token stays server-side |
+| Quota success uses 5030 | Production also answers quota success with code 2000, which normalizes as success |
 | MTN 50–10,000; Airtel 50–20,000; Glo 50–1,000; 9MOBILE 50–20,000 | Matches; boundaries and fractional-amount rejection tested; configured Vendify limits can be stricter |
 | Reference length 10–40 | Generated `ATC-` plus UUID is exactly 40 characters and remains immutable |
 | Session ID from verification | Parsed and encrypted; used on transfer; login-with-session method also implemented |

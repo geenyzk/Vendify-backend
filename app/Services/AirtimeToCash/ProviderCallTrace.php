@@ -20,7 +20,8 @@ final class ProviderCallTrace
         }
     }
 
-    public function record(string $operation, ?int $http, mixed $code, ProviderResult $result, bool $attempted, string $provider = 'airtime_to_cash_automation'): void
+    /** @param array $request ProviderTransport's secret-free description of the sent request. */
+    public function record(string $operation, ?int $http, mixed $code, ProviderResult $result, bool $attempted, string $provider = 'airtime_to_cash_automation', array $request = []): void
     {
         try {
             Log::info('airtime_to_cash.provider_call', [
@@ -36,6 +37,14 @@ final class ProviderCallTrace
                 'semantic_outcome' => $result->semantic,
                 'message_field' => $result->messageField,
                 'message_terms' => $result->messageTerms,
+                // Names only: which auth headers went out and with which scheme, never values.
+                'request_host' => $request['request_host'] ?? null,
+                'request_path' => $request['request_path'] ?? null,
+                'request_header_names' => $request['request_header_names'] ?? null,
+                'auth_header_names' => $request['auth_header_names'] ?? null,
+                'auth_scheme' => $request['auth_scheme'] ?? null,
+                'auth_credential_present' => $request['auth_credential_present'] ?? null,
+                'credential_source' => $request['credential_source'] ?? null,
                 'succeeded' => $result->state === 'success',
                 'dispatch_attempted' => $attempted,
                 'transfer_submitted' => $operation === 'convert' && $attempted,

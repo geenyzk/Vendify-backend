@@ -45,7 +45,7 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
     public function healthCheck(): ProviderHealthResult
     {
         try {
-            [$http, $body] = $this->transport->post(
+            [$http, $body, $request] = $this->transport->post(
                 $this->key(),
                 '/api/v1/check/quota/availability',
                 ['networkName' => 'MTN', 'amount' => 50],
@@ -56,7 +56,7 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
             $this->trace->record('health', null, null, new ProviderResult('not_sent', reason: 'transport_preflight_rejected'), false);
             throw $e;
         }
-        $this->trace->record('health', $http ?: null, $body['code'] ?? null, $this->normalize('quota', $http, $body), true);
+        $this->trace->record('health', $http ?: null, $body['code'] ?? null, $this->normalize('quota', $http, $body), true, request: $request);
         $code = (string) ($body['code'] ?? '');
         if (in_array($http, [401, 403], true) || $code === '4030') {
             return new ProviderHealthResult(false, 'Authentication rejected by provider. Check the configured token.');
@@ -76,10 +76,15 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         return $this->networks()[$network]['code'] ?? throw new \DomainException('Unsupported conversion network.');
     }
 
-    private function call(string $operation, string $path, #[\SensitiveParameter] array $payload, bool $protected = true): ProviderResult
+    /**
+     * Every Automation endpoint is sent with the Bearer token. The pasted docs
+     * list Generate/Verify OTP as unauthenticated, but production answers an
+     * unauthenticated Generate OTP with HTTP 401 while the same token passes quota.
+     */
+    private function call(string $operation, string $path, #[\SensitiveParameter] array $payload): ProviderResult
     {
         try {
-            [$status, $body] = $this->transport->post($this->key(), '/api/v1/'.$path, $payload, $protected);
+            [$status, $body, $request] = $this->transport->post($this->key(), '/api/v1/'.$path, $payload);
         } catch (ProviderRequestNotSent) {
             $result = new ProviderResult('not_sent', reason: 'transport_preflight_rejected');
             $this->trace->record($operation, null, null, $result, false);
@@ -87,7 +92,7 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
             return $result;
         }
         $result = $this->normalize($operation, $status, $body);
-        $this->trace->record($operation, $status ?: null, $body['code'] ?? null, $result, true);
+        $this->trace->record($operation, $status ?: null, $body['code'] ?? null, $result, true, request: $request);
 
         return $result;
     }
@@ -173,12 +178,12 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
 
     public function requestOtp(string $network, string $phone): ProviderResult
     {
-        return $this->call('otp', 'generate/otp', ['networkName' => $this->code($network), 'sender' => $phone], false);
+        return $this->call('otp', 'generate/otp', ['networkName' => $this->code($network), 'sender' => $phone]);
     }
 
     public function verifyOtp(string $network, string $phone, #[\SensitiveParameter] string $otp): ProviderResult
     {
-        return $this->call('verify', 'verify/otp', ['networkName' => $this->code($network), 'sender' => $phone, 'otp' => $otp], false);
+        return $this->call('verify', 'verify/otp', ['networkName' => $this->code($network), 'sender' => $phone, 'otp' => $otp]);
     }
 
     public function checkSession(string $network, string $phone, #[\SensitiveParameter] string $identifier): ProviderResult

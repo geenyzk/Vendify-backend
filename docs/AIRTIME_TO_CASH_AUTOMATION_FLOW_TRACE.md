@@ -14,13 +14,13 @@ This is a reproduced code path, not proof of the exact live provider response. W
 
 ## Documented contract and actual calls
 
-Base URL for every endpoint below: `https://automation.airtimetocash.com`. All are **POST**, JSON request bodies, with `Accept: application/json` and `Content-Type: application/json`. “Bearer” means `Authorization: Bearer {configured developer token}`. OTP endpoints have no Bearer token under the supplied contract.
+Base URL for every endpoint below: `https://automation.airtimetocash.com`. All are **POST**, JSON request bodies, with `Accept: application/json` and `Content-Type: application/json`. “Bearer” means `Authorization: Bearer {configured developer token}`. The supplied contract lists OTP endpoints as unauthenticated, but production returned HTTP 401 for an unauthenticated Generate OTP (ATC-c6f3c3a5, 2026-09-13), so every endpoint now sends the Bearer token.
 
 | Stage / path | Auth | Required body | Success / fields used | Actual Vendify behavior |
 | --- | --- | --- | --- | --- |
 | Quota `/api/v1/check/quota/availability` | Bearer | `networkName`, `amount` | HTTP 200 + code 5030 + exact `Recipient(s) Available`; general code 2000 also normalizes as success | Called before generating OTP. Exact positive 5030 continues into `generate/otp`; it does not create a recipient, initiate transfer, or credit a wallet. |
-| Generate `/api/v1/generate/otp` | Basic JSON headers | `networkName`, `sender` | code 2000 | Moves to awaiting OTP. No provider session ID yet. |
-| Verify `/api/v1/verify/otp` | Basic JSON headers | `networkName`, `sender`, `otp` | code 2000 plus `data.sessionId`; numeric `data.airtimeBalance` | Saves encrypted session ID and safe balance, then moves to PIN entry. Missing session ID is setup uncertainty, not transfer uncertainty. |
+| Generate `/api/v1/generate/otp` | Bearer (live requirement; docs say none) | `networkName`, `sender` | code 2000 | Moves to awaiting OTP. No provider session ID yet. |
+| Verify `/api/v1/verify/otp` | Bearer (live requirement; docs say none) | `networkName`, `sender`, `otp` | code 2000 plus `data.sessionId`; numeric `data.airtimeBalance` | Saves encrypted session ID and safe balance, then moves to PIN entry. Missing session ID is setup uncertainty, not transfer uncertainty. |
 | Existing-session login `/api/v1/login/with/session/id` | Bearer | `networkName`, `sender`, `sessionId` | code 2000 plus session ID/balance | Used on resume of an existing verified session. The documentation does not require an extra login immediately after successful OTP verification. This endpoint retrieves an existing session, not a transaction status. |
 | Transfer `/api/v1/transfer/airtime` | Bearer | `networkName`, `sender`, integer `amount`, `reference`, `pin`, `sessionId` | code 2000 with positive `data.amountConverted`; exact amount match required for settlement. `automationCharges` saved as fee. | Called only from the convert action after PIN validation and a durable transfer claim. No separate PIN-verification endpoint exists; the transfer request carries the SIM PIN and initiates transfer. |
 | Recipient creation | None documented | None documented | None documented | No invented call. API checks availability of recipients and returns recipient information with transfer success. |

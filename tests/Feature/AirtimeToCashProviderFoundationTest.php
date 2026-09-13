@@ -208,6 +208,98 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         $this->assertEquals(1475, $user->fresh()->wallet_balance);
     }
 
+    public function test_quota_success_then_otp_http_401_fails_safely_and_logs_auth_header_names_only(): void
+    {
+        // Mirrors ATC-c6f3c3a5-7e52-4154-af63-b48040c8c343: quota 200/2000, then Generate OTP 401.
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        Http::fake([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::response(['code' => 2000, 'message' => 'Recipient(s) Available'], 200),
+            'https://automation.airtimetocash.com/api/v1/generate/otp' => Http::response(['message' => 'Unauthenticated.'], 401),
+        ]);
+
+        $request = app(AirtimeToCashProviderService::class)->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+
+        $this->assertSame(['failed', 'failed', 'provider', 0], [$request->status, $request->provider_status,
+            $request->processing_mode, (int) $request->provider_attempt_count]);
+        $this->assertFalse($request->lifecycle['transfer_submitted']);
+        $this->assertSame('Conversion failed. Your wallet has not been credited.', app(AirtimeToCashProviderController::class)->customerView($request)['message']);
+        $this->assertSame(['/api/v1/check/quota/availability', '/api/v1/generate/otp'],
+            Http::recorded()->map(fn ($pair) => parse_url($pair[0]->url(), PHP_URL_PATH))->all());
+        // Both calls now carry the same Bearer credential; 401 is not caused by omitting it.
+        Http::assertSent(fn (ClientRequest $sent) => str_ends_with($sent->url(), '/generate/otp') && $sent->hasHeader('Authorization', 'Bearer test-automation-token'));
+        // No wallet credit and no silent manual fallback.
+        $this->assertEquals(1000, $user->fresh()->wallet_balance);
+        $this->assertDatabaseCount('transactions', 0);
+        $this->assertSame(1, AirtimeToCashRequest::count());
+
+        $calls = collect($logs)->where('event', 'airtime_to_cash.provider_call')->keyBy('operation');
+        $this->assertSame([200, 'success', 401, 'auth_error'], [$calls['quota']['http_status'], $calls['quota']['sanitized_message'],
+            $calls['otp']['http_status'], $calls['otp']['sanitized_message']]);
+        foreach (['quota' => '/api/v1/check/quota/availability', 'otp' => '/api/v1/generate/otp'] as $operation => $path) {
+            $call = $calls[$operation];
+            $this->assertSame(['automation.airtimetocash.com', $path, ['authorization'], 'bearer', true, 'environment', false],
+                [$call['request_host'], $call['request_path'], $call['auth_header_names'], $call['auth_scheme'],
+                    $call['auth_credential_present'], $call['credential_source'], $call['transfer_submitted']], $operation);
+            $this->assertContains('accept', $call['request_header_names']);
+            $this->assertContains('content-type', $call['request_header_names']);
+        }
+        $this->assertSame(['created', 'failed'], collect($logs)->where('event', 'airtime_to_cash.lifecycle')->pluck('to')->values()->all());
+        foreach (['test-automation-token', 'Bearer test', '08012345678', 'Unauthenticated'] as $secret) {
+            $this->assertStringNotContainsString($secret, json_encode($logs));
+        }
+    }
+
+    public function test_every_automation_call_uses_the_same_stored_bearer_credential_through_the_full_lifecycle(): void
+    {
+        AirtimeToCashProviderSetting::create(['provider' => 'airtime_to_cash_automation', 'enabled' => true, 'priority' => 1, 'token' => 'stored-db-token']);
+        $network = $this->network();
+        $user = $this->user();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        Http::fake([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::response(['code' => 2000, 'message' => 'Recipient(s) Available'], 200),
+            'https://automation.airtimetocash.com/api/v1/generate/otp' => Http::response(['code' => 2000, 'message' => 'Otp sent successfully'], 200),
+            'https://automation.airtimetocash.com/api/v1/verify/otp' => Http::response(['code' => 2000, 'data' => ['sessionId' => 'safe-session-id', 'airtimeBalance' => '₦1,000']], 200),
+            'https://automation.airtimetocash.com/api/v1/transfer/airtime' => Http::response(['code' => 2000, 'data' => ['amountConverted' => '₦500', 'automationCharges' => '₦2']], 200),
+        ]);
+        $flow = app(AirtimeToCashProviderService::class);
+
+        $request = $flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid());
+        $this->assertSame(['awaiting_otp', false], [$request->provider_status, $request->lifecycle['transfer_submitted']]);
+        $request = $flow->verify($request->id, $user->id, '123456');
+        $this->assertSame(['ready_to_transfer', false], [$request->provider_status, $request->lifecycle['transfer_submitted']]);
+        $this->assertDatabaseCount('transactions', 0);
+        $completed = $flow->convert($request->id, $user->id, '1234');
+        $this->assertSame(['approved', 'completed'], [$completed->status, $completed->provider_status]);
+        $this->assertEquals(1475, $user->fresh()->wallet_balance);
+        $this->assertDatabaseCount('transactions', 1);
+
+        $sent = Http::recorded()->map(fn ($pair) => [parse_url($pair[0]->url(), PHP_URL_PATH), $pair[0]->header('Authorization')])->all();
+        $this->assertSame([
+            ['/api/v1/check/quota/availability', ['Bearer stored-db-token']],
+            ['/api/v1/generate/otp', ['Bearer stored-db-token']],
+            ['/api/v1/verify/otp', ['Bearer stored-db-token']],
+            ['/api/v1/transfer/airtime', ['Bearer stored-db-token']],
+        ], $sent);
+        $calls = collect($logs)->where('event', 'airtime_to_cash.provider_call');
+        $this->assertSame(['quota', 'otp', 'verify', 'convert'], $calls->pluck('operation')->values()->all());
+        $this->assertSame(['database'], $calls->pluck('credential_source')->unique()->values()->all());
+        $this->assertSame([['authorization']], $calls->pluck('auth_header_names')->unique()->values()->all());
+        $this->assertSame([null, 'created', 'awaiting_otp', 'verifying_otp', 'ready_to_transfer', 'processing', 'provider_confirmed'],
+            collect($logs)->where('event', 'airtime_to_cash.lifecycle')->pluck('from')->values()->all());
+        foreach (['stored-db-token', 'safe-session-id', '123456', '08012345678'] as $secret) {
+            $this->assertStringNotContainsString($secret, json_encode($logs));
+        }
+    }
+
     public function test_quota_5030_tolerates_harmless_formatting_but_only_for_quota(): void
     {
         $provider = app(AutomationProvider::class);
@@ -878,11 +970,8 @@ class AirtimeToCashProviderFoundationTest extends TestCase
                 $this->assertSame($payload, json_decode($request->body(), true));
                 $this->assertTrue($request->hasHeader('Accept', 'application/json'));
                 $this->assertTrue($request->hasHeader('Content-Type', 'application/json'));
-                if (in_array($path, ['generate/otp', 'verify/otp'], true)) {
-                    $this->assertFalse($request->hasHeader('Authorization'));
-                } else {
-                    $this->assertTrue($request->hasHeader('Authorization', 'Bearer test-automation-token'));
-                }
+                // Production rejects unauthenticated Generate OTP with 401, so OTP endpoints carry the token too.
+                $this->assertTrue($request->hasHeader('Authorization', 'Bearer test-automation-token'));
 
                 return true;
             });
@@ -1174,7 +1263,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             && $r->hasHeader('Authorization', 'Bearer test-automation-token') && $r->hasHeader('Accept', 'application/json')
             && $r['reference'] === $request->provider_reference && $r['sessionId'] === 'safe-session-id'
             && $r['pin'] === '1234' && $r['amount'] == 500 && $r['sender'] === '08012345678' && $r['networkName'] === 'MTN');
-        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/verify/otp') && ! $r->hasHeader('Authorization') && $r['otp'] === '123456');
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/verify/otp') && $r->hasHeader('Authorization', 'Bearer test-automation-token') && $r['otp'] === '123456');
         $this->assertDatabaseCount('transactions', 1);
     }
 
