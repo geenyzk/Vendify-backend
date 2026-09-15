@@ -14,6 +14,9 @@ use Illuminate\Support\Str;
 
 final class AirtimeToCashProviderService
 {
+    /** Provider-rejected transfer PINs allowed per conversion; networks can lock a SIM's PIN after repeated failures. */
+    public const MAX_PIN_ATTEMPTS = 3;
+
     public function __construct(private AirtimeToCashProviderManager $manager, private AirtimeToCashAvailabilityService $availability) {}
 
     /** Automated availability: provider support and limits plus the Vendify rate, never manual destination settings. */
@@ -283,6 +286,10 @@ final class AirtimeToCashProviderService
             if (! $request->provider_identifier) {
                 throw new DomainException('SIM verification is required.');
             }
+            if ((int) $request->pin_attempt_count >= self::MAX_PIN_ATTEMPTS) {
+                // Unreachable while recordResult fails the conversion on the last strike; kept as a backstop.
+                throw new DomainException('Too many incorrect transfer PINs. Start a new conversion.');
+            }
             if (isset($request->provider_metadata['airtime_balance']) && $request->provider_metadata['airtime_balance'] < (float) $request->amount) {
                 throw new DomainException('The verified SIM airtime balance is too low.');
             }
@@ -324,7 +331,14 @@ final class AirtimeToCashProviderService
             if ($state === 'success' && $result->convertedAmount !== null && $result->convertedAmount !== (float) $request->amount) {
                 $state = 'unknown';
             }
-            $retryableRejection = $request->provider_status === 'processing'
+            // Only a provider-classified invalid PIN counts. This runs under the row lock and
+            // only for the single claim that dispatched it, so duplicates cannot skip a count.
+            $invalidPin = $state === 'failed' && $result->reason === 'invalid_pin';
+            if ($invalidPin) {
+                $request->pin_attempt_count = (int) $request->pin_attempt_count + 1;
+            }
+            $pinLocked = $invalidPin && $request->pin_attempt_count >= self::MAX_PIN_ATTEMPTS;
+            $retryableRejection = $request->provider_status === 'processing' && ! $pinLocked
                 && $state === 'failed' && in_array($result->reason, ['invalid_pin', 'insufficient_balance'], true);
             $next = match (true) {
                 $retryableRejection => 'ready_to_transfer',
@@ -342,7 +356,7 @@ final class AirtimeToCashProviderService
                 $request->provider_attempt_count = max(0, (int) $request->provider_attempt_count - 1);
             }
             ProviderState::move($request, $next);
-            $request->provider_message = $result->reason ?? $state;
+            $request->provider_message = $pinLocked ? 'pin_attempts_exhausted' : ($result->reason ?? $state);
             if ($next === 'provider_confirmed') {
                 $request->provider_confirmed_at = now();
                 $request->provider_identifier = null;

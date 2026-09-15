@@ -14,7 +14,7 @@ class AirtimeToCashRequest extends Model
         'reviewed_by', 'reviewed_at', 'transaction_reference', 'payout_transaction_reference',
         'processing_mode', 'network_id', 'provider', 'provider_reference', 'provider_identifier',
         'provider_status', 'provider_message', 'provider_started_at', 'provider_confirmed_at', 'expires_at',
-        'last_provider_check_at', 'provider_attempt_count', 'otp_attempt_count', 'rate_snapshot',
+        'last_provider_check_at', 'provider_attempt_count', 'otp_attempt_count', 'pin_attempt_count', 'rate_snapshot',
         'provider_metadata', 'provider_cost', 'provider_fee', 'start_key', 'active_session_key',
     ];
 
@@ -24,7 +24,7 @@ class AirtimeToCashRequest extends Model
         'reviewed_at' => 'datetime',
         'provider_identifier' => 'encrypted', 'rate_snapshot' => 'array', 'provider_metadata' => 'array',
         'provider_started_at' => 'datetime', 'provider_confirmed_at' => 'datetime', 'expires_at' => 'datetime',
-        'last_provider_check_at' => 'datetime', 'provider_attempt_count' => 'integer', 'otp_attempt_count' => 'integer',
+        'last_provider_check_at' => 'datetime', 'provider_attempt_count' => 'integer', 'otp_attempt_count' => 'integer', 'pin_attempt_count' => 'integer',
         'provider_cost' => 'decimal:2', 'provider_fee' => 'decimal:2',
     ];
 

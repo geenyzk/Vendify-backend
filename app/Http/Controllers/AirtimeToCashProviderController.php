@@ -124,9 +124,12 @@ final class AirtimeToCashProviderController extends Controller
     {
         $state = $atc->lifecycle['state'];
         $network = trim((string) $atc->network) ?: 'SIM';
+        $maxPins = AirtimeToCashProviderService::MAX_PIN_ATTEMPTS;
+        $pinsLeft = max(0, $maxPins - (int) $atc->pin_attempt_count);
         // Definitive transfer rejections. `low_balance` is the reason name used before 2026-09-14.
         $rejection = match ($atc->provider_message) {
             'invalid_pin' => "The transfer PIN was not accepted. No airtime was converted and your wallet has not been credited. Check your {$network} transfer PIN and try again.",
+            'pin_attempts_exhausted' => "The transfer PIN was not accepted {$maxPins} times, so this conversion has been stopped. No airtime was converted and your wallet has not been credited. Check your {$network} transfer PIN, then start a new conversion.",
             'insufficient_balance', 'low_balance' => "There isn't enough transferable airtime on this SIM to complete the conversion. Your wallet has not been credited.",
             'session_rejected' => 'Your SIM verification was not accepted for this transfer. No airtime was converted and your wallet has not been credited. Start a new conversion to verify your SIM again.',
             default => null,
@@ -136,7 +139,9 @@ final class AirtimeToCashProviderController extends Controller
             'verifying_otp' => 'Checking your verification code. No transfer has been submitted.',
             'setup_review' => 'SIM setup could not be confirmed. No transfer has been submitted. Contact support or start again after verification expires.',
             'awaiting_otp' => $atc->provider_message === 'failed' ? 'Verification failed. Check the code and try again.' : 'Enter the code sent to your SIM.',
-            'ready_to_transfer' => $rejection ?? 'SIM verified. Review your payout before confirming.',
+            'ready_to_transfer' => $atc->provider_message === 'invalid_pin'
+                ? $rejection.' '.($pinsLeft === 1 ? 'You have 1 attempt left.' : "You have {$pinsLeft} attempts left.")
+                : $rejection ?? 'SIM verified. Review your payout before confirming.',
             'completed' => 'Conversion complete. Your wallet has been credited.',
             'failed' => $atc->provider_message === 'recipient_unavailable'
                 ? 'No receiving line is available for this conversion. Your wallet has not been credited.'
@@ -150,6 +155,7 @@ final class AirtimeToCashProviderController extends Controller
             'amount' => (float) $atc->amount, 'payout_amount' => (float) $atc->payout_amount, 'sender_phone' => $atc->sender_phone,
             'status' => $atc->status,
             'transfer_attempted' => (int) $atc->provider_attempt_count > 0, 'state' => $state, 'message' => $message, 'reference' => $atc->transaction_reference,
+            'pin_attempts_remaining' => $pinsLeft,
             'expires_at' => $atc->expires_at?->toIso8601String(), 'airtime_balance' => $atc->provider_metadata['airtime_balance'] ?? null];
     }
 

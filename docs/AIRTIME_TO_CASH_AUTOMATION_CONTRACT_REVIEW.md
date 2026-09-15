@@ -14,7 +14,7 @@ Compared against the API documentation pasted by the user (official base URL: ht
 | Quota positive example uses 5030 | Fixed: only HTTP 200, code 5030 and exact `Recipient(s) Available` means quota success |
 | General 5030 means unavailable | Preserved outside that exact quota exception; never treated as transfer success |
 | 2000 successful transfer | Requires positive parsed `amountConverted` matching the requested amount before settlement |
-| 3000 failure | Transfer 3000 is classified by meaning: `invalid_pin` and `insufficient_balance` return to PIN entry on the same session; `session_rejected` and `transfer_failed` are terminal. None credits a wallet. The docs name these tabs but the pasted text contains no failure bodies, so wording is matched loosely and allowlisted terms are logged |
+| 3000 failure | Transfer 3000 is classified by meaning: `invalid_pin` and `insufficient_balance` return to PIN entry on the same session, except that the third `invalid_pin` for a conversion fails it (`pin_attempts_exhausted`) and requires a new conversion; `session_rejected` and `transfer_failed` are terminal. None credits a wallet. The docs name these tabs but the pasted text contains no failure bodies, so wording is matched loosely and allowlisted terms are logged |
 | 4000 delivery uncertain | Remains pending, without wallet credit or automatic transfer retry |
 | 4030 forbidden | Authentication error; fixed classification for documented HTTP 400 / code 4030 combination |
 | 4010 session expired | Existing explicit re-verification path; not mistaken for transfer success |

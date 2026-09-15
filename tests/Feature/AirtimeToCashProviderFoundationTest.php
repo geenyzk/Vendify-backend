@@ -675,7 +675,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
     {
         return [
             'invalid PIN' => ['You have entered an invalid pin. Please double-check the pin and try again.', 'invalid_pin',
-                'The transfer PIN was not accepted. No airtime was converted and your wallet has not been credited. Check your MTN transfer PIN and try again.'],
+                'The transfer PIN was not accepted. No airtime was converted and your wallet has not been credited. Check your MTN transfer PIN and try again. You have 2 attempts left.'],
             'low balance' => ['Your airtime balance is insufficient for this transfer.', 'insufficient_balance',
                 "There isn't enough transferable airtime on this SIM to complete the conversion. Your wallet has not been credited."],
         ];
@@ -711,6 +711,150 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         foreach (['9876', '123456', 'safe-session-id', '08012345678', 'double-check', 'insufficient for'] as $secret) {
             $this->assertStringNotContainsString($secret, json_encode($logs));
         }
+    }
+
+    public function test_third_invalid_pin_stops_the_conversion_after_two_same_session_retries(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        $this->automationSequence(['code' => 3000, 'message' => 'Incorrect PIN']);
+        $flow = app(AirtimeToCashProviderService::class);
+        $view = fn ($request) => app(AirtimeToCashProviderController::class)->customerView($request);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+        $session = $request->provider_identifier;
+
+        // Attempts 1 and 2: back to PIN entry on the same verified session, remaining attempts shown.
+        foreach ([1 => '2 attempts left.', 2 => '1 attempt left.'] as $attempt => $left) {
+            $request = $flow->convert($request->id, $user->id, "739{$attempt}");
+            $this->assertSame(['pending', 'ready_to_transfer', 'invalid_pin', $attempt], [$request->status,
+                $request->provider_status, $request->provider_message, $request->pin_attempt_count]);
+            $this->assertSame($session, $request->provider_identifier);
+            $this->assertSame(3 - $attempt, $view($request)['pin_attempts_remaining']);
+            $this->assertStringEndsWith("Check your MTN transfer PIN and try again. You have {$left}", $view($request)['message']);
+        }
+
+        // Attempt 3: the conversion stops; the verified session and SIM reservation are released.
+        $request = $flow->convert($request->id, $user->id, '7393');
+        $this->assertSame(['failed', 'failed', 'pin_attempts_exhausted', 3], [$request->status, $request->provider_status,
+            $request->provider_message, $request->pin_attempt_count]);
+        $this->assertNull($request->provider_identifier);
+        $this->assertNull($request->active_session_key);
+        $this->assertSame('The transfer PIN was not accepted 3 times, so this conversion has been stopped. No airtime was converted and your wallet has not been credited. Check your MTN transfer PIN, then start a new conversion.',
+            $view($request)['message']);
+        $this->assertSame(0, $view($request)['pin_attempts_remaining']);
+
+        // No further PIN is accepted, nothing is retried and nothing reopens it.
+        $this->assertSame('failed', $flow->convert($request->id, $user->id, '7394')->status);
+        $this->assertSame('failed', $flow->resume($request->id, $user->id)->status);
+        $transfers = Http::recorded()->filter(fn ($pair) => str_ends_with($pair[0]->url(), '/transfer/airtime'));
+        $this->assertCount(3, $transfers);
+        $this->assertSame([$session], $transfers->map(fn ($pair) => $pair[0]['sessionId'])->unique()->values()->all());
+        $this->assertEquals(1000, $user->fresh()->wallet_balance);
+        $this->assertDatabaseCount('transactions', 0);
+        $this->assertSame(['created', 'awaiting_otp', 'verifying_otp', 'ready_to_transfer', 'processing', 'ready_to_transfer',
+            'processing', 'ready_to_transfer', 'processing', 'failed'], collect($logs)->where('event', 'airtime_to_cash.lifecycle')->pluck('to')->values()->all());
+        $this->assertSame(['invalid_pin', 'invalid_pin', 'invalid_pin'], collect($logs)->where('operation', 'convert')->pluck('semantic_outcome')->values()->all());
+        foreach (['7391', '7392', '7393', '7394'] as $pin) {
+            $this->assertStringNotContainsString($pin, json_encode($logs));
+            $this->assertStringNotContainsString($pin, json_encode(AirtimeToCashRequest::find($request->id)->getAttributes()));
+        }
+    }
+
+    public function test_only_invalid_pin_counts_toward_the_pin_attempt_limit(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $queue = [];
+        Http::fake([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/generate/otp' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/verify/otp' => Http::response(['code' => 2000, 'data' => ['sessionId' => 'safe-session-id']], 200),
+            'https://automation.airtimetocash.com/api/v1/transfer/airtime' => function () use (&$queue) {
+                $next = array_shift($queue);
+
+                return $next instanceof \Throwable ? throw $next : Http::response($next[0], $next[1]);
+            },
+        ]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $cases = [
+            'insufficient_balance' => [[['code' => 3000, 'message' => 'Insufficient balance'], 200], 'ready_to_transfer'],
+            'session_rejected' => [[['code' => 3000, 'message' => 'Session expired, please login again'], 200], 'failed'],
+            'transfer_failed' => [[['code' => 3000, 'message' => 'Transaction failed'], 200], 'failed'],
+            'server error' => [[[], 500], 'provider_pending'],
+            'transport error' => [new \Illuminate\Http\Client\ConnectionException('timed out'), 'provider_pending'],
+        ];
+        foreach (array_values($cases) as $index => [$outcome, $providerStatus]) {
+            $user = $this->user();
+            $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, "0801234560{$index}", (string) Str::uuid())->id, $user->id, '123456');
+            $queue = [$outcome, $outcome, $outcome];
+            // A correctable rejection can be retried; three in a row still leave the PIN count at zero.
+            foreach ($providerStatus === 'ready_to_transfer' ? [1, 2, 3] : [1] as $_) {
+                $request = $flow->convert($request->id, $user->id, '7391');
+                $this->assertSame([$providerStatus, 0], [$request->provider_status, $request->pin_attempt_count], (string) $index);
+            }
+            $this->assertEquals(1000, $user->fresh()->wallet_balance);
+            if ($providerStatus === 'ready_to_transfer') {
+                $queue = [[['code' => 3000, 'message' => 'Incorrect PIN'], 200]];
+                $request = $flow->convert($request->id, $user->id, '7392');
+                $this->assertSame(['ready_to_transfer', 1], [$request->provider_status, $request->pin_attempt_count]);
+            }
+        }
+        // A transport preflight rejection is never dispatched, so it cannot count either.
+        $user = $this->user();
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345699', (string) Str::uuid())->id, $user->id, '123456');
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.token' => '']);
+        $request = $flow->convert($request->id, $user->id, '7391');
+        $this->assertSame(['setup_review', 0], [$request->provider_status, $request->pin_attempt_count]);
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_duplicate_and_concurrent_pin_submissions_cannot_bypass_the_limit(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = null;
+        [$transfers, $duplicates] = [0, []];
+        Http::fake([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/generate/otp' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/verify/otp' => Http::response(['code' => 2000, 'data' => ['sessionId' => 'safe-session-id']], 200),
+            'https://automation.airtimetocash.com/api/v1/transfer/airtime' => function () use (&$transfers, &$duplicates, &$request, $flow, $user) {
+                $transfers++;
+                // A second PIN submission arrives while this transfer is still in flight.
+                $duplicates[] = $flow->convert($request->id, $user->id, '7399')->provider_status;
+
+                return Http::response(['code' => 3000, 'message' => 'Incorrect PIN'], 200);
+            },
+        ]);
+        $key = (string) Str::uuid();
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', $key)->id, $user->id, '123456');
+
+        foreach ([1, 2, 3] as $attempt) {
+            $request = $flow->convert($request->id, $user->id, "739{$attempt}");
+            $this->assertSame($attempt, $request->pin_attempt_count);
+            // Replaying the rejection for an attempt already recorded changes nothing.
+            $replayed = $flow->recordResult($request->id, new ProviderResult('failed', reason: 'invalid_pin'));
+            $this->assertSame($attempt, $replayed->fresh()->pin_attempt_count);
+        }
+
+        $this->assertSame(3, $transfers);
+        $this->assertSame(['processing', 'processing', 'processing'], $duplicates); // Held off by the claim; never dispatched.
+        $request = $request->fresh();
+        $this->assertSame(['failed', 3], [$request->status, $request->pin_attempt_count]);
+        // Neither a replayed start key nor another PIN reopens the stopped conversion.
+        $restarted = $flow->start($user->id, $network->id, 500, 475, '08012345678', $key);
+        $this->assertSame([$request->id, 'failed', 3], [$restarted->id, $restarted->status, $restarted->pin_attempt_count]);
+        $this->assertSame('failed', $flow->convert($request->id, $user->id, '7394')->status);
+        $this->assertSame(3, $transfers);
+        $this->assertEquals(1000, $user->fresh()->wallet_balance);
+        $this->assertDatabaseCount('transactions', 0);
     }
 
     public function test_unclassified_transfer_3000_fails_terminally_without_payout(): void
