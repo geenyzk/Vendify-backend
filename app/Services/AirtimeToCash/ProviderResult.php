@@ -19,6 +19,8 @@ final readonly class ProviderResult
         public ?string $semantic = null,
         public ?string $messageField = null,
         public ?array $messageTerms = null,
+        // Ordered, masked word pattern and word count of a transfer failure message.
+        public ?array $messageShape = null,
     ) {}
 
     public function identifier(): ?string

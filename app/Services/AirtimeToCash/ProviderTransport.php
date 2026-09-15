@@ -43,7 +43,7 @@ final class ProviderTransport
                 $http = $http->withToken($config['token']);
             }
             $http->beforeSending(function (ClientRequest $sent) use (&$request) {
-                $request = [...$request, ...self::describeHeaders($sent->headers())];
+                $request = [...$request, ...self::describeHeaders($sent->headers()), 'request_body_types' => self::bodyTypes($sent->body())];
             });
             // No retries, throw(), queueing, or raw response persistence.
             $response = $http->post($base.$path, $payload);
@@ -54,6 +54,14 @@ final class ProviderTransport
         } finally {
             unset($payload, $http, $config);
         }
+    }
+
+    /** JSON type of each top-level field as serialized on the wire (e.g. amount: int), never a value. */
+    private static function bodyTypes(#[\SensitiveParameter] string $body): ?array
+    {
+        $decoded = json_decode($body, true);
+
+        return is_array($decoded) ? array_map(fn ($value) => get_debug_type($value), $decoded) : null;
     }
 
     /** Header names and the Authorization scheme word only; never a header value. */

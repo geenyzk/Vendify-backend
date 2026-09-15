@@ -657,9 +657,9 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             foreach ($messages as $message) {
                 $result = $provider->normalize('convert', 200, ['code' => 3000, 'message' => $message]);
                 $this->assertSame(['failed', $outcome, $outcome], [$result->state, $result->reason, $result->semantic], $message);
-                $this->assertSame([], array_diff($result->messageTerms, ['pin', 'invalid', 'incorrect', 'wrong', 'mismatch', 'correct',
-                    'balance', 'low', 'insufficient', 'sufficient', 'enough', 'airtime', 'funds', 'session', 'expired', 'found', 'login',
-                    'not', 'failed', 'transfer', 'transaction', 'error', 'try', 'again', 'service']), $message);
+                foreach ([...$result->messageTerms, ...explode(' ', $result->messageShape['pattern'])] as $term) {
+                    $this->assertMatchesRegularExpression('/^([a-z]+|\*)?$/', $term, $message); // Letters-only words or masks.
+                }
             }
         }
         $nested = $provider->normalize('convert', 200, ['code' => 3000, 'data' => ['message' => 'Invalid PIN']]);
@@ -919,7 +919,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         $this->assertSame([
             'networkName' => ['present' => true, 'type' => 'string', 'length' => 3, 'value' => 'MTN'],
             'sender' => ['present' => true, 'type' => 'string', 'length' => 11, 'valid_format' => true],
-            'amount' => ['present' => true, 'type' => 'float', 'whole_number' => true],
+            'amount' => ['present' => true, 'type' => 'int', 'whole_number' => true],
             'reference' => ['present' => true, 'type' => 'string', 'length' => 40, 'matches_internal_reference' => true],
             'pin' => ['present' => true, 'type' => 'string', 'length' => 4, 'digits_only' => true],
             'sessionId' => ['present' => true, 'type' => 'string', 'length' => strlen($session), 'surrounding_whitespace' => false],
@@ -930,6 +930,212 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         foreach ([$session, '744673', '9876', '654321', '08012345678'] as $secret) {
             $this->assertStringNotContainsString($secret, json_encode($logs));
         }
+    }
+
+    public function test_expanded_transfer_vocabulary_distinguishes_not_transfer_failures_without_raw_text(): void
+    {
+        $provider = app(AutomationProvider::class);
+        // Candidate wordings that all reduce to ["not","transfer"] under the previous vocabulary.
+        $expected = [
+            'Transfer not successful' => [['not', 'successful', 'transfer'], 'transfer not successful'],
+            'You are not allowed to transfer airtime' => [['airtime', 'allowed', 'not', 'transfer'], '* * not allowed * transfer airtime'],
+            'Unable to transfer. Sender SIM is not eligible' => [['eligible', 'not', 'sender', 'sim', 'transfer', 'unable'], 'unable * transfer sender sim * not eligible'],
+            'Transfer service not available on this network' => [['available', 'network', 'not', 'service', 'transfer'], 'transfer service not available * * network'],
+            'Dear Ade 08012345678, you cannot transfer now' => [['cannot', 'transfer'], '* * * * cannot transfer *'],
+        ];
+        $seen = [];
+        foreach ($expected as $message => [$terms, $pattern]) {
+            $result = $provider->normalize('convert', 200, ['code' => 3000, 'message' => $message]);
+            $this->assertSame(['failed', 'transfer_failed', $terms, $pattern], [$result->state, $result->reason,
+                $result->messageTerms, $result->messageShape['pattern']], $message);
+            $this->assertSame(count(preg_split('/[^\p{L}\p{N}]+/u', $message, -1, PREG_SPLIT_NO_EMPTY)), $result->messageShape['word_count']);
+            $this->assertDoesNotMatchRegularExpression('/\d|ade|dear/i', json_encode([$result->messageTerms, $result->messageShape['pattern']]));
+            $seen[] = json_encode($terms);
+        }
+        $this->assertCount(count($expected), array_unique($seen)); // Each wording is now distinguishable.
+    }
+
+    public function test_transfer_and_quota_amounts_are_json_integers_on_the_wire(): void
+    {
+        // The pre-hardening float path already serialized as an integer; this pins that evidence.
+        $this->assertSame('{"amount":500}', \GuzzleHttp\Utils::jsonEncode(['amount' => (float) '500.00']));
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        $this->automationSequence(['code' => 2000, 'data' => ['amountConverted' => '₦500']]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+        $flow->convert($request->id, $user->id, '1234');
+        foreach (['/check/quota/availability', '/transfer/airtime'] as $path) {
+            $sent = Http::recorded()->first(fn ($pair) => str_ends_with($pair[0]->url(), $path))[0];
+            $this->assertMatchesRegularExpression('/"amount":500[,}]/', $sent->body(), $path);
+            $this->assertIsInt(json_decode($sent->body(), true)['amount'], $path);
+        }
+        foreach (['quota', 'convert'] as $operation) {
+            $this->assertSame('int', collect($logs)->firstWhere('operation', $operation)['request_body_types']['amount'], $operation);
+        }
+        $this->assertSame(['networkName' => 'string', 'sender' => 'string', 'amount' => 'int', 'reference' => 'string',
+            'sessionId' => 'string', 'pin' => 'string'], collect($logs)->firstWhere('operation', 'convert')['request_body_types']);
+    }
+
+    /** Fakes quota → OTP → verify → (session login) → transfer with a verified session "verified-session-id". */
+    private function sessionLoginSequence(array|\Closure $login, array $transfer = ['code' => 2000, 'data' => ['amountConverted' => '₦500']]): void
+    {
+        Http::fake([
+            'https://automation.airtimetocash.com/api/v1/check/quota/availability' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/generate/otp' => Http::response(['code' => 2000], 200),
+            'https://automation.airtimetocash.com/api/v1/verify/otp' => Http::response(['code' => 2000, 'message' => 'Otp verified.',
+                'data' => ['sessionId' => 'verified-session-id', 'airtimeBalance' => '₦1,000', 'tariff' => 'Plan 186', 'type' => 'Prepaid']], 200),
+            'https://automation.airtimetocash.com/api/v1/login/with/session/id' => $login instanceof \Closure ? $login : Http::response(...$login),
+            'https://automation.airtimetocash.com/api/v1/transfer/airtime' => Http::response($transfer, 200),
+        ]);
+    }
+
+    private function sentPaths(): array
+    {
+        return Http::recorded()->map(fn ($pair) => str_replace('https://automation.airtimetocash.com/api/v1/', '', $pair[0]->url()))->values()->all();
+    }
+
+    public function test_session_login_before_transfer_is_off_by_default(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        $this->sessionLoginSequence([['code' => 2000], 200]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+        $this->assertSame('approved', $flow->convert($request->id, $user->id, '1234')->status);
+        $this->assertSame(['check/quota/availability', 'generate/otp', 'verify/otp', 'transfer/airtime'], $this->sentPaths());
+        $this->assertFalse(collect($logs)->firstWhere('operation', 'convert')['session_login_before_transfer']);
+        $verify = collect($logs)->firstWhere('operation', 'verify');
+        $this->assertSame([['present' => true, 'parsed' => true], 'prepaid'], [$verify['response_airtime_balance'], $verify['response_line_type']]);
+    }
+
+    public function test_enabled_session_login_runs_immediately_before_the_transfer_with_the_verified_session(): void
+    {
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true]);
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        $this->sessionLoginSequence([['code' => 2000, 'message' => 'Session record retrieved.',
+            'data' => ['sessionId' => 'verified-session-id', 'airtimeBalance' => '₦1,000', 'type' => 'Prepaid']], 200]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+        // Verification alone never triggers the login; only a PIN submission does.
+        $this->assertSame(['check/quota/availability', 'generate/otp', 'verify/otp'], $this->sentPaths());
+
+        $completed = $flow->convert($request->id, $user->id, '1234');
+
+        $this->assertSame(['approved', 1], [$completed->status, (int) $completed->provider_attempt_count]);
+        $this->assertSame(['check/quota/availability', 'generate/otp', 'verify/otp', 'login/with/session/id', 'transfer/airtime'], $this->sentPaths());
+        Http::assertSent(fn (ClientRequest $sent) => str_ends_with($sent->url(), '/login/with/session/id')
+            && $sent->hasHeader('Authorization', 'Bearer test-automation-token')
+            && json_decode($sent->body(), true) === ['networkName' => 'MTN', 'sender' => '08012345678', 'sessionId' => 'verified-session-id']);
+        Http::assertSent(fn (ClientRequest $sent) => str_ends_with($sent->url(), '/transfer/airtime') && $sent['sessionId'] === 'verified-session-id');
+        $session = collect($logs)->firstWhere('operation', 'session');
+        $this->assertSame([$request->transaction_reference, 'success', [], true, 'prepaid'], [$session['internal_reference'],
+            $session['sanitized_message'], $session['missing_required_fields'], $session['response_session_id']['matches_request'], $session['response_line_type']]);
+        $this->assertFalse($session['transfer_submitted']);
+        $this->assertTrue(collect($logs)->firstWhere('operation', 'convert')['session_login_before_transfer']);
+        $this->assertEquals(1475, $user->fresh()->wallet_balance);
+        $this->assertStringNotContainsString('verified-session-id', json_encode($logs));
+    }
+
+    public function test_enabled_session_login_that_issues_a_new_session_is_used_for_the_transfer(): void
+    {
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true]);
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->sessionLoginSequence([['code' => 2000, 'data' => ['sessionId' => 'refreshed-session-id']], 200]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+        $this->assertSame('approved', $flow->convert($request->id, $user->id, '1234')->status);
+        Http::assertSent(fn (ClientRequest $sent) => str_ends_with($sent->url(), '/transfer/airtime') && $sent['sessionId'] === 'refreshed-session-id');
+    }
+
+    public static function unconfirmedSessionLogins(): array
+    {
+        return [
+            'failed' => [[['code' => 3000, 'message' => 'Session not found'], 200]],
+            'no session returned' => [[['code' => 2000], 200]],
+            'server error' => [[[], 500]],
+            'auth error' => [[[], 401]],
+        ];
+    }
+
+    #[DataProvider('unconfirmedSessionLogins')]
+    public function test_unconfirmed_session_login_blocks_the_transfer_without_consuming_anything(array $login): void
+    {
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true]);
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->sessionLoginSequence($login);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+        try {
+            $flow->convert($request->id, $user->id, '1234');
+            $this->fail('Transfer proceeded without a confirmed session.');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('no transfer was submitted', $e->getMessage());
+        }
+        $request = $request->fresh();
+        $this->assertSame(['pending', 'ready_to_transfer', 0, 0, 'verified-session-id'], [$request->status, $request->provider_status,
+            (int) $request->provider_attempt_count, $request->pin_attempt_count, $request->provider_identifier]);
+        $this->assertFalse($request->lifecycle['transfer_submitted']);
+        Http::assertNotSent(fn (ClientRequest $sent) => str_ends_with($sent->url(), '/transfer/airtime'));
+        $this->assertEquals(1000, $user->fresh()->wallet_balance);
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_session_login_reporting_expiry_expires_the_conversion_without_a_transfer(): void
+    {
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true]);
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->sessionLoginSequence([['code' => 4010, 'message' => 'Your Session expired'], 200]);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+        $expired = $flow->convert($request->id, $user->id, '1234');
+        $this->assertSame(['pending', 'expired', 0], [$expired->status, $expired->provider_status, (int) $expired->provider_attempt_count]);
+        $this->assertNull($expired->provider_identifier);
+        $this->assertSame('Verification expired. Start a new conversion with a fresh quote.', app(AirtimeToCashProviderController::class)->customerView($expired)['message']);
+        Http::assertNotSent(fn (ClientRequest $sent) => str_ends_with($sent->url(), '/transfer/airtime'));
+        $this->assertEquals(1000, $user->fresh()->wallet_balance);
+    }
+
+    public function test_transfer_failed_after_session_login_stays_terminal_and_never_counts_as_a_pin_attempt(): void
+    {
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true]);
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $this->sessionLoginSequence([['code' => 2000, 'data' => ['sessionId' => 'verified-session-id']], 200],
+            ['code' => 3000, 'message' => 'Transfer not successful']);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+        $failed = $flow->convert($request->id, $user->id, '1234');
+        $this->assertSame(['failed', 'transfer_failed', 0, 1], [$failed->status, $failed->provider_message,
+            $failed->pin_attempt_count, (int) $failed->provider_attempt_count]);
+        $this->assertSame('failed', $flow->convert($request->id, $user->id, '1234')->status);
+        // One login and one transfer; a stopped conversion neither logs in again nor retries.
+        $this->assertSame(['check/quota/availability', 'generate/otp', 'verify/otp', 'login/with/session/id', 'transfer/airtime'], $this->sentPaths());
+        $this->assertEquals(1000, $user->fresh()->wallet_balance);
+        $this->assertDatabaseCount('transactions', 0);
     }
 
     public function test_low_verified_airtime_balance_blocks_transfer_call(): void

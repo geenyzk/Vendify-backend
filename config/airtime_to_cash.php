@@ -14,6 +14,8 @@ return [
             'priority' => 1,
             'allowed_host' => 'automation.airtimetocash.com',
             'credential_label' => 'API token',
+            // Controlled hypothesis: log in with the verified session just before each transfer.
+            'session_login_before_transfer' => env('AIRTIME_TO_CASH_AUTOMATION_SESSION_LOGIN_BEFORE_TRANSFER', false),
         ],
         '2fast' => [
             'name' => '2FAST',

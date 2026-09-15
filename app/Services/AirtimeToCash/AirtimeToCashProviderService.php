@@ -272,6 +272,9 @@ final class AirtimeToCashProviderService
         if (! preg_match('/^[0-9]{4}$/D', $pin)) {
             throw new DomainException('A four-digit SIM transfer PIN is required.');
         }
+        if ($stopped = $this->loginBeforeTransfer($id, $userId)) {
+            return $stopped;
+        }
         $request = DB::transaction(function () use ($id, $userId) {
             $request = $this->owned($id, $userId);
             if ($request->status !== 'pending' || $request->provider_status !== 'ready_to_transfer') {
@@ -318,6 +321,56 @@ final class AirtimeToCashProviderService
         }
 
         return $this->recordResult($id, $result);
+    }
+
+    /**
+     * Opt-in hypothesis test (AIRTIME_TO_CASH_AUTOMATION_SESSION_LOGIN_BEFORE_TRANSFER): log in with
+     * the verified session right before the transfer. It runs before the transfer claim, so a failed
+     * or unconfirmed login never marks a transfer submitted, never uses a PIN attempt and never
+     * credits anything. Returns the conversion when it must not proceed.
+     */
+    private function loginBeforeTransfer(int $id, string $userId): ?AirtimeToCashRequest
+    {
+        $request = AirtimeToCashRequest::where('user_id', $userId)->where('processing_mode', 'provider')->findOrFail($id);
+        $eligible = $request->status === 'pending' && $request->provider_status === 'ready_to_transfer'
+            && $request->provider_identifier && ! $request->expires_at?->isPast();
+        $provider = $eligible ? $this->manager->bound($request) : null;
+        if (! $provider instanceof ChecksSession || ! $provider->loginBeforeTransfer()) {
+            return null; // The transfer claim handles every other state exactly as before.
+        }
+        $sent = $request->provider_identifier;
+        try {
+            $result = app(ProviderCallTrace::class)->within($request->transaction_reference, fn () => $provider->checkSession(
+                $this->availability::canonicalName($request->network), $request->sender_phone, $sent));
+        } catch (\Throwable) {
+            $result = new ProviderResult('unknown');
+        }
+        if ($result->state === 'session_expired') {
+            return DB::transaction(function () use ($id, $userId) {
+                $locked = $this->owned($id, $userId);
+                if ($locked->status === 'pending' && $locked->provider_status === 'ready_to_transfer') {
+                    ProviderState::move($locked, 'expired');
+                    $locked->save();
+                }
+
+                return $locked;
+            });
+        }
+        if ($result->state !== 'success') {
+            throw new DomainException('Your SIM session could not be confirmed, so no transfer was submitted. Your wallet has not been credited. Please try again.');
+        }
+        if ($result->identifier() !== $sent) {
+            // Transfer with the session the provider just confirmed, unless the conversion moved on.
+            DB::transaction(function () use ($id, $userId, $sent, $result) {
+                $locked = $this->owned($id, $userId);
+                if ($locked->status === 'pending' && $locked->provider_status === 'ready_to_transfer' && $locked->provider_identifier === $sent) {
+                    $locked->provider_identifier = $result->identifier();
+                    $locked->save();
+                }
+            });
+        }
+
+        return null;
     }
 
     public function recordResult(int $id, ProviderResult $result): AirtimeToCashRequest

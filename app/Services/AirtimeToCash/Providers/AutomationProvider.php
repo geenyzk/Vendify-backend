@@ -17,12 +17,29 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
     private const QUOTA_TERMS = ['recipient', 'recipients', 's', 'available', 'unavailable', 'unavailability', 'service',
         'not', 'no', 'quota', 'insufficient', 'exhausted', 'limit', 'amount', 'network', 'moment', 'currently', 'invalid', 'error'];
 
-    /** Generic words that may be logged from transfer failure prose. Digits, names and tokens never match. */
-    private const TRANSFER_TERMS = ['pin', 'invalid', 'incorrect', 'wrong', 'mismatch', 'rejected', 'correct', 'valid',
-        'balance', 'low', 'insufficient', 'sufficient', 'enough', 'airtime', 'credit', 'fund', 'funds', 'session', 'expired',
-        'found', 'login', 'unknown', 'not', 'no', 'failed', 'transfer', 'transaction', 'error', 'try', 'again', 'blocked',
-        'locked', 'limit', 'exceeded', 'reached', 'daily', 'maximum', 'minimum', 'amount', 'sender', 'sim', 'number',
-        'recipient', 'unavailable', 'network', 'service', 'otp'];
+    /**
+     * Generic English words that may be logged from transfer failure prose. Everything else,
+     * including any token containing a digit, is masked; no names, brands or identifiers.
+     */
+    private const TRANSFER_TERMS = [
+        // Outcome and ability.
+        'not', 'no', 'unable', 'able', 'cannot', 'can', 'could', 'failed', 'fail', 'failure', 'successful', 'success',
+        'successfully', 'completed', 'complete', 'processed', 'pending', 'declined', 'denied', 'rejected', 'error',
+        // Permission and eligibility.
+        'allowed', 'permitted', 'eligible', 'enabled', 'disabled', 'activated', 'active', 'inactive', 'registered',
+        'restricted', 'barred', 'suspended', 'blocked', 'locked', 'available', 'unavailable', 'supported', 'authorized',
+        // Subjects.
+        'transfer', 'transfers', 'transaction', 'airtime', 'recipient', 'sender', 'network', 'sim', 'line', 'number',
+        'subscriber', 'customer', 'account', 'service', 'tariff', 'plan', 'prepaid', 'postpaid', 'session', 'pin', 'otp',
+        'balance', 'credit', 'fund', 'funds', 'amount', 'request', 'reference', 'duplicate',
+        // Qualifiers.
+        'invalid', 'valid', 'incorrect', 'correct', 'wrong', 'mismatch', 'insufficient', 'sufficient', 'enough', 'low',
+        'expired', 'found', 'login', 'unknown', 'limit', 'exceeded', 'reached', 'daily', 'maximum', 'minimum', 'default',
+        'change', 'already', 'used', 'own', 'same', 'yet', 'try', 'again', 'later', 'time', 'please', 'kindly', 'contact',
+    ];
+
+    /** Line types Verify OTP / session login may report; anything else logs as "other". */
+    private const LINE_TYPES = ['prepaid', 'postpaid', 'hybrid'];
 
     /** Documented request body per operation; diagnostics report each field's shape, never its value. */
     private const REQUIRED_FIELDS = [
@@ -109,12 +126,44 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
             return $result;
         }
         $result = $this->normalize($operation, $status, $body);
-        // Shape of the returned session ID lets verify and convert logs be compared without the value.
-        $session = in_array($operation, ['verify', 'session', 'convert'], true)
-            ? ['response_session_id' => self::describeValue(is_array($body['data'] ?? null) ? ($body['data']['sessionId'] ?? null) : null)] : [];
-        $this->trace->record($operation, $status ?: null, $body['code'] ?? null, $result, true, request: [...$request, ...$fields, ...$session]);
+        $mode = $operation === 'convert' ? ['session_login_before_transfer' => $this->loginBeforeTransfer()] : [];
+        $this->trace->record($operation, $status ?: null, $body['code'] ?? null, $result, true,
+            request: [...$request, ...$fields, ...$this->describeResponse($operation, $payload, $body), ...$mode]);
 
         return $result;
+    }
+
+    /** Shape of the response fields that explain the next step, never their values. */
+    private function describeResponse(string $operation, #[\SensitiveParameter] array $payload, #[\SensitiveParameter] array $body): array
+    {
+        if (! in_array($operation, ['verify', 'session', 'convert'], true)) {
+            return [];
+        }
+        $data = is_array($body['data'] ?? null) ? $body['data'] : [];
+        $session = self::describeValue($data['sessionId'] ?? null);
+        if (isset($payload['sessionId']) && is_string($data['sessionId'] ?? null)) {
+            // Whether the provider handed back the session it was given or issued a new one.
+            $session['matches_request'] = hash_equals($payload['sessionId'], $data['sessionId']);
+        }
+        $described = ['response_session_id' => $session];
+        if ($operation !== 'convert') {
+            $type = is_string($data['type'] ?? null) ? strtolower(trim($data['type'])) : null;
+            $described['response_airtime_balance'] = ['present' => array_key_exists('airtimeBalance', $data),
+                'parsed' => ProviderResult::number($data['airtimeBalance'] ?? null) !== null];
+            $described['response_line_type'] = $type === null ? null : (in_array($type, self::LINE_TYPES, true) ? $type : 'other');
+        }
+
+        return $described;
+    }
+
+    /**
+     * Controlled hypothesis, off by default: call login/with/session/id immediately before
+     * each transfer. The docs describe it as giving "access [to] airtime transfer functionality",
+     * but production has never called it, so it stays opt-in until evidence settles it.
+     */
+    public function loginBeforeTransfer(): bool
+    {
+        return (bool) config('airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer', false);
     }
 
     /** Presence, type, length and format of each documented field; sensitive values never leave. */
@@ -192,7 +241,8 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
 
         return new ProviderResult($state, $identifier, ProviderResult::number($data['airtimeBalance'] ?? null),
             ProviderResult::number($data['automationCharges'] ?? null), convertedAmount: $amount, reason: $reason,
-            semantic: $semantics['outcome'] ?? null, messageField: $semantics['field'] ?? null, messageTerms: $semantics['terms'] ?? null);
+            semantic: $semantics['outcome'] ?? null, messageField: $semantics['field'] ?? null, messageTerms: $semantics['terms'] ?? null,
+            messageShape: $semantics['shape'] ?? null);
     }
 
     /**
@@ -206,13 +256,17 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         [$field, $words] = $this->messageWords($body);
         $has = fn (string ...$any) => array_intersect($words, $any) !== [];
         $negated = $has('not', 'no');
+        // Order of vocabulary words only; every other word, including connecting words and any
+        // token holding a digit, is "*", so the pattern can never reproduce the provider's sentence.
+        $pattern = implode(' ', array_map(fn ($word) => in_array($word, self::TRANSFER_TERMS, true) ? $word : '*', array_slice($words, 0, 30)));
 
-        return ['field' => $field, 'terms' => self::terms($words, self::TRANSFER_TERMS), 'outcome' => match (true) {
-            $has('pin') && ($has('invalid', 'incorrect', 'wrong', 'mismatch', 'rejected') || ($negated && $has('correct', 'valid'))) => 'invalid_pin',
-            $has('insufficient') || ($has('balance', 'airtime', 'credit', 'fund', 'funds') && ($has('low') || ($negated && $has('enough', 'sufficient')))) => 'insufficient_balance',
-            $has('session') && ($has('expired', 'invalid', 'unknown', 'login') || ($negated && $has('found', 'valid'))) => 'session_rejected',
-            default => 'transfer_failed',
-        }];
+        return ['field' => $field, 'terms' => self::terms($words, self::TRANSFER_TERMS),
+            'shape' => ['pattern' => $pattern, 'word_count' => count($words)], 'outcome' => match (true) {
+                $has('pin') && ($has('invalid', 'incorrect', 'wrong', 'mismatch', 'rejected') || ($negated && $has('correct', 'valid'))) => 'invalid_pin',
+                $has('insufficient') || ($has('balance', 'airtime', 'credit', 'fund', 'funds') && ($has('low') || ($negated && $has('enough', 'sufficient')))) => 'insufficient_balance',
+                $has('session') && ($has('expired', 'invalid', 'unknown', 'login') || ($negated && $has('found', 'valid'))) => 'session_rejected',
+                default => 'transfer_failed',
+            }];
     }
 
     /**
@@ -280,13 +334,22 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
 
     public function checkQuota(string $network, float $amount): ProviderResult
     {
-        return $this->call('quota', 'check/quota/availability', ['networkName' => $this->code($network), 'amount' => $amount]);
+        return $this->call('quota', 'check/quota/availability', ['networkName' => $this->code($network), 'amount' => self::wireAmount($amount)]);
     }
 
     public function convert(string $network, string $phone, float $amount, string $reference,
         #[\SensitiveParameter] string $identifier, #[\SensitiveParameter] string $pin): ProviderResult
     {
         return $this->call('convert', 'transfer/airtime', ['networkName' => $this->code($network), 'sender' => $phone,
-            'amount' => $amount, 'reference' => $reference, 'sessionId' => $identifier, 'pin' => $pin]);
+            'amount' => self::wireAmount($amount), 'reference' => $reference, 'sessionId' => $identifier, 'pin' => $pin]);
+    }
+
+    /**
+     * The docs type `amount` as an integer. Whole amounts already encode as `500`, never
+     * `500.0`, but sending an int makes that independent of float serialization.
+     */
+    private static function wireAmount(float $amount): int|float
+    {
+        return floor($amount) === $amount && abs($amount) < PHP_INT_MAX ? (int) $amount : $amount;
     }
 }
