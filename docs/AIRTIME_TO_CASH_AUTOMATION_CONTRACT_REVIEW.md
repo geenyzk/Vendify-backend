@@ -14,7 +14,7 @@ Compared against the API documentation pasted by the user (official base URL: ht
 | Quota positive example uses 5030 | Fixed: only HTTP 200, code 5030 and exact `Recipient(s) Available` means quota success |
 | General 5030 means unavailable | Preserved outside that exact quota exception; never treated as transfer success |
 | 2000 successful transfer | Requires positive parsed `amountConverted` matching the requested amount before settlement |
-| 3000 failure | Normalized to failure; existing documented PIN/low-balance correction paths remain resumable |
+| 3000 failure | Transfer 3000 is classified by meaning: `invalid_pin` and `insufficient_balance` return to PIN entry on the same session; `session_rejected` and `transfer_failed` are terminal. None credits a wallet. The docs name these tabs but the pasted text contains no failure bodies, so wording is matched loosely and allowlisted terms are logged |
 | 4000 delivery uncertain | Remains pending, without wallet credit or automatic transfer retry |
 | 4030 forbidden | Authentication error; fixed classification for documented HTTP 400 / code 4030 combination |
 | 4010 session expired | Existing explicit re-verification path; not mistaken for transfer success |
@@ -28,7 +28,7 @@ The customer page previously advertised a universal 50–20,000 range, misleadin
 
 ## Scope and operational limits
 
-- Session login is available in the adapter but not called between successful OTP verification and transfer; the pasted documentation does not require an extra login step.
+- Session login is available in the adapter but not called between successful OTP verification and transfer; the pasted documentation does not require an extra login step. As of 2026-09-14 production has never called it and has no successful transfer to compare against, so it was not added. A 3000 whose wording is about the session now logs `session_rejected`, which would be the evidence to revisit this.
 - No transaction-history endpoint or webhook is documented for Automation. Session login cannot prove that a transfer completed. Ambiguous transfers remain subject to explicit manual reconciliation, unlike 2FAST's separate history integration.
 - The documented 60 requests/minute standard and 100 maximum are provider limits per outbound IP. Vendify handles their 429 response, but does not currently have a shared outbound-IP limiter guaranteeing those budgets across customers/processes.
 - The ten-minute local session window is a Vendify rule; it is not claimed as the provider's session lifetime.

@@ -325,7 +325,7 @@ final class AirtimeToCashProviderService
                 $state = 'unknown';
             }
             $retryableRejection = $request->provider_status === 'processing'
-                && $state === 'failed' && in_array($result->reason, ['invalid_pin', 'low_balance'], true);
+                && $state === 'failed' && in_array($result->reason, ['invalid_pin', 'insufficient_balance'], true);
             $next = match (true) {
                 $retryableRejection => 'ready_to_transfer',
                 $state === 'not_sent' => 'setup_review',

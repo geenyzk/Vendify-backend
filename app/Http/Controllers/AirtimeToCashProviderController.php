@@ -123,20 +123,24 @@ final class AirtimeToCashProviderController extends Controller
     public function customerView(AirtimeToCashRequest $atc): array
     {
         $state = $atc->lifecycle['state'];
+        $network = trim((string) $atc->network) ?: 'SIM';
+        // Definitive transfer rejections. `low_balance` is the reason name used before 2026-09-14.
+        $rejection = match ($atc->provider_message) {
+            'invalid_pin' => "The transfer PIN was not accepted. No airtime was converted and your wallet has not been credited. Check your {$network} transfer PIN and try again.",
+            'insufficient_balance', 'low_balance' => "There isn't enough transferable airtime on this SIM to complete the conversion. Your wallet has not been credited.",
+            'session_rejected' => 'Your SIM verification was not accepted for this transfer. No airtime was converted and your wallet has not been credited. Start a new conversion to verify your SIM again.',
+            default => null,
+        };
         $message = match ($atc->status === 'failed' ? 'failed' : $state) {
             'created' => 'Preparing SIM verification. No transfer has been submitted.',
             'verifying_otp' => 'Checking your verification code. No transfer has been submitted.',
             'setup_review' => 'SIM setup could not be confirmed. No transfer has been submitted. Contact support or start again after verification expires.',
             'awaiting_otp' => $atc->provider_message === 'failed' ? 'Verification failed. Check the code and try again.' : 'Enter the code sent to your SIM.',
-            'ready_to_transfer' => match ($atc->provider_message) {
-                'invalid_pin' => 'The transfer PIN was rejected. Check the PIN and try again. Your wallet has not been credited.',
-                'low_balance' => 'Your SIM does not have enough airtime for this conversion. Recharge it, then try again.',
-                default => 'SIM verified. Review your payout before confirming.',
-            },
+            'ready_to_transfer' => $rejection ?? 'SIM verified. Review your payout before confirming.',
             'completed' => 'Conversion complete. Your wallet has been credited.',
             'failed' => $atc->provider_message === 'recipient_unavailable'
                 ? 'No receiving line is available for this conversion. Your wallet has not been credited.'
-                : 'Conversion failed. Your wallet has not been credited.',
+                : $rejection ?? 'Conversion failed. Your wallet has not been credited.',
             'expired', 'session_expired' => 'Verification expired. Start a new conversion with a fresh quote.',
             'provider_confirmed', 'settlement_pending' => 'Conversion confirmed. Wallet credit is being completed.',
             default => 'Your conversion needs confirmation. Do not send another transfer.',

@@ -17,6 +17,22 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
     private const QUOTA_TERMS = ['recipient', 'recipients', 's', 'available', 'unavailable', 'unavailability', 'service',
         'not', 'no', 'quota', 'insufficient', 'exhausted', 'limit', 'amount', 'network', 'moment', 'currently', 'invalid', 'error'];
 
+    /** Generic words that may be logged from transfer failure prose. Digits, names and tokens never match. */
+    private const TRANSFER_TERMS = ['pin', 'invalid', 'incorrect', 'wrong', 'mismatch', 'rejected', 'correct', 'valid',
+        'balance', 'low', 'insufficient', 'sufficient', 'enough', 'airtime', 'credit', 'fund', 'funds', 'session', 'expired',
+        'found', 'login', 'unknown', 'not', 'no', 'failed', 'transfer', 'transaction', 'error', 'try', 'again', 'blocked',
+        'locked', 'limit', 'exceeded', 'reached', 'daily', 'maximum', 'minimum', 'amount', 'sender', 'sim', 'number',
+        'recipient', 'unavailable', 'network', 'service', 'otp'];
+
+    /** Documented request body per operation; diagnostics report each field's shape, never its value. */
+    private const REQUIRED_FIELDS = [
+        'otp' => ['networkName', 'sender'],
+        'verify' => ['networkName', 'sender', 'otp'],
+        'session' => ['networkName', 'sender', 'sessionId'],
+        'quota' => ['networkName', 'amount'],
+        'convert' => ['networkName', 'sender', 'amount', 'reference', 'pin', 'sessionId'],
+    ];
+
     public function __construct(private ProviderTransport $transport, private ProviderCallTrace $trace) {}
 
     public function key(): string
@@ -83,18 +99,49 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
      */
     private function call(string $operation, string $path, #[\SensitiveParameter] array $payload): ProviderResult
     {
+        $fields = $this->describePayload($operation, $payload);
         try {
             [$status, $body, $request] = $this->transport->post($this->key(), '/api/v1/'.$path, $payload);
         } catch (ProviderRequestNotSent) {
             $result = new ProviderResult('not_sent', reason: 'transport_preflight_rejected');
-            $this->trace->record($operation, null, null, $result, false);
+            $this->trace->record($operation, null, null, $result, false, request: $fields);
 
             return $result;
         }
         $result = $this->normalize($operation, $status, $body);
-        $this->trace->record($operation, $status ?: null, $body['code'] ?? null, $result, true, request: $request);
+        // Shape of the returned session ID lets verify and convert logs be compared without the value.
+        $session = in_array($operation, ['verify', 'session', 'convert'], true)
+            ? ['response_session_id' => self::describeValue(is_array($body['data'] ?? null) ? ($body['data']['sessionId'] ?? null) : null)] : [];
+        $this->trace->record($operation, $status ?: null, $body['code'] ?? null, $result, true, request: [...$request, ...$fields, ...$session]);
 
         return $result;
+    }
+
+    /** Presence, type, length and format of each documented field; sensitive values never leave. */
+    private function describePayload(string $operation, #[\SensitiveParameter] array $payload): array
+    {
+        $fields = [];
+        foreach (self::REQUIRED_FIELDS[$operation] ?? [] as $name) {
+            $value = $payload[$name] ?? null;
+            $fields[$name] = self::describeValue($value) + match ($name) {
+                'networkName' => ['value' => in_array($value, array_column($this->networks(), 'code'), true) ? $value : null],
+                'sender' => ['valid_format' => is_string($value) && preg_match('/^0[789][0-9]{9}$/D', $value) === 1],
+                'amount' => ['whole_number' => is_numeric($value) && (float) $value > 0 && floor((float) $value) === (float) $value],
+                'reference' => ['matches_internal_reference' => $value !== null && $value === $this->trace->currentReference()],
+                'pin', 'otp' => ['digits_only' => is_string($value) && ctype_digit($value)],
+                'sessionId' => ['surrounding_whitespace' => is_string($value) && trim($value) !== $value],
+                default => [],
+            };
+        }
+
+        return ['payload_fields' => $fields,
+            'missing_required_fields' => array_keys(array_filter($fields, fn ($field) => ! $field['present']))];
+    }
+
+    private static function describeValue(#[\SensitiveParameter] mixed $value): array
+    {
+        return ['present' => $value !== null && $value !== '', 'type' => get_debug_type($value)]
+            + (is_string($value) ? ['length' => strlen($value)] : []);
     }
 
     public function normalize(string $operation, int $http, #[\SensitiveParameter] array $body): ProviderResult
@@ -126,12 +173,14 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         };
         $data = is_array($body['data'] ?? null) ? $body['data'] : [];
         $message = is_string($body['message'] ?? null) ? strtolower($body['message']) : '';
+        // Transfer 3000 covers several documented failures; classify them instead of a bare "failed".
+        $transfer = $operation === 'convert' && $state === 'failed' ? $this->transferSemantics($body) : null;
         $reason = match (true) {
-            $state === 'failed' && str_contains($message, 'invalid pin') => 'invalid_pin',
-            $state === 'failed' && str_contains($message, 'balance is low') => 'low_balance',
+            $transfer !== null => $transfer['outcome'],
             $state === 'unavailable' && str_contains($message, 'unavailability of recipient') => 'recipient_unavailable',
             default => null,
         };
+        $semantics = $quota ?? $transfer;
         $identifier = is_string($data['sessionId'] ?? null) && strlen($data['sessionId']) <= 2048 ? $data['sessionId'] : null;
         $amount = ProviderResult::number($data['amountConverted'] ?? null);
         if ($state === 'success' && in_array($operation, ['verify', 'session'], true) && ! $identifier) {
@@ -143,7 +192,57 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
 
         return new ProviderResult($state, $identifier, ProviderResult::number($data['airtimeBalance'] ?? null),
             ProviderResult::number($data['automationCharges'] ?? null), convertedAmount: $amount, reason: $reason,
-            semantic: $quota['outcome'] ?? null, messageField: $quota['field'] ?? null, messageTerms: $quota['terms'] ?? null);
+            semantic: $semantics['outcome'] ?? null, messageField: $semantics['field'] ?? null, messageTerms: $semantics['terms'] ?? null);
+    }
+
+    /**
+     * Classifies a transfer 3000 by meaning, tolerating wording, case and punctuation.
+     * Every outcome is a definitive failure: none can confirm delivery or credit a wallet.
+     *
+     * @return array{outcome: string, field: string, terms: list<string>}
+     */
+    private function transferSemantics(#[\SensitiveParameter] array $body): array
+    {
+        [$field, $words] = $this->messageWords($body);
+        $has = fn (string ...$any) => array_intersect($words, $any) !== [];
+        $negated = $has('not', 'no');
+
+        return ['field' => $field, 'terms' => self::terms($words, self::TRANSFER_TERMS), 'outcome' => match (true) {
+            $has('pin') && ($has('invalid', 'incorrect', 'wrong', 'mismatch', 'rejected') || ($negated && $has('correct', 'valid'))) => 'invalid_pin',
+            $has('insufficient') || ($has('balance', 'airtime', 'credit', 'fund', 'funds') && ($has('low') || ($negated && $has('enough', 'sufficient')))) => 'insufficient_balance',
+            $has('session') && ($has('expired', 'invalid', 'unknown', 'login') || ($negated && $has('found', 'valid'))) => 'session_rejected',
+            default => 'transfer_failed',
+        }];
+    }
+
+    /**
+     * The documented top-level `message` wins; `data.message` is read only when it is
+     * absent, and a single-item list is unwrapped.
+     *
+     * @return array{0: string, 1: list<string>} the field used and its lowercase words
+     */
+    private function messageWords(#[\SensitiveParameter] array $body): array
+    {
+        [$field, $message] = match (true) {
+            isset($body['message']) => ['message', $body['message']],
+            is_array($body['data'] ?? null) && isset($body['data']['message']) => ['data.message', $body['data']['message']],
+            default => ['none', null],
+        };
+        if (is_array($message) && array_is_list($message) && count($message) === 1) {
+            $message = $message[0];
+        }
+        $words = is_string($message) ? preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($message), -1, PREG_SPLIT_NO_EMPTY) : false;
+
+        return [$field, is_array($words) ? $words : []];
+    }
+
+    /** @return list<string> vocabulary words present in the message, sorted */
+    private static function terms(array $words, array $vocabulary): array
+    {
+        $terms = array_values(array_unique(array_intersect($words, $vocabulary)));
+        sort($terms);
+
+        return $terms;
     }
 
     /**
@@ -155,21 +254,9 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
      */
     private function quotaSemantics(#[\SensitiveParameter] array $body): array
     {
-        // The documented top-level field wins; data.message is read only when it is absent.
-        [$field, $message] = match (true) {
-            isset($body['message']) => ['message', $body['message']],
-            is_array($body['data'] ?? null) && isset($body['data']['message']) => ['data.message', $body['data']['message']],
-            default => ['none', null],
-        };
-        if (is_array($message) && array_is_list($message) && count($message) === 1) {
-            $message = $message[0];
-        }
-        $words = is_string($message) ? preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($message), -1, PREG_SPLIT_NO_EMPTY) : false;
-        $words = is_array($words) ? $words : [];
-        $terms = array_values(array_unique(array_intersect($words, self::QUOTA_TERMS)));
-        sort($terms);
+        [$field, $words] = $this->messageWords($body);
 
-        return ['field' => $field, 'terms' => $terms, 'outcome' => match (true) {
+        return ['field' => $field, 'terms' => self::terms($words, self::QUOTA_TERMS), 'outcome' => match (true) {
             in_array(implode(' ', $words), ['recipient s available', 'recipients available'], true) => 'recipients_available',
             array_intersect($words, ['unavailable', 'unavailability', 'not', 'no']) !== [] => 'recipients_unavailable',
             default => 'unrecognised_5030',

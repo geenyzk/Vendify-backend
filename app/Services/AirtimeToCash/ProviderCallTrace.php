@@ -20,7 +20,12 @@ final class ProviderCallTrace
         }
     }
 
-    /** @param array $request ProviderTransport's secret-free description of the sent request. */
+    public function currentReference(): ?string
+    {
+        return $this->reference;
+    }
+
+    /** @param array $request Secret-free description of the sent request (transport headers, adapter field shapes). */
     public function record(string $operation, ?int $http, mixed $code, ProviderResult $result, bool $attempted, string $provider = 'airtime_to_cash_automation', array $request = []): void
     {
         try {
@@ -45,6 +50,10 @@ final class ProviderCallTrace
                 'auth_scheme' => $request['auth_scheme'] ?? null,
                 'auth_credential_present' => $request['auth_credential_present'] ?? null,
                 'credential_source' => $request['credential_source'] ?? null,
+                // Per-field presence/type/length/format of the body sent, and of the session ID returned.
+                'payload_fields' => $request['payload_fields'] ?? null,
+                'missing_required_fields' => $request['missing_required_fields'] ?? null,
+                'response_session_id' => $request['response_session_id'] ?? null,
                 'succeeded' => $result->state === 'success',
                 'dispatch_attempted' => $attempted,
                 'transfer_submitted' => $operation === 'convert' && $attempted,
