@@ -131,7 +131,9 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
             return $result;
         }
         $result = $this->normalize($operation, $status, $body);
-        $mode = $operation === 'convert' ? ['session_login_before_transfer' => $this->loginBeforeTransfer()] : [];
+        $mode = in_array($operation, ['session', 'convert'], true)
+            ? $this->configuration->sessionLoginBeforeTransferResolution($this->key())
+            : [];
         $this->trace->record($operation, $status ?: null, $body['code'] ?? null, $result, true,
             request: [...$request, ...$fields, ...$this->describeResponse($operation, $payload, $body), ...$mode]);
 

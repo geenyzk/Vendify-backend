@@ -50,9 +50,21 @@ final class AirtimeToCashProviderConfiguration
      */
     public function sessionLoginBeforeTransfer(string $provider, ?AirtimeToCashProviderSetting $setting = null): bool
     {
-        $stored = ($setting ?? AirtimeToCashProviderSetting::find($provider))?->session_login_before_transfer;
+        return $this->sessionLoginBeforeTransferResolution($provider, $setting)['session_login_before_transfer'];
+    }
 
-        return $stored ?? (bool) ($this->definition($provider)['session_login_before_transfer'] ?? false);
+    /** @return array{session_login_before_transfer: bool, session_login_before_transfer_source: string} */
+    public function sessionLoginBeforeTransferResolution(string $provider, ?AirtimeToCashProviderSetting $setting = null): array
+    {
+        $stored = ($setting ?? AirtimeToCashProviderSetting::find($provider))?->session_login_before_transfer;
+        $definition = $this->definition($provider);
+
+        return [
+            'session_login_before_transfer' => $stored ?? (bool) ($definition['session_login_before_transfer'] ?? false),
+            'session_login_before_transfer_source' => $stored !== null
+                ? 'admin'
+                : ($definition['session_login_before_transfer_source'] ?? 'default'),
+        ];
     }
 
     public function safeMetadata(string $provider): array
@@ -75,6 +87,8 @@ final class AirtimeToCashProviderConfiguration
             $configured = false;
         }
 
+        $sessionLogin = $this->sessionLoginBeforeTransferResolution($provider, $setting);
+
         return [
             'base_url' => $setting?->base_url ?: $definition['base_url'],
             'enabled' => $setting?->enabled ?? (bool) $definition['enabled'],
@@ -91,8 +105,7 @@ final class AirtimeToCashProviderConfiguration
             'health_message' => $setting?->health_message,
             'last_health_check_at' => $setting?->last_health_check_at?->toIso8601String(),
             // Admin-only: whether a session login runs right before each transfer, and who set it.
-            'session_login_before_transfer' => $this->sessionLoginBeforeTransfer($provider, $setting),
-            'session_login_before_transfer_source' => $setting?->session_login_before_transfer === null ? 'default' : 'admin',
+            ...$sessionLogin,
         ];
     }
 

@@ -1047,7 +1047,10 @@ class AirtimeToCashProviderFoundationTest extends TestCase
 
     public function test_enabled_session_login_runs_immediately_before_the_transfer_with_the_verified_session(): void
     {
-        config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true]);
+        config([
+            'airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true,
+            'airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer_source' => 'env',
+        ]);
         $this->enable();
         $network = $this->network();
         $user = $this->user();
@@ -1071,10 +1074,12 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             && json_decode($sent->body(), true) === ['networkName' => 'MTN', 'sender' => '08012345678', 'sessionId' => 'verified-session-id']);
         Http::assertSent(fn (ClientRequest $sent) => str_ends_with($sent->url(), '/transfer/airtime') && $sent['sessionId'] === 'verified-session-id');
         $session = collect($logs)->firstWhere('operation', 'session');
-        $this->assertSame([$request->transaction_reference, 'success', [], true, 'prepaid'], [$session['internal_reference'],
-            $session['sanitized_message'], $session['missing_required_fields'], $session['response_session_id']['matches_request'], $session['response_line_type']]);
+        $this->assertSame([$request->transaction_reference, 'success', [], true, 'prepaid', true, 'env'], [$session['internal_reference'],
+            $session['sanitized_message'], $session['missing_required_fields'], $session['response_session_id']['matches_request'], $session['response_line_type'],
+            $session['session_login_before_transfer'], $session['session_login_before_transfer_source']]);
         $this->assertFalse($session['transfer_submitted']);
-        $this->assertTrue(collect($logs)->firstWhere('operation', 'convert')['session_login_before_transfer']);
+        $convert = collect($logs)->firstWhere('operation', 'convert');
+        $this->assertSame([true, 'env'], [$convert['session_login_before_transfer'], $convert['session_login_before_transfer_source']]);
         $this->assertEquals(1475, $user->fresh()->wallet_balance);
         $this->assertStringNotContainsString('verified-session-id', json_encode($logs));
     }

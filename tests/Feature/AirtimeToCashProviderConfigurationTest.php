@@ -169,9 +169,15 @@ class AirtimeToCashProviderConfigurationTest extends TestCase
         $this->assertTrue(AirtimeToCashProviderSetting::findOrFail('airtime_to_cash_automation')->session_login_before_transfer);
 
         // Admin configuration wins over the environment fallback.
-        config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true]);
+        config([
+            'airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true,
+            'airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer_source' => 'env',
+        ]);
         $this->actingAs($admin)->putJson($url, $this->providerPayload(['priority' => 3, 'session_login_before_transfer' => false]))->assertOk();
         $this->assertSame([false, 'admin'], [$automation()['session_login_before_transfer'], $automation()['session_login_before_transfer_source']]);
+
+        AirtimeToCashProviderSetting::where('provider', 'airtime_to_cash_automation')->update(['session_login_before_transfer' => null]);
+        $this->assertSame([true, 'env'], [$automation()['session_login_before_transfer'], $automation()['session_login_before_transfer_source']]);
         $this->assertStringContainsString('session_login_before_transfer', DB::table('audit_logs')->get()->toJson());
 
         // 2FAST has no session login to configure.

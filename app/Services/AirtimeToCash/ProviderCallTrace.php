@@ -60,6 +60,7 @@ final class ProviderCallTrace
                 'response_airtime_balance' => $request['response_airtime_balance'] ?? null,
                 'response_line_type' => $request['response_line_type'] ?? null,
                 'session_login_before_transfer' => $request['session_login_before_transfer'] ?? null,
+                'session_login_before_transfer_source' => $request['session_login_before_transfer_source'] ?? null,
                 'succeeded' => $result->state === 'success',
                 'dispatch_attempted' => $attempted,
                 'transfer_submitted' => $operation === 'convert' && $attempted,
