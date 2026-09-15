@@ -142,6 +142,51 @@ class AirtimeToCashProviderConfigurationTest extends TestCase
         $this->assertStringNotContainsString($replacement, $audit);
     }
 
+    public function test_admin_controls_session_login_before_transfer_without_touching_other_configuration(): void
+    {
+        $admin = $this->admin();
+        $url = '/api/admin/airtime-to-cash/providers/airtime_to_cash_automation';
+        $row = fn () => (array) DB::table('airtime_to_cash_provider_settings')->where('provider', 'airtime_to_cash_automation')->first();
+        $automation = fn () => collect($this->actingAs($admin)->getJson('/api/admin/airtime-to-cash/providers')->assertOk()
+            ->json('data.providers'))->firstWhere('key', 'airtime_to_cash_automation');
+        $this->actingAs($admin)->putJson($url, $this->providerPayload(['priority' => 3, 'token' => 'kept-provider-secret']))->assertOk();
+        $before = $row();
+
+        // Off by default, preserving current production behaviour, and reported as the default.
+        $this->assertSame([false, 'default'], [$automation()['session_login_before_transfer'], $automation()['session_login_before_transfer_source']]);
+
+        $this->actingAs($admin)->putJson($url, $this->providerPayload(['priority' => 3, 'session_login_before_transfer' => true]))->assertOk();
+        $this->assertSame([true, 'admin'], [$automation()['session_login_before_transfer'], $automation()['session_login_before_transfer_source']]);
+        // Credential, enablement, priority, URL and health are untouched.
+        $after = $row();
+        foreach (['token', 'enabled', 'priority', 'base_url', 'health_status', 'health_message'] as $column) {
+            $this->assertSame($before[$column], $after[$column], $column);
+        }
+        $this->assertSame('kept-provider-secret', AirtimeToCashProviderSetting::findOrFail('airtime_to_cash_automation')->token);
+
+        // A client that does not send the field keeps the stored choice.
+        $this->actingAs($admin)->putJson($url, $this->providerPayload(['priority' => 3]))->assertOk();
+        $this->assertTrue(AirtimeToCashProviderSetting::findOrFail('airtime_to_cash_automation')->session_login_before_transfer);
+
+        // Admin configuration wins over the environment fallback.
+        config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => true]);
+        $this->actingAs($admin)->putJson($url, $this->providerPayload(['priority' => 3, 'session_login_before_transfer' => false]))->assertOk();
+        $this->assertSame([false, 'admin'], [$automation()['session_login_before_transfer'], $automation()['session_login_before_transfer_source']]);
+        $this->assertStringContainsString('session_login_before_transfer', DB::table('audit_logs')->get()->toJson());
+
+        // 2FAST has no session login to configure.
+        $this->actingAs($admin)->putJson('/api/admin/airtime-to-cash/providers/2fast', ['enabled' => false, 'priority' => 2,
+            'base_url' => 'https://2fast.com.ng', 'session_login_before_transfer' => true])->assertUnprocessable();
+        $this->assertNull(AirtimeToCashProviderSetting::find('2fast')?->session_login_before_transfer);
+
+        // Never exposed to customers.
+        $customer = $this->user();
+        $this->actingAs($customer)->getJson('/api/admin/airtime-to-cash/providers')->assertForbidden();
+        foreach (['/api/customer/airtime-to-cash/provider/options', '/api/customer/airtime-to-cash/networks'] as $endpoint) {
+            $this->assertStringNotContainsString('session_login', $this->actingAs($customer)->getJson($endpoint)->assertOk()->getContent(), $endpoint);
+        }
+    }
+
     public function test_provider_allowlist_url_and_required_credential_validation_are_enforced(): void
     {
         $admin = $this->admin();

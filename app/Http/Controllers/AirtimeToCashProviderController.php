@@ -123,13 +123,14 @@ final class AirtimeToCashProviderController extends Controller
     public function customerView(AirtimeToCashRequest $atc): array
     {
         $state = $atc->lifecycle['state'];
-        $network = trim((string) $atc->network) ?: 'SIM';
+        // The provider needs the network's airtime-transfer PIN, never the Vendify transaction PIN.
+        $network = self::networkName((string) $atc->network);
         $maxPins = AirtimeToCashProviderService::MAX_PIN_ATTEMPTS;
         $pinsLeft = max(0, $maxPins - (int) $atc->pin_attempt_count);
         // Definitive transfer rejections. `low_balance` is the reason name used before 2026-09-14.
         $rejection = match ($atc->provider_message) {
-            'invalid_pin' => "The transfer PIN was not accepted. No airtime was converted and your wallet has not been credited. Check your {$network} transfer PIN and try again.",
-            'pin_attempts_exhausted' => "The transfer PIN was not accepted {$maxPins} times, so this conversion has been stopped. No airtime was converted and your wallet has not been credited. Check your {$network} transfer PIN, then start a new conversion.",
+            'invalid_pin' => "{$network} Airtime Transfer PIN not accepted. Check that you're entering your {$network} airtime transfer PIN — not your Vendify transaction PIN — and try again.",
+            'pin_attempts_exhausted' => "Your {$network} Airtime Transfer PIN was not accepted {$maxPins} times, so this conversion has been stopped. No airtime was converted and your wallet has not been credited. Check your {$network} airtime transfer PIN — not your Vendify transaction PIN — then start a new conversion.",
             'insufficient_balance', 'low_balance' => "There isn't enough transferable airtime on this SIM to complete the conversion. Your wallet has not been credited.",
             'session_rejected' => 'Your SIM verification was not accepted for this transfer. No airtime was converted and your wallet has not been credited. Start a new conversion to verify your SIM again.',
             default => null,
@@ -159,6 +160,15 @@ final class AirtimeToCashProviderController extends Controller
             'expires_at' => $atc->expires_at?->toIso8601String(), 'airtime_balance' => $atc->provider_metadata['airtime_balance'] ?? null];
     }
 
+    /** Customer-facing network name used in airtime-transfer PIN wording ("MTN Airtime Transfer PIN"). */
+    private static function networkName(string $network): string
+    {
+        return match (\App\Services\AirtimeToCashAvailabilityService::canonicalName($network)) {
+            'mtn' => 'MTN', 'airtel' => 'Airtel', 'glo' => 'Glo', '9mobile' => '9mobile',
+            default => trim($network) ?: 'Network',
+        };
+    }
+
     public function adminSettings()
     {
         return $this->success([...$this->configuration->runtime(), 'providers' => $this->manager->settings()]);
@@ -171,9 +181,13 @@ final class AirtimeToCashProviderController extends Controller
             'priority' => 'required|integer|min:1|max:100',
             'base_url' => 'sometimes|string|max:255',
             'token' => 'sometimes|nullable|string|max:4096',
+            'session_login_before_transfer' => 'sometimes|boolean',
         ]);
         try {
-            $this->manager->get($provider);
+            $adapter = $this->manager->get($provider);
+            if (array_key_exists('session_login_before_transfer', $input) && ! $adapter instanceof \App\Services\AirtimeToCash\ChecksSession) {
+                throw new \DomainException('This provider does not use a session login.');
+            }
             $this->configuration->updateProvider($provider, $input);
         } catch (\DomainException $e) {
             return $this->fail([], $e->getMessage(), 422);

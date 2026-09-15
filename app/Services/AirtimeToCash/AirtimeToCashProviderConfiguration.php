@@ -43,6 +43,18 @@ final class AirtimeToCashProviderConfiguration
         ];
     }
 
+    /**
+     * Whether to log in with the verified session immediately before each transfer.
+     * Admin configuration wins; config/env is only the fallback for a provider never
+     * saved in Admin, and defaults to off. Never decrypts the credential, so it cannot fail.
+     */
+    public function sessionLoginBeforeTransfer(string $provider, ?AirtimeToCashProviderSetting $setting = null): bool
+    {
+        $stored = ($setting ?? AirtimeToCashProviderSetting::find($provider))?->session_login_before_transfer;
+
+        return $stored ?? (bool) ($this->definition($provider)['session_login_before_transfer'] ?? false);
+    }
+
     public function safeMetadata(string $provider): array
     {
         $definition = $this->definition($provider);
@@ -78,6 +90,9 @@ final class AirtimeToCashProviderConfiguration
             'health' => $setting?->health_status ?? 'not_checked',
             'health_message' => $setting?->health_message,
             'last_health_check_at' => $setting?->last_health_check_at?->toIso8601String(),
+            // Admin-only: whether a session login runs right before each transfer, and who set it.
+            'session_login_before_transfer' => $this->sessionLoginBeforeTransfer($provider, $setting),
+            'session_login_before_transfer_source' => $setting?->session_login_before_transfer === null ? 'default' : 'admin',
         ];
     }
 
@@ -137,6 +152,10 @@ final class AirtimeToCashProviderConfiguration
             'priority' => $input['priority'],
             'base_url' => $baseUrl,
         ]);
+        if (array_key_exists('session_login_before_transfer', $input)) {
+            // Only when sent, so older admin clients keep the stored choice.
+            $setting->session_login_before_transfer = (bool) $input['session_login_before_transfer'];
+        }
         if ($replacement !== null) {
             try {
                 $setting->token = $replacement;

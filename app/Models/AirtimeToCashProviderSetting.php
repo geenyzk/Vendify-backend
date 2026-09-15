@@ -19,7 +19,7 @@ class AirtimeToCashProviderSetting extends Model
 
     protected $fillable = [
         'provider', 'enabled', 'priority', 'base_url', 'token',
-        'health_status', 'health_message', 'last_health_check_at',
+        'health_status', 'health_message', 'last_health_check_at', 'session_login_before_transfer',
     ];
 
     protected $hidden = ['token'];
@@ -31,5 +31,6 @@ class AirtimeToCashProviderSetting extends Model
         'priority' => 'integer',
         'token' => 'encrypted',
         'last_health_check_at' => 'datetime',
+        'session_login_before_transfer' => 'boolean',
     ];
 }

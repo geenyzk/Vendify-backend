@@ -51,7 +51,7 @@ class AirtimeToCashRequest extends Model
             $this->status === 'cancelled' => 'Cancelled',
             ! $automated => 'Awaiting admin review',
             in_array($state, ['expired', 'session_expired'], true) => 'Verification expired',
-            $state === 'ready_to_transfer' => 'Awaiting transfer PIN',
+            $state === 'ready_to_transfer' => 'Awaiting airtime transfer PIN',
             $state === 'setup_review' => 'Needs attention',
             in_array($state, ['provider_pending', 'manual_review'], true) => 'Needs confirmation',
             in_array($state, ['processing', 'provider_confirmed', 'settlement_pending'], true) => 'Processing',

@@ -270,7 +270,7 @@ final class AirtimeToCashProviderService
     public function convert(int $id, string $userId, #[\SensitiveParameter] string $pin): AirtimeToCashRequest
     {
         if (! preg_match('/^[0-9]{4}$/D', $pin)) {
-            throw new DomainException('A four-digit SIM transfer PIN is required.');
+            throw new DomainException('Enter the 4-digit airtime transfer PIN for this line. This is not your Vendify transaction PIN.');
         }
         if ($stopped = $this->loginBeforeTransfer($id, $userId)) {
             return $stopped;
@@ -291,7 +291,7 @@ final class AirtimeToCashProviderService
             }
             if ((int) $request->pin_attempt_count >= self::MAX_PIN_ATTEMPTS) {
                 // Unreachable while recordResult fails the conversion on the last strike; kept as a backstop.
-                throw new DomainException('Too many incorrect transfer PINs. Start a new conversion.');
+                throw new DomainException('Too many incorrect airtime transfer PINs. Start a new conversion.');
             }
             if (isset($request->provider_metadata['airtime_balance']) && $request->provider_metadata['airtime_balance'] < (float) $request->amount) {
                 throw new DomainException('The verified SIM airtime balance is too low.');

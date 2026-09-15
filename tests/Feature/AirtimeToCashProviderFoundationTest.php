@@ -635,7 +635,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         $this->assertSame('ready_to_transfer', $request->provider_status);
         $this->assertSame('invalid_pin', $request->provider_message);
         $this->assertNotNull($request->provider_identifier);
-        $this->assertStringContainsString('transfer PIN was not accepted', app(AirtimeToCashProviderController::class)->customerView($request)['message']);
+        $this->assertStringStartsWith('MTN Airtime Transfer PIN not accepted.', app(AirtimeToCashProviderController::class)->customerView($request)['message']);
         $this->assertEquals(1000, $user->fresh()->wallet_balance);
 
         $request = $flow->convert($request->id, $user->id, '1234');
@@ -675,7 +675,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
     {
         return [
             'invalid PIN' => ['You have entered an invalid pin. Please double-check the pin and try again.', 'invalid_pin',
-                'The transfer PIN was not accepted. No airtime was converted and your wallet has not been credited. Check your MTN transfer PIN and try again. You have 2 attempts left.'],
+                "MTN Airtime Transfer PIN not accepted. Check that you're entering your MTN airtime transfer PIN — not your Vendify transaction PIN — and try again. You have 2 attempts left."],
             'low balance' => ['Your airtime balance is insufficient for this transfer.', 'insufficient_balance',
                 "There isn't enough transferable airtime on this SIM to complete the conversion. Your wallet has not been credited."],
         ];
@@ -735,7 +735,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
                 $request->provider_status, $request->provider_message, $request->pin_attempt_count]);
             $this->assertSame($session, $request->provider_identifier);
             $this->assertSame(3 - $attempt, $view($request)['pin_attempts_remaining']);
-            $this->assertStringEndsWith("Check your MTN transfer PIN and try again. You have {$left}", $view($request)['message']);
+            $this->assertSame("MTN Airtime Transfer PIN not accepted. Check that you're entering your MTN airtime transfer PIN — not your Vendify transaction PIN — and try again. You have {$left}", $view($request)['message']);
         }
 
         // Attempt 3: the conversion stops; the verified session and SIM reservation are released.
@@ -744,7 +744,7 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             $request->provider_message, $request->pin_attempt_count]);
         $this->assertNull($request->provider_identifier);
         $this->assertNull($request->active_session_key);
-        $this->assertSame('The transfer PIN was not accepted 3 times, so this conversion has been stopped. No airtime was converted and your wallet has not been credited. Check your MTN transfer PIN, then start a new conversion.',
+        $this->assertSame('Your MTN Airtime Transfer PIN was not accepted 3 times, so this conversion has been stopped. No airtime was converted and your wallet has not been credited. Check your MTN airtime transfer PIN — not your Vendify transaction PIN — then start a new conversion.',
             $view($request)['message']);
         $this->assertSame(0, $view($request)['pin_attempts_remaining']);
 
@@ -1000,6 +1000,32 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         return Http::recorded()->map(fn ($pair) => str_replace('https://automation.airtimetocash.com/api/v1/', '', $pair[0]->url()))->values()->all();
     }
 
+    public function test_admin_setting_controls_session_login_before_transfer_with_env_only_as_fallback(): void
+    {
+        $network = $this->network();
+        $flow = app(AirtimeToCashProviderService::class);
+        $this->sessionLoginSequence([['code' => 2000, 'data' => ['sessionId' => 'verified-session-id']], 200]);
+        $logins = fn () => Http::recorded()->filter(fn ($pair) => str_ends_with($pair[0]->url(), '/login/with/session/id'))->count();
+        $convert = function (?bool $admin, bool $env, string $phone) use ($network, $flow, $logins) {
+            AirtimeToCashProviderSetting::updateOrCreate(['provider' => 'airtime_to_cash_automation'],
+                ['enabled' => true, 'priority' => 1, 'session_login_before_transfer' => $admin]);
+            config(['airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer' => $env]);
+            $user = $this->user();
+            $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, $phone, (string) Str::uuid())->id, $user->id, '123456');
+            $before = $logins();
+            $this->assertSame('approved', $flow->convert($request->id, $user->id, '1234')->status);
+
+            return $logins() - $before;
+        };
+
+        $this->assertSame(0, $convert(false, false, '08012345671'), 'Admin OFF skips session login');
+        $this->assertSame(1, $convert(true, false, '08012345672'), 'Admin ON logs in before the transfer');
+        $this->assertSame(['login/with/session/id', 'transfer/airtime'], array_slice($this->sentPaths(), -2));
+        $this->assertSame(0, $convert(false, true, '08012345673'), 'Admin OFF wins over the environment');
+        $this->assertSame(1, $convert(null, true, '08012345674'), 'Never set in Admin: environment fallback');
+        $this->assertSame(0, $convert(null, false, '08012345675'), 'Default is off');
+    }
+
     public function test_session_login_before_transfer_is_off_by_default(): void
     {
         $this->enable();
@@ -1205,6 +1231,61 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             && ! array_intersect(['pin', 'otp', 'sessionId', 'token', 'authorization'], array_keys($context)))->atLeast()->once();
         Log::shouldNotHaveReceived('debug');
         Log::shouldNotHaveReceived('error');
+    }
+
+    public function test_convert_endpoint_sends_only_the_typed_network_pin_never_the_vendify_pin(): void
+    {
+        $this->enable();
+        $network = $this->network();
+        $user = $this->user();
+        $user->forceFill(['pin' => '5555'])->save(); // The customer's Vendify transaction PIN (stored hashed).
+        $logs = [];
+        Log::shouldReceive('info')->andReturnUsing(function ($event, $context = []) use (&$logs) {
+            $logs[] = ['event' => $event, ...$context];
+        });
+        Log::shouldReceive('debug', 'notice', 'warning', 'error')->andReturnNull();
+        $this->automationSequence(['code' => 3000, 'message' => 'Incorrect PIN']);
+        $flow = app(AirtimeToCashProviderService::class);
+        $request = $flow->verify($flow->start($user->id, $network->id, 500, 475, '08012345678', (string) Str::uuid())->id, $user->id, '123456');
+
+        $response = $this->withHeader('X-Forwarded-Proto', 'https')->actingAs($user)
+            ->postJson("/api/customer/airtime-to-cash/{$request->id}/convert", ['pin' => '7391'])
+            ->assertOk()->assertJsonPath('data.state', 'ready_to_transfer')->assertJsonPath('data.pin_attempts_remaining', 2)
+            ->assertJsonPath('data.message', "MTN Airtime Transfer PIN not accepted. Check that you're entering your MTN airtime transfer PIN — not your Vendify transaction PIN — and try again. You have 2 attempts left.");
+
+        $transfer = Http::recorded()->first(fn ($pair) => str_ends_with($pair[0]->url(), '/transfer/airtime'))[0];
+        $this->assertSame('7391', $transfer['pin']); // Exactly what the customer typed, sent only to the transfer call.
+        Http::assertNotSent(fn (ClientRequest $sent) => str_contains($sent->body(), '5555')
+            || (! str_ends_with($sent->url(), '/transfer/airtime') && str_contains($sent->body(), '7391')));
+        $audit = \Illuminate\Support\Facades\Schema::hasTable('audit_logs') ? json_encode(DB::table('audit_logs')->get()) : '';
+        foreach (['7391' => 'network PIN', '5555' => 'Vendify PIN'] as $pin => $what) {
+            $this->assertStringNotContainsString($pin, $response->getContent(), $what);
+            $this->assertStringNotContainsString($pin, json_encode(AirtimeToCashRequest::find($request->id)->getAttributes()), $what);
+            $this->assertStringNotContainsString($pin, json_encode($logs), $what);
+            $this->assertStringNotContainsString($pin, $audit, $what);
+        }
+    }
+
+    public function test_pin_wording_is_network_aware_and_reserved_for_invalid_pin(): void
+    {
+        $view = fn (array $attributes) => app(AirtimeToCashProviderController::class)->customerView((new AirtimeToCashRequest)->forceFill([
+            'processing_mode' => 'provider', 'provider' => 'airtime_to_cash_automation', 'status' => 'pending',
+            'provider_status' => 'ready_to_transfer', 'network' => 'MTN', 'provider_attempt_count' => 1, 'pin_attempt_count' => 0, ...$attributes,
+        ]))['message'];
+
+        $this->assertSame("Airtel Airtime Transfer PIN not accepted. Check that you're entering your Airtel airtime transfer PIN — not your Vendify transaction PIN — and try again. You have 2 attempts left.",
+            $view(['network' => 'Airtel', 'provider_message' => 'invalid_pin', 'pin_attempt_count' => 1]));
+        $this->assertStringStartsWith('9mobile Airtime Transfer PIN not accepted.', $view(['network' => 'T2', 'provider_message' => 'invalid_pin', 'pin_attempt_count' => 2]));
+        $this->assertStringEndsWith('You have 1 attempt left.', $view(['network' => 'T2', 'provider_message' => 'invalid_pin', 'pin_attempt_count' => 2]));
+        $this->assertStringStartsWith('Your Glo Airtime Transfer PIN was not accepted 3 times', $view(['network' => 'Glo', 'status' => 'failed',
+            'provider_status' => 'failed', 'provider_message' => 'pin_attempts_exhausted', 'pin_attempt_count' => 3]));
+        // Every other outcome keeps its own wording and never blames the PIN.
+        foreach ([['pending', 'ready_to_transfer', 'success'], ['pending', 'ready_to_transfer', 'insufficient_balance'],
+            ['failed', 'failed', 'session_rejected'], ['failed', 'failed', 'transfer_failed'], ['failed', 'failed', 'auth_error']] as [$status, $state, $reason]) {
+            $this->assertStringNotContainsString('PIN', $view(['status' => $status, 'provider_status' => $state, 'provider_message' => $reason]), $reason);
+        }
+        $this->assertSame('Awaiting airtime transfer PIN', (new AirtimeToCashRequest)->forceFill(['processing_mode' => 'provider',
+            'status' => 'pending', 'provider_status' => 'ready_to_transfer'])->lifecycle['label']);
     }
 
     public function test_owner_scope_https_and_secret_sanitization_on_endpoints(): void

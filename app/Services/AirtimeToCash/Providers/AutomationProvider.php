@@ -2,6 +2,7 @@
 
 namespace App\Services\AirtimeToCash\Providers;
 
+use App\Services\AirtimeToCash\AirtimeToCashProviderConfiguration;
 use App\Services\AirtimeToCash\AirtimeToCashProviderInterface;
 use App\Services\AirtimeToCash\ChecksQuota;
 use App\Services\AirtimeToCash\ChecksSession;
@@ -50,7 +51,11 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         'convert' => ['networkName', 'sender', 'amount', 'reference', 'pin', 'sessionId'],
     ];
 
-    public function __construct(private ProviderTransport $transport, private ProviderCallTrace $trace) {}
+    public function __construct(
+        private ProviderTransport $transport,
+        private ProviderCallTrace $trace,
+        private AirtimeToCashProviderConfiguration $configuration,
+    ) {}
 
     public function key(): string
     {
@@ -160,10 +165,11 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
      * Controlled hypothesis, off by default: call login/with/session/id immediately before
      * each transfer. The docs describe it as giving "access [to] airtime transfer functionality",
      * but production has never called it, so it stays opt-in until evidence settles it.
+     * Admin → Airtime to Cash → provider configuration controls it; env is only a fallback.
      */
     public function loginBeforeTransfer(): bool
     {
-        return (bool) config('airtime_to_cash.providers.airtime_to_cash_automation.session_login_before_transfer', false);
+        return $this->configuration->sessionLoginBeforeTransfer($this->key());
     }
 
     /** Presence, type, length and format of each documented field; sensitive values never leave. */
