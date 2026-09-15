@@ -23,6 +23,10 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
      * including any token containing a digit, is masked; no names, brands or identifiers.
      */
     private const TRANSFER_TERMS = [
+        // Harmless grammar: enough sentence structure to distinguish terse provider reasons.
+        'a', 'an', 'and', 'are', 'as', 'at', 'be', 'because', 'been', 'before', 'by', 'due', 'from', 'has',
+        'have', 'in', 'into', 'is', 'it', 'its', 'of', 'on', 'or', 'that', 'the', 'this', 'to', 'was', 'were',
+        'with', 'you', 'your', 'see',
         // Outcome and ability.
         'not', 'no', 'unable', 'able', 'cannot', 'can', 'could', 'failed', 'fail', 'failure', 'successful', 'success',
         'successfully', 'completed', 'complete', 'processed', 'pending', 'declined', 'denied', 'rejected', 'error',
@@ -32,11 +36,15 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         // Subjects.
         'transfer', 'transfers', 'transaction', 'airtime', 'recipient', 'sender', 'network', 'sim', 'line', 'number',
         'subscriber', 'customer', 'account', 'service', 'tariff', 'plan', 'prepaid', 'postpaid', 'session', 'pin', 'otp',
-        'balance', 'credit', 'fund', 'funds', 'amount', 'request', 'reference', 'duplicate',
+        'balance', 'credit', 'fund', 'funds', 'amount', 'request', 'reference', 'duplicate', 'provider', 'operator',
+        'recharge', 'recharged', 'recharging', 'share', 'sharing', 'gift', 'gifting', 'bonus', 'borrowed', 'promotional',
+        'promo', 'main', 'ussd', 'channel', 'method',
         // Qualifiers.
         'invalid', 'valid', 'incorrect', 'correct', 'wrong', 'mismatch', 'insufficient', 'sufficient', 'enough', 'low',
         'expired', 'found', 'login', 'unknown', 'limit', 'exceeded', 'reached', 'daily', 'maximum', 'minimum', 'default',
         'change', 'already', 'used', 'own', 'same', 'yet', 'try', 'again', 'later', 'time', 'please', 'kindly', 'contact',
+        'now', 'moment', 'new', 'recent', 'recently', 'cooldown', 'threshold', 'less', 'greater', 'more', 'than', 'above',
+        'below',
     ];
 
     /** Line types Verify OTP / session login may report; anything else logs as "other". */
@@ -264,12 +272,10 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         [$field, $words] = $this->messageWords($body);
         $has = fn (string ...$any) => array_intersect($words, $any) !== [];
         $negated = $has('not', 'no');
-        // Order of vocabulary words only; every other word, including connecting words and any
-        // token holding a digit, is "*", so the pattern can never reproduce the provider's sentence.
-        $pattern = implode(' ', array_map(fn ($word) => in_array($word, self::TRANSFER_TERMS, true) ? $word : '*', array_slice($words, 0, 30)));
+        $diagnostic = $this->sanitizeTransferFailureWords($words);
 
         return ['field' => $field, 'terms' => self::terms($words, self::TRANSFER_TERMS),
-            'shape' => ['pattern' => $pattern, 'word_count' => count($words)], 'outcome' => match (true) {
+            'shape' => $diagnostic, 'outcome' => match (true) {
                 $has('pin') && ($has('invalid', 'incorrect', 'wrong', 'mismatch', 'rejected') || ($negated && $has('correct', 'valid'))) => 'invalid_pin',
                 $has('insufficient') || ($has('balance', 'airtime', 'credit', 'fund', 'funds') && ($has('low') || ($negated && $has('enough', 'sufficient')))) => 'insufficient_balance',
                 $has('session') && ($has('expired', 'invalid', 'unknown', 'login') || ($negated && $has('found', 'valid'))) => 'session_rejected',
@@ -293,9 +299,47 @@ final class AutomationProvider implements AirtimeToCashProviderInterface, Checks
         if (is_array($message) && array_is_list($message) && count($message) === 1) {
             $message = $message[0];
         }
-        $words = is_string($message) ? preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($message), -1, PREG_SPLIT_NO_EMPTY) : false;
+        $words = is_string($message) ? self::transferMessageWords($message) : [];
 
-        return [$field, is_array($words) ? $words : []];
+        return [$field, $words];
+    }
+
+    /**
+     * Development/test utility for inspecting provider prose without returning the prose itself.
+     * Production uses the same allowlist, so testing a candidate message exactly predicts its log shape.
+     *
+     * @return array{terms: list<string>, pattern: string, word_count: int, masked_word_count: int}
+     */
+    public function sanitizeTransferFailureMessage(#[\SensitiveParameter] string $message): array
+    {
+        $words = self::transferMessageWords($message);
+
+        return ['terms' => self::terms($words, self::TRANSFER_TERMS), ...$this->sanitizeTransferFailureWords($words)];
+    }
+
+    /** URL, email and credential-shaped fragments are removed before individual words are considered. */
+    private static function transferMessageWords(#[\SensitiveParameter] string $message): array
+    {
+        $message = preg_replace([
+            '~https?://\S+|www\.\S+~iu',
+            '~\b[\w.%+\-]+@[\w.\-]+\.[a-z]{2,}\b~iu',
+            '~\b(?:bearer|token|authorization|api[ _-]?key)\s*[:=]\s*\S+~iu',
+        ], ' ', $message) ?? '';
+        $words = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($message), -1, PREG_SPLIT_NO_EMPTY);
+
+        return is_array($words) ? $words : [];
+    }
+
+    /** @return array{pattern: string, word_count: int, masked_word_count: int} */
+    private function sanitizeTransferFailureWords(array $words): array
+    {
+        $shown = array_map(fn ($word) => in_array($word, self::TRANSFER_TERMS, true) ? $word : '*', array_slice($words, 0, 30));
+
+        return [
+            'pattern' => implode(' ', $shown),
+            'word_count' => count($words),
+            'masked_word_count' => count(array_filter($shown, fn ($word) => $word === '*')),
+        ];
     }
 
     /** @return list<string> vocabulary words present in the message, sorted */

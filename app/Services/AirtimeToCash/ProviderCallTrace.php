@@ -44,6 +44,7 @@ final class ProviderCallTrace
                 'message_terms' => $result->messageTerms,
                 'message_pattern' => $result->messageShape['pattern'] ?? null,
                 'message_word_count' => $result->messageShape['word_count'] ?? null,
+                'message_masked_word_count' => $result->messageShape['masked_word_count'] ?? null,
                 // Names only: which auth headers went out and with which scheme, never values.
                 'request_host' => $request['request_host'] ?? null,
                 'request_path' => $request['request_path'] ?? null,

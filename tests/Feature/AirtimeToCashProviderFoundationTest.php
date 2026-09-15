@@ -938,10 +938,10 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         // Candidate wordings that all reduce to ["not","transfer"] under the previous vocabulary.
         $expected = [
             'Transfer not successful' => [['not', 'successful', 'transfer'], 'transfer not successful'],
-            'You are not allowed to transfer airtime' => [['airtime', 'allowed', 'not', 'transfer'], '* * not allowed * transfer airtime'],
-            'Unable to transfer. Sender SIM is not eligible' => [['eligible', 'not', 'sender', 'sim', 'transfer', 'unable'], 'unable * transfer sender sim * not eligible'],
-            'Transfer service not available on this network' => [['available', 'network', 'not', 'service', 'transfer'], 'transfer service not available * * network'],
-            'Dear Ade 08012345678, you cannot transfer now' => [['cannot', 'transfer'], '* * * * cannot transfer *'],
+            'You are not allowed to transfer airtime' => [['airtime', 'allowed', 'are', 'not', 'to', 'transfer', 'you'], 'you are not allowed to transfer airtime'],
+            'Unable to transfer. Sender SIM is not eligible' => [['eligible', 'is', 'not', 'sender', 'sim', 'to', 'transfer', 'unable'], 'unable to transfer sender sim is not eligible'],
+            'Transfer service not available on this network' => [['available', 'network', 'not', 'on', 'service', 'this', 'transfer'], 'transfer service not available on this network'],
+            'Dear Ade 08012345678, you cannot transfer now' => [['cannot', 'now', 'transfer', 'you'], '* * * you cannot transfer now'],
         ];
         $seen = [];
         foreach ($expected as $message => [$terms, $pattern]) {
@@ -953,6 +953,24 @@ class AirtimeToCashProviderFoundationTest extends TestCase
             $seen[] = json_encode($terms);
         }
         $this->assertCount(count($expected), array_unique($seen)); // Each wording is now distinguishable.
+    }
+
+    public function test_transfer_failure_diagnostic_utility_reveals_only_allowlisted_words(): void
+    {
+        $diagnostic = app(AutomationProvider::class)->sanitizeTransferFailureMessage(
+            'You can not transfer from account ACCT-90812; see https://example.test/private or token=super-secret',
+        );
+
+        $this->assertSame([
+            'terms' => ['account', 'can', 'from', 'not', 'or', 'see', 'transfer', 'you'],
+            'pattern' => 'you can not transfer from account * * see or',
+            'word_count' => 10,
+            'masked_word_count' => 2,
+        ], $diagnostic);
+        $encoded = json_encode($diagnostic);
+        foreach (['ACCT', '90812', 'example', 'private', 'super', 'secret'] as $sensitive) {
+            $this->assertStringNotContainsStringIgnoringCase($sensitive, $encoded);
+        }
     }
 
     public function test_transfer_and_quota_amounts_are_json_integers_on_the_wire(): void
