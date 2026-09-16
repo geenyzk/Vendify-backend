@@ -67,24 +67,38 @@ final class ProviderTransport
         return is_array($decoded) ? array_map(fn ($value) => get_debug_type($value), $decoded) : null;
     }
 
+    /**
+     * One-way, non-reversible 12-hex-character tag of a credential. Safe to log,
+     * print and compare; it cannot be reversed into the key. Trims first so the
+     * tag matches whatever is actually sent on the wire.
+     */
+    public static function fingerprint(#[\SensitiveParameter] string $credential): string
+    {
+        $credential = trim($credential);
+
+        return $credential === '' ? '' : substr(hash('sha256', $credential), 0, 12);
+    }
+
     /** Header names and the Authorization scheme word only; never a header value. */
     private static function describeHeaders(#[\SensitiveParameter] array $headers): array
     {
         $names = array_values(array_unique(array_map('strtolower', array_keys($headers))));
         sort($names);
-        [$scheme, $credential, $length] = [null, null, null];
+        [$scheme, $credential, $length, $fingerprint] = [null, null, null, null];
         foreach ($headers as $name => $values) {
             if (strtolower((string) $name) === 'authorization') {
                 $parts = explode(' ', trim((string) (is_array($values) ? ($values[0] ?? '') : $values)), 2);
                 $scheme = in_array(strtolower($parts[0]), ['bearer', 'basic', 'token'], true) ? strtolower($parts[0]) : 'other';
                 $credential = trim($parts[1] ?? '') !== '';
                 $length = strlen(trim($parts[1] ?? ''));
+                $fingerprint = self::fingerprint($parts[1] ?? '');
             }
         }
 
         return ['request_header_names' => $names, 'auth_header_names' => array_values(array_intersect($names, self::AUTH_HEADERS)),
             'auth_scheme' => $scheme, 'auth_credential_present' => $credential,
-            // Length only, never the credential: the one signal that reveals a truncated paste.
-            'auth_credential_length' => $length];
+            // Length and a one-way tag, never the credential: enough to prove which key
+            // went on the wire and to spot a truncated paste, reversible into nothing.
+            'auth_credential_length' => $length, 'auth_credential_fingerprint' => $fingerprint];
     }
 }

@@ -7,13 +7,16 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AirtimeToCash\AirtimeToCashProviderConfiguration;
 use App\Services\AirtimeToCash\AirtimeToCashProviderManager;
+use App\Services\AirtimeToCash\ProviderTransport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -374,6 +377,116 @@ class AirtimeToCashProviderConfigurationTest extends TestCase
 
         $this->assertTrue(app(AirtimeToCashProviderManager::class)->testConnection('2fast')->connected);
         Http::assertSent(fn (ClientRequest $request) => $request->hasHeader('Authorization', 'Bearer twofast-padded-key'));
+    }
+
+    /**
+     * Admin paste → save → encrypted column → resolve → transport → wire header.
+     * Proves Vendify sends exactly the pasted key: not stale, ciphertext, masked
+     * placeholder, environment fallback, or whitespace-corrupted.
+     */
+    public function test_twofast_credential_survives_the_full_admin_to_wire_lifecycle_unchanged(): void
+    {
+        $admin = $this->admin();
+        $key = 'tf_live_AbCdEf0123456789ZyXwVu';
+        // A stored credential must always beat this environment fallback.
+        config(['airtime_to_cash.providers.2fast.token' => 'environment-fallback-key']);
+        $url = '/api/admin/airtime-to-cash/providers/2fast';
+
+        // 1. The pasted value arrives with stray whitespace; the backend must cope alone.
+        $this->actingAs($admin)->putJson($url, [
+            'enabled' => true, 'priority' => 2, 'base_url' => 'https://2fast.com.ng',
+            'token' => "  {$key}\r\n",
+        ])->assertOk();
+
+        // 2. Encrypted exactly once, trimmed, never stored or echoed in the clear.
+        $raw = DB::table('airtime_to_cash_provider_settings')->where('provider', '2fast')->value('token');
+        $this->assertNotSame($key, $raw);
+        $this->assertStringNotContainsString($key, (string) $raw);
+        $this->assertSame($key, Crypt::decryptString($raw));
+        $this->assertSame($key, AirtimeToCashProviderSetting::findOrFail('2fast')->token);
+
+        // 3. Database wins over environment, and resolves to the trimmed plaintext.
+        $resolved = app(AirtimeToCashProviderConfiguration::class)->resolved('2fast');
+        $this->assertSame('database', $resolved['token_source']);
+        $this->assertSame($key, $resolved['token']);
+
+        // 4. Exactly one Bearer, exactly the pasted key, on the documented request.
+        Http::fake(['https://2fast.com.ng/api/data-plans' => Http::response(['status' => 'success', 'data' => []])]);
+        $this->actingAs($admin)->postJson($url.'/test')->assertOk()->assertJsonPath('data.connected', true);
+        Http::assertSent(function (ClientRequest $request) use ($key) {
+            $this->assertSame('https://2fast.com.ng/api/data-plans', $request->url());
+            $this->assertSame('POST', $request->method());
+            $this->assertSame(['network' => 1, 'limit' => 1], $request->data());
+            $this->assertSame(['application/json'], $request->header('Accept'));
+            $this->assertSame(['application/json'], $request->header('Content-Type'));
+            $this->assertSame(["Bearer {$key}"], $request->header('Authorization'));
+            $this->assertDoesNotMatchRegularExpression('/Bearer\s+Bearer/i', $request->header('Authorization')[0]);
+
+            return true;
+        });
+
+        // 5. The fingerprint of what went on the wire equals the fingerprint of the pasted key.
+        $this->assertSame(ProviderTransport::fingerprint($key), ProviderTransport::fingerprint($resolved['token']));
+        $this->assertSame(12, strlen(ProviderTransport::fingerprint($key)));
+        $this->assertStringNotContainsString($key, ProviderTransport::fingerprint($key));
+    }
+
+    public function test_credential_fingerprint_command_compares_without_revealing_the_credential(): void
+    {
+        $key = 'tf_live_fingerprint_case';
+        AirtimeToCashProviderSetting::create([
+            'provider' => '2fast', 'enabled' => true, 'priority' => 2,
+            'base_url' => 'https://2fast.com.ng', 'token' => $key,
+        ]);
+
+        $this->artisan('airtime-to-cash:credential-fingerprint 2fast')
+            ->expectsOutputToContain(ProviderTransport::fingerprint($key))
+            ->doesntExpectOutputToContain($key)
+            ->assertExitCode(0);
+
+        $this->artisan('airtime-to-cash:credential-fingerprint 2fast --compare')
+            ->expectsQuestion('Paste the API key from the 2FAST dashboard (input is hidden)', $key)
+            ->expectsOutputToContain('MATCH')
+            ->doesntExpectOutputToContain($key)
+            ->assertExitCode(0);
+
+        $this->artisan('airtime-to-cash:credential-fingerprint 2fast --compare')
+            ->expectsQuestion('Paste the API key from the 2FAST dashboard (input is hidden)', 'a-different-key')
+            ->expectsOutputToContain('DIFFERENT')
+            ->assertExitCode(0);
+    }
+
+    public function test_twofast_health_logs_safe_diagnostics_and_never_the_credential(): void
+    {
+        $key = 'tf_live_diagnostic_case_key';
+        AirtimeToCashProviderSetting::create([
+            'provider' => '2fast', 'enabled' => true, 'priority' => 2,
+            'base_url' => 'https://2fast.com.ng', 'token' => $key,
+        ]);
+        Http::fake(['https://2fast.com.ng/api/data-plans' => Http::response(['message' => 'Unauthenticated.'], 401)]);
+        Log::spy();
+
+        $this->assertFalse(app(AirtimeToCashProviderManager::class)->testConnection('2fast')->connected);
+
+        Log::shouldHaveReceived('info')->withArgs(function (string $message, array $context) use ($key) {
+            if ($message !== 'airtime_to_cash.provider_call' || ($context['operation'] ?? null) !== 'health') {
+                return false;
+            }
+            $this->assertSame('2fast', $context['provider']);
+            $this->assertSame(401, $context['http_status']);
+            $this->assertSame('auth_rejected', $context['provider_error_class']);
+            $this->assertSame('2fast.com.ng', $context['request_host']);
+            $this->assertSame('/api/data-plans', $context['request_path']);
+            $this->assertSame('bearer', $context['auth_scheme']);
+            $this->assertTrue($context['auth_credential_present']);
+            $this->assertSame('database', $context['credential_source']);
+            $this->assertSame(strlen($key), $context['auth_credential_length']);
+            $this->assertSame(ProviderTransport::fingerprint($key), $context['auth_credential_fingerprint']);
+            // The credential itself must appear nowhere in the log line.
+            $this->assertStringNotContainsString($key, json_encode($context));
+
+            return true;
+        })->once();
     }
 
     public function test_twofast_connection_test_requires_a_credential_and_sends_nothing_without_one(): void

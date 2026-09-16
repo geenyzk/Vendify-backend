@@ -53,6 +53,8 @@ final class ProviderCallTrace
                 'auth_scheme' => $request['auth_scheme'] ?? null,
                 'auth_credential_present' => $request['auth_credential_present'] ?? null,
                 'auth_credential_length' => $request['auth_credential_length'] ?? null,
+                // One-way SHA-256 tag of the credential actually sent; never the credential.
+                'auth_credential_fingerprint' => $request['auth_credential_fingerprint'] ?? null,
                 'credential_source' => $request['credential_source'] ?? null,
                 // Fixed adapter vocabulary (auth_rejected, forbidden_ip_or_kyc, ...), never provider prose.
                 'provider_error_class' => $request['provider_error_class'] ?? null,
