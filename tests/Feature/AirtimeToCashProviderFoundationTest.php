@@ -549,6 +549,34 @@ class AirtimeToCashProviderFoundationTest extends TestCase
         $this->assertSame('success', $provider->lookup('ATC-SAME-REFERENCE')->state);
         Http::assertSent(fn (ClientRequest $request) => str_ends_with($request->url(), '/Airtime-To-Cash')
             && $request['step'] === 3 && $request['reference'] === 'ATC-SAME-REFERENCE');
+
+        // Each documented step sends exactly its own field set, on the documented URL,
+        // with the numeric network code — never the Automation session/quota contract.
+        $steps = Http::recorded(fn (ClientRequest $request) => str_ends_with($request->url(), '/Airtime-To-Cash'));
+        $sent = $steps->map(fn ($pair) => $pair[0]->data())->all();
+        $this->assertSame(['step', 'network', 'phone_number'], array_keys($sent[0]));
+        $this->assertSame(['step', 'network', 'phone_number', 'otp'], array_keys($sent[1]));
+        $this->assertSame(['step', 'network', 'identifier', 'amount', 'pin', 'reference'], array_keys($sent[2]));
+        foreach ($sent as $index => $payload) {
+            $this->assertSame($index + 1, $payload['step']);
+            $this->assertSame(1, $payload['network']); // MTN
+            $this->assertSame('https://2fast.com.ng/api/Airtime-To-Cash', $steps[$index][0]->url());
+            $this->assertTrue($steps[$index][0]->hasHeader('Authorization', 'Bearer test-twofast-token'));
+        }
+    }
+
+    public function test_twofast_maps_airtel_to_the_documented_numeric_network_code(): void
+    {
+        Http::fake(['https://2fast.com.ng/api/Airtime-To-Cash' => Http::response([
+            'status' => 'success', 'skip_otp' => true, 'identifier' => 'id',
+        ])]);
+        $provider = app(TwoFastProvider::class);
+
+        $result = $provider->requestOtp('airtel', '08012345678');
+        $this->assertTrue($result->skipOtp);
+        $this->assertSame('id', $result->identifier());
+        Http::assertSent(fn (ClientRequest $request) => $request['network'] === 2 && $request['step'] === 1);
+        $this->assertSame([1, 2], array_column($provider->networks(), 'code'));
     }
 
     public function test_provider_manager_rejects_unsupported_network_and_limits_and_keeps_binding(): void

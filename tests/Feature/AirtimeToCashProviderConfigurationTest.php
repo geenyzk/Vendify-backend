@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\AirtimeToCash\AirtimeToCashProviderManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -267,7 +268,7 @@ class AirtimeToCashProviderConfigurationTest extends TestCase
             && ! str_contains($request->url(), 'transfer'));
     }
 
-    public function test_connection_failure_is_sanitised_and_twofast_uses_lookup_only(): void
+    public function test_connection_failure_is_sanitised_and_twofast_uses_non_transactional_endpoint(): void
     {
         $admin = $this->admin();
         $url = '/api/admin/airtime-to-cash/providers/2fast';
@@ -278,10 +279,12 @@ class AirtimeToCashProviderConfigurationTest extends TestCase
             'token' => 'twofast-health-secret',
         ])->assertOk();
         Http::fake([
-            'https://2fast.com.ng/api/transaction-history' => Http::sequence()
+            'https://2fast.com.ng/api/data-plans' => Http::sequence()
                 ->push([
-                    'status' => 'error',
-                    'message' => 'Transaction not found. Raw diagnostics are deliberately ignored.',
+                    'status' => 'success',
+                    'network' => 'MTN',
+                    'count' => 1,
+                    'data' => [['plan_id' => '001', 'volume' => '1GB']],
                     'debug' => 'upstream-private-data',
                 ], 200)
                 ->push(['message' => 'private'], 401),
@@ -292,13 +295,95 @@ class AirtimeToCashProviderConfigurationTest extends TestCase
         )->assertOk()->assertJsonPath('data.connected', true);
         $this->assertStringNotContainsString('upstream-private-data', $response->getContent());
         Http::assertSentCount(1);
-        Http::assertSent(fn (ClientRequest $request) => str_ends_with($request->url(), '/transaction-history')
-            && str_starts_with((string) $request['reference'], 'ATC-HEALTH-'));
+        // The credential check must never touch an endpoint that can start a conversion.
+        Http::assertNotSent(fn (ClientRequest $request) => str_contains($request->url(), 'Airtime-To-Cash'));
+        Http::assertSent(fn (ClientRequest $request) => $request->url() === 'https://2fast.com.ng/api/data-plans'
+            && $request->method() === 'POST'
+            && $request['network'] === 1
+            && $request->hasHeader('Authorization', 'Bearer twofast-health-secret')
+            && $request->hasHeader('Content-Type', 'application/json'));
 
         $response = $this->actingAs($admin)->postJson('/api/admin/airtime-to-cash/providers/2fast/test')
             ->assertOk()->assertJsonPath('data.connected', false)
-            ->assertJsonPath('data.message', 'Authentication rejected by provider. Check the configured API key.');
+            ->assertJsonPath('data.message', 'Authentication rejected by 2FAST. Check the configured API key.');
         $this->assertStringNotContainsString('private', $response->getContent());
         $this->assertSame('failed', AirtimeToCashProviderSetting::findOrFail('2fast')->health_status);
+    }
+
+    /**
+     * Only 401 may be reported to an admin as a credential problem. Every other
+     * documented 2FAST failure mode must name its own cause.
+     */
+    public function test_twofast_health_classifies_each_documented_failure_mode(): void
+    {
+        AirtimeToCashProviderSetting::create([
+            'provider' => '2fast', 'enabled' => true, 'priority' => 2,
+            'base_url' => 'https://2fast.com.ng', 'token' => 'twofast-key',
+        ]);
+        $manager = app(AirtimeToCashProviderManager::class);
+        $cases = [
+            [401, ['message' => 'Unauthenticated.'], false, 'Authentication rejected by 2FAST. Check the configured API key.'],
+            [403, ['message' => 'IP not whitelisted.'], false, 'Access denied by 2FAST. Check KYC status and API IP whitelist configuration.'],
+            [404, [], false, '2FAST did not recognise the connection-test endpoint. Check the configured base URL.'],
+            [429, [], false, 'Provider rate limit reached. Try the connection test later.'],
+            [503, [], false, '2FAST is temporarily unavailable. This does not indicate a credential problem.'],
+            [500, [], false, '2FAST is temporarily unavailable. This does not indicate a credential problem.'],
+            [400, ['status' => 'error', 'message' => 'Validation failed.'], false,
+                '2FAST authenticated the request but rejected it (HTTP 400). This is not a credential problem.'],
+            [422, ['status' => 'error'], false,
+                '2FAST authenticated the request but rejected it (HTTP 422). This is not a credential problem.'],
+            [200, ['status' => 'error', 'message' => 'Something else.'], false,
+                '2FAST authenticated the request but returned an unrecognised response. This is not a credential problem.'],
+            [200, ['status' => 'success', 'network' => 'MTN', 'count' => 0, 'data' => []], true, 'Authentication successful.'],
+        ];
+        // One sequence: Http::fake() appends stubs, so re-faking per case would keep the first.
+        $sequence = Http::sequence();
+        foreach ($cases as [$status, $body]) {
+            $sequence->push($body, $status);
+        }
+        Http::fake(['https://2fast.com.ng/api/data-plans' => $sequence]);
+        foreach ($cases as [$status, $body, $connected, $message]) {
+            $result = $manager->testConnection('2fast');
+            $this->assertSame($connected, $result->connected, "HTTP {$status} connected flag");
+            $this->assertSame($message, $result->message, "HTTP {$status} message");
+        }
+        Http::assertNotSent(fn (ClientRequest $request) => str_contains($request->url(), 'Airtime-To-Cash'));
+    }
+
+    public function test_twofast_health_reports_a_transport_failure_as_unreachable_not_rejected(): void
+    {
+        AirtimeToCashProviderSetting::create([
+            'provider' => '2fast', 'enabled' => true, 'priority' => 2,
+            'base_url' => 'https://2fast.com.ng', 'token' => 'twofast-key',
+        ]);
+        Http::fake(['https://2fast.com.ng/api/data-plans' => fn () => throw new ConnectionException('timed out')]);
+
+        $result = app(AirtimeToCashProviderManager::class)->testConnection('2fast');
+        $this->assertFalse($result->connected);
+        $this->assertSame(
+            'Could not reach 2FAST. The request failed before any response (network, DNS or timeout).',
+            $result->message,
+        );
+    }
+
+    public function test_twofast_credential_is_trimmed_before_authorization_header_is_built(): void
+    {
+        // An env-sourced key keeps whatever whitespace the paste carried.
+        config(['airtime_to_cash.providers.2fast.token' => "  twofast-padded-key\n"]);
+        Http::fake(['https://2fast.com.ng/api/data-plans' => Http::response(['status' => 'success', 'data' => []])]);
+
+        $this->assertTrue(app(AirtimeToCashProviderManager::class)->testConnection('2fast')->connected);
+        Http::assertSent(fn (ClientRequest $request) => $request->hasHeader('Authorization', 'Bearer twofast-padded-key'));
+    }
+
+    public function test_twofast_connection_test_requires_a_credential_and_sends_nothing_without_one(): void
+    {
+        Http::fake();
+        $this->expectException(\DomainException::class);
+        try {
+            app(AirtimeToCashProviderManager::class)->testConnection('2fast');
+        } finally {
+            Http::assertNothingSent();
+        }
     }
 }

@@ -9,7 +9,6 @@ use App\Services\AirtimeToCash\ProviderCallTrace;
 use App\Services\AirtimeToCash\ProviderRequestNotSent;
 use App\Services\AirtimeToCash\ProviderResult;
 use App\Services\AirtimeToCash\ProviderTransport;
-use Illuminate\Support\Str;
 
 final class TwoFastProvider implements AirtimeToCashProviderInterface, LooksUpTransactions
 {
@@ -37,25 +36,68 @@ final class TwoFastProvider implements AirtimeToCashProviderInterface, LooksUpTr
 
     public function healthCheck(): ProviderHealthResult
     {
-        [$http, $body] = $this->transport->post(
-            $this->key(),
-            '/api/transaction-history',
-            ['reference' => 'ATC-HEALTH-'.Str::uuid()],
-            true,
-            true,
-        );
-        if (in_array($http, [401, 403], true)) {
-            return new ProviderHealthResult(false, 'Authentication rejected by provider. Check the configured API key.');
+        try {
+            // Documented, authenticated, read-only catalogue lookup. It performs no
+            // conversion, so it proves the credential without moving airtime or money.
+            [$http, $body, $request] = $this->transport->post(
+                $this->key(),
+                '/api/data-plans',
+                ['network' => $this->code('mtn'), 'limit' => 1],
+                true,
+                true,
+            );
+        } catch (ProviderRequestNotSent $e) {
+            app(ProviderCallTrace::class)->record('health', null, null,
+                new ProviderResult('not_sent', reason: 'transport_preflight_rejected'), false, $this->key());
+            throw $e;
+        }
+        [$connected, $message, $class] = $this->classifyHealth($http, $body);
+        app(ProviderCallTrace::class)->record('health', $http ?: null, null,
+            new ProviderResult($connected ? 'success' : 'failed', reason: $class), true, $this->key(),
+            [...$request, 'provider_error_class' => $class]);
+
+        return new ProviderHealthResult($connected, $message);
+    }
+
+    /**
+     * Every documented 2FAST failure mode gets its own verdict. Only 401 may be
+     * reported to an admin as a credential problem: 403 is IP whitelist/KYC, 404 is
+     * our own base URL, 5xx and transport failures are not the admin's key at all.
+     *
+     * @return array{0: bool, 1: string, 2: string}
+     */
+    private function classifyHealth(int $http, #[\SensitiveParameter] array $body): array
+    {
+        if ($http === 0) {
+            return [false, 'Could not reach 2FAST. The request failed before any response (network, DNS or timeout).', 'network_error'];
+        }
+        if ($http === 401) {
+            return [false, 'Authentication rejected by 2FAST. Check the configured API key.', 'auth_rejected'];
+        }
+        if ($http === 403) {
+            return [false, 'Access denied by 2FAST. Check KYC status and API IP whitelist configuration.', 'forbidden_ip_or_kyc'];
+        }
+        if ($http === 404) {
+            return [false, '2FAST did not recognise the connection-test endpoint. Check the configured base URL.', 'endpoint_not_found'];
         }
         if ($http === 429) {
-            return new ProviderHealthResult(false, 'Provider rate limit reached. Try the connection test later.');
+            return [false, 'Provider rate limit reached. Try the connection test later.', 'rate_limited'];
         }
-        $message = is_string($body['message'] ?? null) ? $body['message'] : '';
-        if ($http === 200 && ($body['status'] ?? null) === 'error' && str_starts_with($message, 'Transaction not found')) {
-            return new ProviderHealthResult(true, 'Authentication successful.');
+        if ($http >= 500) {
+            return [false, '2FAST is temporarily unavailable. This does not indicate a credential problem.', 'provider_unavailable'];
+        }
+        if ($http >= 400) {
+            // Authentication passed; 2FAST rejected the request itself (400 validation, 422, ...).
+            return [false, "2FAST authenticated the request but rejected it (HTTP {$http}). This is not a credential problem.", 'request_rejected'];
+        }
+        if ($http < 200 || $http >= 300) {
+            return [false, "2FAST returned an unexpected HTTP {$http} response. Check the configured base URL.", 'unexpected_status'];
+        }
+        if (($body['status'] ?? null) === 'success') {
+            return [true, 'Authentication successful.', 'authenticated'];
         }
 
-        return new ProviderHealthResult(false, 'Provider did not return a recognised health response.');
+        return [false, '2FAST authenticated the request but returned an unrecognised response. This is not a credential problem.', 'authenticated_error_body'];
     }
 
     private function code(string $network): int

@@ -52,7 +52,10 @@ final class ProviderCallTrace
                 'auth_header_names' => $request['auth_header_names'] ?? null,
                 'auth_scheme' => $request['auth_scheme'] ?? null,
                 'auth_credential_present' => $request['auth_credential_present'] ?? null,
+                'auth_credential_length' => $request['auth_credential_length'] ?? null,
                 'credential_source' => $request['credential_source'] ?? null,
+                // Fixed adapter vocabulary (auth_rejected, forbidden_ip_or_kyc, ...), never provider prose.
+                'provider_error_class' => $request['provider_error_class'] ?? null,
                 // Per-field presence/type/length/format of the body sent, and of the session ID returned.
                 'payload_fields' => $request['payload_fields'] ?? null,
                 'missing_required_fields' => $request['missing_required_fields'] ?? null,

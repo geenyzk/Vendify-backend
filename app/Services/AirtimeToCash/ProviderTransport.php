@@ -33,14 +33,17 @@ final class ProviderTransport
         } elseif (! $healthCheck && ! $this->configuration->liveCallsEnabled()) {
             throw new ProviderRequestNotSent('Live conversion calls are disabled.');
         }
-        if ($protected && empty($config['token'])) {
+        // A pasted credential often carries a trailing newline or space. Trim before use:
+        // untrimmed, it malforms the Authorization header and reads as a rejected key.
+        $token = trim((string) ($config['token'] ?? ''));
+        if ($protected && $token === '') {
             throw new ProviderRequestNotSent('Conversion credentials are not configured.');
         }
         $request = ['request_host' => $expectedHost, 'request_path' => $path, 'credential_source' => $config['token_source'] ?? null];
         try {
             $http = Http::acceptJson()->asJson()->connectTimeout(5)->timeout(25)->withoutRedirecting();
             if ($protected) {
-                $http = $http->withToken($config['token']);
+                $http = $http->withToken($token);
             }
             $http->beforeSending(function (ClientRequest $sent) use (&$request) {
                 $request = [...$request, ...self::describeHeaders($sent->headers()), 'request_body_types' => self::bodyTypes($sent->body())];
@@ -52,7 +55,7 @@ final class ProviderTransport
         } catch (\Throwable) {
             return [0, [], $request]; // Transport failure may have occurred after transfer delivery.
         } finally {
-            unset($payload, $http, $config);
+            unset($payload, $http, $config, $token);
         }
     }
 
@@ -69,16 +72,19 @@ final class ProviderTransport
     {
         $names = array_values(array_unique(array_map('strtolower', array_keys($headers))));
         sort($names);
-        [$scheme, $credential] = [null, null];
+        [$scheme, $credential, $length] = [null, null, null];
         foreach ($headers as $name => $values) {
             if (strtolower((string) $name) === 'authorization') {
                 $parts = explode(' ', trim((string) (is_array($values) ? ($values[0] ?? '') : $values)), 2);
                 $scheme = in_array(strtolower($parts[0]), ['bearer', 'basic', 'token'], true) ? strtolower($parts[0]) : 'other';
                 $credential = trim($parts[1] ?? '') !== '';
+                $length = strlen(trim($parts[1] ?? ''));
             }
         }
 
         return ['request_header_names' => $names, 'auth_header_names' => array_values(array_intersect($names, self::AUTH_HEADERS)),
-            'auth_scheme' => $scheme, 'auth_credential_present' => $credential];
+            'auth_scheme' => $scheme, 'auth_credential_present' => $credential,
+            // Length only, never the credential: the one signal that reveals a truncated paste.
+            'auth_credential_length' => $length];
     }
 }
