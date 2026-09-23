@@ -18,6 +18,7 @@ class Transaction extends Model
     protected $appends = [
         'service', 'meter_type', 'meter_number', 'customer_name', 'distribution_company', 'electricity_token',
         'cable_service', 'cable_service_name', 'cable_package_name', 'cable_identifier', 'cable_subscription_type',
+        'data_network', 'data_plan_name', 'data_plan_size', 'data_plan_validity', 'data_plan_label',
     ];
     protected $hidden = ['idempotency_key', 'raw_payload'];
     protected $fillable = [
@@ -172,6 +173,82 @@ class Transaction extends Model
                     ? strtolower((string) $this->plan_type)
                     : null)
                 : null);
+    }
+
+    /*
+     * ── Data snapshot ───────────────────────────────────────────────────
+     * Which network and which bundle the customer actually bought, as it
+     * read at the time of purchase (written by VendorBase::process). Same
+     * rule as the cable snapshot above: never resolved from data_plans
+     * later, so a renamed, re-priced or deleted plan cannot rewrite an
+     * existing receipt. Rows written before the snapshot existed return
+     * null and the UI omits the line.
+     */
+
+    private function dataSnapshot(string $key): ?string
+    {
+        if ($this->transaction_type !== 'data_subscription') {
+            return null;
+        }
+
+        // raw_payload is absent whenever a query selected a narrower column
+        // set, so never index it directly.
+        $payload = is_array($this->raw_payload) ? $this->raw_payload : [];
+        $value = $payload[$key] ?? null;
+
+        return is_scalar($value) && trim((string) $value) !== '' ? (string) $value : null;
+    }
+
+    public function getDataNetworkAttribute(): ?string
+    {
+        // network has had its own column since airtime routing; data rows
+        // written after the snapshot fill it too, so prefer it and fall
+        // back to the snapshot copy.
+        if ($this->transaction_type !== 'data_subscription') {
+            return null;
+        }
+
+        $network = is_string($this->network) && trim($this->network) !== '' ? trim($this->network) : null;
+
+        return $network ?? $this->dataSnapshot('data_network');
+    }
+
+    public function getDataPlanNameAttribute(): ?string
+    {
+        return $this->dataSnapshot('data_plan_name');
+    }
+
+    public function getDataPlanSizeAttribute(): ?string
+    {
+        return $this->dataSnapshot('data_plan_size');
+    }
+
+    public function getDataPlanValidityAttribute(): ?string
+    {
+        return $this->dataSnapshot('data_plan_validity');
+    }
+
+    /**
+     * The bundle as one readable line — "1GB (30 days)". plan_name already
+     * carries the size for most catalogue entries, so plan_size is only
+     * appended when it adds something the name does not already say.
+     */
+    public function getDataPlanLabelAttribute(): ?string
+    {
+        $name = $this->data_plan_name;
+        $size = $this->data_plan_size;
+        $validity = $this->data_plan_validity;
+
+        $bundle = $name;
+        if ($size !== null && ($name === null || stripos($name, $size) === false)) {
+            $bundle = $name === null ? $size : trim($name.' '.$size);
+        }
+
+        if ($bundle === null) {
+            return null;
+        }
+
+        return $validity !== null ? $bundle.' ('.$validity.')' : $bundle;
     }
 
     /**

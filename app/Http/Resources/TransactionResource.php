@@ -68,6 +68,15 @@ class TransactionResource extends JsonResource
                 'final_provider_id' => $this->final_provider_id,
             ]),
             'plan_type' => $this->plan_type,
+            // What was actually bought on a data order: the network and the
+            // bundle, snapshotted at purchase time (see Transaction's data
+            // accessors). Null on every other transaction type, and on data
+            // rows written before the snapshot existed.
+            'data_network' => $this->data_network,
+            'data_plan_name' => $this->data_plan_name,
+            'data_plan_size' => $this->data_plan_size,
+            'data_plan_validity' => $this->data_plan_validity,
+            'data_plan_label' => $this->data_plan_label,
             'token' => $this->token,
             'service' => $this->service,
             'meter_type' => $this->meter_type,

@@ -122,9 +122,33 @@ abstract class VendorBase implements VendorInterface
             // dashboard can report data sold in GB reliably (the vendor reply's
             // own quantity is frequently missing).
             if ($service === 'data') {
-                $gb = $this->resolveDataGb($payload);
+                // Resolved once: the plan supplies both the GB quantity and
+                // the purchase snapshot recorded below.
+                $dataPlan = \App\Models\DataPlan::find($payload['data_plan'] ?? null);
+                $gb = $this->resolveDataGb($dataPlan);
                 if ($gb !== null) {
                     $formattedResponse['quantity'] = $gb;
+                }
+
+                // Snapshot which network and which bundle was bought, at the
+                // moment it was bought — same reasoning as cable above: a
+                // receipt must keep reading "MTN · 1GB (30 days)" after the
+                // plan is renamed, re-priced or deleted from the catalogue.
+                // network has its own column (shared with airtime); the plan
+                // details ride in raw_payload alongside the cable snapshot.
+                if ($dataPlan) {
+                    $formattedResponse['network'] = $dataPlan->network;
+                    $formattedResponse['raw_payload'] = array_merge(
+                        is_array($formattedResponse['raw_payload'] ?? null) ? $formattedResponse['raw_payload'] : [],
+                        array_filter([
+                            'data_plan_id' => $dataPlan->getKey(),
+                            'data_network' => $dataPlan->network,
+                            'data_plan_name' => $dataPlan->plan_name,
+                            'data_plan_size' => $dataPlan->plan_size,
+                            'data_plan_type' => $dataPlan->plan_type,
+                            'data_plan_validity' => $dataPlan->validity,
+                        ], fn ($value) => $value !== null && $value !== ''),
+                    );
                 }
             }
             $transaction = TransactionService::record($formattedResponse, $user, $reservation);
@@ -359,14 +383,8 @@ abstract class VendorBase implements VendorInterface
      * The data plan's volume in GB, parsed from its advertised size (e.g.
      * "500MB" → 0.488, "2GB" → 2.0), or null when it can't be determined.
      */
-    protected function resolveDataGb(array $payload): ?float
+    protected function resolveDataGb(?\App\Models\DataPlan $plan): ?float
     {
-        $planId = $payload['data_plan'] ?? null;
-        if (!$planId) {
-            return null;
-        }
-
-        $plan = \App\Models\DataPlan::find($planId);
         if (!$plan) {
             return null;
         }
