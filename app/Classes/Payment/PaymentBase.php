@@ -197,7 +197,19 @@ abstract class PaymentBase implements PaymentInterface
      */
     abstract protected function verifyWebhookSignature(Request $request): bool;
 
-    public function webhook(Request $request): bool
+    /** Provider-specific verification/enrichment before shared settlement. */
+    protected function verifiedCallback(Request $request): array
+    {
+        return $this->callback($request);
+    }
+
+    /** Handle non-deposit events (for example Flutterwave transfer updates). */
+    protected function handleProviderEvent(Request $request): ?WebhookOutcome
+    {
+        return null;
+    }
+
+    public function webhook(Request $request): WebhookOutcome
     {
         try {
             if (!$this->verifyWebhookSignature($request)) {
@@ -216,13 +228,16 @@ abstract class PaymentBase implements PaymentInterface
                         'ip' => $request->ip(),
                     ],
                 );
-                return false;
+                return WebhookOutcome::Rejected;
             }
 
-            $callback = $this->callback($request);
+            if ($outcome = $this->handleProviderEvent($request)) {
+                return $outcome;
+            }
+
+            $callback = $this->verifiedCallback($request);
             if (empty($callback) || empty($callback['transaction_reference'])) {
-                Log::warning('Missing transaction_reference in callback.', ['callback' => $callback]);
-                return true;
+                throw new InvalidPaymentWebhookException('Verified callback has no transaction reference.');
             }
 
             $reference = $callback['transaction_reference'];
@@ -236,19 +251,25 @@ abstract class PaymentBase implements PaymentInterface
                     return;
                 }
 
-                // Row-lock so two near-simultaneous deliveries of the same
-                // webhook (a provider retry racing the original) can't both
-                // read "not yet processed" and both credit the wallet.
-                $existing = Transaction::where('transaction_reference', $reference)->lockForUpdate()->first();
+                $existingQuery = Transaction::where('transaction_reference', $reference);
+                if (!empty($callback['provider_transaction_id'])) {
+                    $existingQuery->orWhere(function ($query) use ($callback) {
+                        $query->where('provider', $this->providerName)
+                            ->where('provider_transaction_id', (string) $callback['provider_transaction_id']);
+                    });
+                }
+                $existing = $existingQuery->lockForUpdate()->first();
 
                 if ($existing && $existing->status === 'success') {
                     Log::info('Webhook for already-processed transaction ignored.', ['transaction_reference' => $reference]);
                     return;
                 }
 
-                $user = !empty($callback['user_email'])
-                    ? User::where('email', $callback['user_email'])->first()
-                    : null;
+                $user = !empty($callback['user_id'])
+                    ? User::find($callback['user_id'])
+                    : (!empty($callback['user_email'])
+                        ? User::where('email', $callback['user_email'])->first()
+                        : null);
 
                 // transactions.user_id is a NOT NULL column — a Transaction
                 // row simply cannot be created without a real user to attach
@@ -282,40 +303,64 @@ abstract class PaymentBase implements PaymentInterface
                     return;
                 }
 
+                if ($existing && ((string) $existing->user_id !== (string) $user->id
+                    || ($existing->provider && strtolower((string) $existing->provider) !== strtolower($this->providerName)))) {
+                    throw new InvalidPaymentWebhookException('Payment identity is already owned by another ledger entry.');
+                }
+
+                unset($callback['user_email']);
+                $callback['user_id'] = $user->id;
+
+                // Claim the unique provider payment identity before moving money.
+                // A concurrent duplicate can only make one insert succeed; the
+                // losing transaction rolls back and safely retries later.
+                if (!$existing) {
+                    $initial = $callback;
+                    if (($callback['status'] ?? null) === 'success') {
+                        $initial['status'] = 'pending';
+                        $initial['completed_at'] = null;
+                    }
+                    $existing = Transaction::create($initial);
+                }
+
                 if ($callback['status'] === 'success') {
-                    $user->wallet_balance += $callback['amount'];
-                    $user->save();
+                    $amount = (float) ($callback['amount'] ?? 0);
+                    if ($amount <= 0) {
+                        throw new InvalidPaymentWebhookException('Verified payment amount must be positive.');
+                    }
+
+                    $lockedUser = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+                    $balanceBefore = (float) $lockedUser->wallet_balance;
+                    $lockedUser->increment('wallet_balance', $amount);
+                    $balanceAfter = $balanceBefore + $amount;
+                    $callback['balance_before'] = $balanceBefore;
+                    $callback['balance_after'] = $balanceAfter;
 
                     // Positive confirmation that a real funding credited a real
                     // wallet — the happy path, visible in the Audit Log next to
                     // the failures above.
                     \App\Support\AuditLogger::record(
                         'wallet_funded',
-                        subject: $user,
+                        subject: $lockedUser,
                         changes: ['wallet_balance' => [
-                            'old' => round($user->wallet_balance - (float) $callback['amount'], 2),
-                            'new' => (float) $user->wallet_balance,
+                            'old' => round($balanceBefore, 2),
+                            'new' => round($balanceAfter, 2),
                         ]],
                         description: sprintf(
                             'Wallet funded NGN %s via %s for %s',
                             number_format((float) $callback['amount'], 2),
                             $this->providerName,
-                            $user->email,
+                            $lockedUser->email,
                         ),
                         context: ['provider' => $this->providerName, 'transaction_reference' => $reference],
-                        actor: $user,
+                        actor: $lockedUser,
                     );
                 }
 
-                $callback['user_id'] = $user->id;
-                unset($callback['user_email']);
-
                 Log::info('Webhook received.', ['transaction_reference' => $reference, 'status' => $callback['status']]);
 
-                $transaction = Transaction::updateOrCreate(
-                    ['transaction_reference' => $reference],
-                    $callback
-                );
+                $existing->fill($callback)->save();
+                $transaction = $existing;
 
                 if ($callback['status'] === 'success') {
                     // Notify only after the wallet credit and transaction
@@ -349,7 +394,13 @@ abstract class PaymentBase implements PaymentInterface
                 }
             });
 
-            return true;
+            return WebhookOutcome::Accepted;
+        } catch (InvalidPaymentWebhookException $e) {
+            Log::warning('Payment webhook permanently rejected.', [
+                'provider' => $this->providerName,
+                'reason' => $e->getMessage(),
+            ]);
+            return WebhookOutcome::Accepted;
         } catch (\Throwable $e) {
             // \Exception alone doesn't catch \Error/\TypeError — e.g. the
             // uninitialized-typed-property bug that used to make Monnify's
@@ -359,7 +410,7 @@ abstract class PaymentBase implements PaymentInterface
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return true;
+            return WebhookOutcome::Retry;
         }
     }
 

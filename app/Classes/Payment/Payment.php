@@ -106,20 +106,24 @@ class Payment
 
         try {
             $providerInstance = PaymentFactory::make($provider);
-            $verified = $providerInstance->webhook($request);
+            $outcome = $providerInstance->webhook($request);
         } catch (\Throwable $e) {
             Log::error('Payment webhook processing failed', [
                 'provider_id' => $provider->id,
                 'error' => $e->getMessage(),
             ]);
-            return response()->noContent();
+            return response('Temporary webhook processing failure.', 503);
         }
 
         // A signature that failed verification gets a 401 rather than the
         // usual 204 — distinguishes "rejected, try re-configuring the
         // webhook secret" from "accepted" in whoever's watching delivery
         // logs on the provider's own dashboard.
-        return $verified === false ? response()->noContent(401) : response()->noContent();
+        return match ($outcome) {
+            WebhookOutcome::Rejected => response('Invalid webhook signature.', 401),
+            WebhookOutcome::Retry => response('Temporary webhook processing failure.', 503),
+            WebhookOutcome::Accepted => response('OK', 200),
+        };
 
     }
 }

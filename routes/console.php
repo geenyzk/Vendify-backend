@@ -68,6 +68,16 @@ Schedule::command('vtu-ng:reconcile')
         \Illuminate\Support\Facades\Log::error('vtu-ng:reconcile scheduled run failed.');
     });
 
+// Flutterwave transfer creation is asynchronous. Verify queued/ambiguous
+// withdrawals until each reaches a terminal provider status.
+Schedule::command('flutterwave:reconcile-withdrawals')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('flutterwave:reconcile-withdrawals scheduled run failed.');
+    });
+
 // Refunds SIM vend jobs whose device lease or pending TTL lapsed without an
 // ack — the customer-facing safety net for the SIM vending channel (see
 // ExpireSimVendJobs for why expired leases are never re-dispatched).

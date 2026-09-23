@@ -2,9 +2,14 @@
 
 namespace App\Classes\Payment\Provider;
 
+use App\Classes\Payment\InvalidPaymentWebhookException;
 use App\Classes\Payment\PaymentBase;
+use App\Classes\Payment\WebhookOutcome;
+use App\Models\Bank;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Models\WalletWithdrawal;
+use App\Services\Payments\WalletWithdrawalSettlementService;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -23,15 +28,17 @@ class FlutterWave extends PaymentBase
 
     function checkBalance(): string
     {
-
         $response = Http::withHeaders($this->getHeaders())
-                ->get($this->baseUrl() . '/balances/NG');
-        Log::info($response);
+                ->connectTimeout(5)
+                ->timeout(15)
+                ->get($this->baseUrl() . '/balances');
         if ($response->successful()) {
-                $account = $response->json('data') ?? [];
-                return $account['available_balance'] ?? "";
-            }
-        return 0;
+            $account = collect($response->json('data') ?? [])->first(
+                fn ($balance) => strtoupper((string) ($balance['currency'] ?? '')) === 'NGN'
+            );
+            return (string) ($account['available_balance'] ?? '');
+        }
+        return '0';
     }
 
 
@@ -39,27 +46,40 @@ class FlutterWave extends PaymentBase
     public function generate($payload):array|null
     {
         try {
+            if (empty($payload->bvn) && empty($payload->nin)) {
+                Log::warning('Flutterwave permanent account provisioning skipped: customer identity is unavailable.', [
+                    'user_id' => $payload->id,
+                    'operation' => 'virtual_account_create',
+                ]);
+                return null;
+            }
             $payloadResponse = $this->formatPayload($payload);
             $response = Http::withHeaders($this->getHeaders())
                 ->connectTimeout(5)
                 ->timeout(15)
                 ->post($this->baseUrl() . "/virtual-account-numbers", $payloadResponse);
 
-            Log::info("Generating virtual account for {$payload->email}...", [
-                'response' => $response->json()
-            ]);
-
             if ($response->successful()) {
                 $data = $response->json('data');
+                Log::info('Flutterwave virtual account created.', [
+                    'user_id' => $payload->id,
+                    'operation' => 'virtual_account_create',
+                    'status' => 'success',
+                    'transaction_reference' => $payloadResponse['tx_ref'],
+                ]);
                 return $this->formatResponse(array_merge($data, $payloadResponse), $payload);
             } else {
                 Log::error("Failed to generate account.", [
-                    'error' => $response->body()
+                    'operation' => 'virtual_account_create',
+                    'status' => $response->status(),
                 ]);
                 return null;
             }
         } catch (\Throwable $th) {
-            Log::error($th);
+            Log::error('Flutterwave virtual account creation failed.', [
+                'operation' => 'virtual_account_create',
+                'error_category' => class_basename($th),
+            ]);
 
             return null;
         }
@@ -93,12 +113,15 @@ class FlutterWave extends PaymentBase
             "email" => $sessionUser->email,
             "tx_ref" => $txRef,
             "phonenumber" => $sessionUser->phone,
+            "currency" => 'NGN',
             "is_permanent" => true,
             "firstname" => $firstName,
             "lastname" => $lastName,
         ];
         if (!empty($sessionUser->bvn)) {
             $request['bvn'] = $sessionUser->bvn;
+        } elseif (!empty($sessionUser->nin)) {
+            $request['nin'] = $sessionUser->nin;
         }
         return $request;
     }
@@ -130,6 +153,8 @@ class FlutterWave extends PaymentBase
     {
         try {
             $response = Http::withHeaders($this->getHeaders())
+                ->connectTimeout(5)
+                ->timeout(20)
                 ->post($this->baseUrl() . '/transfers', [
                     'account_bank'    => $payload['account_bank'],
                     'account_number'  => $payload['account_number'],
@@ -138,23 +163,37 @@ class FlutterWave extends PaymentBase
                     'currency'        => 'NGN',
                     'reference'       => $payload['reference'],
                     'debit_currency'  => 'NGN',
+                    'callback_url'    => $this->provider->webhook,
                 ]);
 
             $body = $response->json();
 
-            // Log::info('Flutterwave vendor transfer initiated', [
-            //     'reference' => $payload['reference'],
-            //     'response'  => $body,
-            // ]);
+            if ($response->serverError() || in_array($response->status(), [408, 429], true)) {
+                throw new \RuntimeException('Flutterwave transfer service is temporarily unavailable.');
+            }
+
+            $accepted = $response->successful() && ($body['status'] ?? '') === 'success';
+            $providerStatus = strtoupper((string) data_get($body, 'data.status', ''));
+
+            Log::info('Flutterwave transfer initiation completed.', [
+                'operation' => 'transfer_create',
+                'reference' => $payload['reference'],
+                'status' => $accepted ? ($providerStatus ?: 'ACCEPTED') : 'REJECTED',
+                'flutterwave_transfer_id' => data_get($body, 'data.id'),
+            ]);
 
             return [
-                'status'  => ($body['status'] ?? '') === 'success' ? 'success' : 'failed',
+                'status'  => $accepted ? 'processing' : 'failed',
                 'message' => $body['message'] ?? 'Unknown response',
                 'data'    => $body['data'] ?? [],
             ];
         } catch (\Throwable $e) {
-            Log::error('Flutterwave transfer failed', ['error' => $e->getMessage()]);
-            return ['status' => 'failed', 'message' => $e->getMessage(), 'data' => []];
+            Log::error('Flutterwave transfer initiation failed.', [
+                'operation' => 'transfer_create',
+                'reference' => $payload['reference'] ?? null,
+                'error_category' => class_basename($e),
+            ]);
+            throw $e;
         }
     }
 
@@ -180,10 +219,10 @@ class FlutterWave extends PaymentBase
                 ])->values()->all();
             }
 
-            Log::error('Flutterwave: failed to fetch banks', ['error' => $response->body()]);
+            Log::error('Flutterwave bank lookup failed.', ['operation' => 'bank_lookup', 'status' => $response->status()]);
             return [];
         } catch (\Throwable $e) {
-            Log::error('Flutterwave: getBanks exception', ['error' => $e->getMessage()]);
+            Log::error('Flutterwave bank lookup threw.', ['operation' => 'bank_lookup', 'error_category' => class_basename($e)]);
             return [];
         }
     }
@@ -212,6 +251,179 @@ class FlutterWave extends PaymentBase
             'status' => $status,
             'receiver' => $customer['phone_number'] ?? null,
         ];
+    }
+
+    protected function verifiedCallback(HttpRequest $request): array
+    {
+        if ($request->input('event') !== 'charge.completed') {
+            throw new InvalidPaymentWebhookException('Unsupported Flutterwave deposit event.');
+        }
+
+        $webhook = $request->input('data');
+        $transactionId = is_array($webhook) ? ($webhook['id'] ?? null) : null;
+        if (!$transactionId) {
+            throw new InvalidPaymentWebhookException('Flutterwave transaction id is missing.');
+        }
+
+        $response = Http::withHeaders($this->getHeaders())
+            ->connectTimeout(5)
+            ->timeout(15)
+            ->get($this->baseUrl() . "/transactions/{$transactionId}/verify");
+
+        if ($response->serverError()) {
+            throw new \RuntimeException('Flutterwave verification is temporarily unavailable.');
+        }
+        if (!$response->successful() || $response->json('status') !== 'success' || !is_array($response->json('data'))) {
+            throw new InvalidPaymentWebhookException('Flutterwave could not verify the transaction.');
+        }
+
+        $verified = $response->json('data');
+        if ((string) ($verified['id'] ?? '') !== (string) $transactionId
+            || (string) ($verified['id'] ?? '') !== (string) ($webhook['id'] ?? '')) {
+            throw new InvalidPaymentWebhookException('Flutterwave transaction identity mismatch.');
+        }
+        if (($verified['status'] ?? null) !== 'successful') {
+            throw new InvalidPaymentWebhookException('Flutterwave transaction is not successful.');
+        }
+        if (strtoupper((string) ($verified['currency'] ?? '')) !== 'NGN') {
+            throw new InvalidPaymentWebhookException('Flutterwave transaction currency is not NGN.');
+        }
+
+        $verifiedAmount = (float) ($verified['amount'] ?? 0);
+        if ($verifiedAmount <= 0 || round($verifiedAmount, 2) !== round((float) ($webhook['amount'] ?? 0), 2)) {
+            throw new InvalidPaymentWebhookException('Flutterwave transaction amount mismatch.');
+        }
+
+        $txRef = (string) ($verified['tx_ref'] ?? '');
+        if ($txRef === '' || !hash_equals($txRef, (string) ($webhook['tx_ref'] ?? ''))) {
+            throw new InvalidPaymentWebhookException('Flutterwave merchant reference mismatch.');
+        }
+        $flwRef = (string) ($verified['flw_ref'] ?? '');
+        if ($flwRef === '' || !hash_equals($flwRef, (string) ($webhook['flw_ref'] ?? ''))) {
+            throw new InvalidPaymentWebhookException('Flutterwave payment reference mismatch.');
+        }
+
+        $account = Bank::where('provider', $this->providerName)
+            ->where('tx_ref', $txRef)
+            ->where('status', 'active')
+            ->first();
+        if (!$account) {
+            throw new InvalidPaymentWebhookException('Flutterwave reference does not map to a Vendify account.');
+        }
+
+        $user = User::find($account->user_id);
+        $verifiedEmail = strtolower(trim((string) data_get($verified, 'customer.email', '')));
+        if (!$user || $verifiedEmail === '' || $verifiedEmail !== strtolower(trim((string) $user->email))) {
+            throw new InvalidPaymentWebhookException('Flutterwave payment owner mismatch.');
+        }
+
+        Log::info('Flutterwave deposit verified.', [
+            'operation' => 'transaction_verify',
+            'status' => 'successful',
+            'flutterwave_transaction_id' => (string) $transactionId,
+            'transaction_reference' => $txRef,
+        ]);
+
+        return [
+            'user_id' => $user->id,
+            'provider' => $this->providerName,
+            'provider_transaction_id' => (string) $transactionId,
+            'transaction_reference' => 'FLW-DEP-' . $transactionId,
+            'payment_reference' => $flwRef,
+            'response_message' => $verified['processor_response'] ?? 'Transaction successful',
+            'completed_at' => now(),
+            'funding_method' => 'bank_transfer',
+            'service_fee' => $verified['app_fee'] ?? 0.00,
+            'platform' => 'web',
+            'transaction_type' => 'wallet_funding',
+            'account_or_phone' => data_get($verified, 'customer.phone_number'),
+            'amount' => $this->creditedAmount($verifiedAmount),
+            'status' => 'success',
+            'receiver' => data_get($verified, 'customer.phone_number'),
+        ];
+    }
+
+    protected function handleProviderEvent(HttpRequest $request): ?WebhookOutcome
+    {
+        if ($request->input('event') !== 'transfer.completed') {
+            return null;
+        }
+
+        $transferId = $request->input('data.id');
+        if (!$transferId) {
+            throw new InvalidPaymentWebhookException('Flutterwave transfer id is missing.');
+        }
+
+        $verified = $this->verifyTransfer($transferId);
+        $this->settleWithdrawal($verified);
+
+        return WebhookOutcome::Accepted;
+    }
+
+    public function verifyTransfer(string|int $transferId): array
+    {
+        $response = Http::withHeaders($this->getHeaders())
+            ->connectTimeout(5)
+            ->timeout(15)
+            ->get($this->baseUrl() . "/transfers/{$transferId}");
+
+        if ($response->serverError()) {
+            throw new \RuntimeException('Flutterwave transfer verification is temporarily unavailable.');
+        }
+        if (!$response->successful() || $response->json('status') !== 'success' || !is_array($response->json('data'))) {
+            throw new InvalidPaymentWebhookException('Flutterwave transfer could not be verified.');
+        }
+
+        return $response->json('data');
+    }
+
+    public function findTransferByReference(string $reference): ?array
+    {
+        $response = Http::withHeaders($this->getHeaders())
+            ->connectTimeout(5)
+            ->timeout(15)
+            ->get($this->baseUrl() . '/transfers', ['reference' => $reference, 'page_size' => 10]);
+        if ($response->serverError()) {
+            throw new \RuntimeException('Flutterwave transfer lookup is temporarily unavailable.');
+        }
+        if (!$response->successful()) {
+            return null;
+        }
+
+        return collect($response->json('data') ?? [])->first(
+            fn ($transfer) => (string) ($transfer['reference'] ?? '') === $reference
+        );
+    }
+
+    public function settleWithdrawal(array $verified): void
+    {
+        $reference = (string) ($verified['reference'] ?? '');
+        $withdrawal = WalletWithdrawal::where('transaction_reference', $reference)
+            ->orWhere('gateway_reference', $reference)
+            ->first();
+        if (!$withdrawal) {
+            throw new InvalidPaymentWebhookException('Flutterwave transfer does not map to a Vendify withdrawal.');
+        }
+        if ((string) ($verified['id'] ?? '') === ''
+            || ($withdrawal->gateway_transfer_id && (string) $withdrawal->gateway_transfer_id !== (string) $verified['id'])
+            || strtoupper((string) ($verified['currency'] ?? '')) !== 'NGN'
+            || round((float) ($verified['amount'] ?? 0), 2) !== round((float) $withdrawal->amount, 2)) {
+            throw new InvalidPaymentWebhookException('Flutterwave transfer details do not match the withdrawal.');
+        }
+
+        $settlement = app(WalletWithdrawalSettlementService::class);
+        $status = strtoupper((string) ($verified['status'] ?? ''));
+        if ($status === 'SUCCESSFUL') {
+            $settlement->markSuccessful($withdrawal, (string) $verified['id'], $reference);
+        } elseif ($status === 'FAILED') {
+            $settlement->markFailed($withdrawal, (string) ($verified['complete_message'] ?? 'Flutterwave transfer failed.'));
+        } else {
+            $withdrawal->update([
+                'status' => WalletWithdrawal::STATUS_PROCESSING,
+                'gateway_transfer_id' => (string) $verified['id'],
+                'gateway_reference' => $reference,
+            ]);
+        }
     }
 
     // Flutterwave sends a `verif-hash` header that must match the "Secret

@@ -16,7 +16,7 @@ class Vendor extends Model
 
     protected $appends = ['connection', 'balance', 'webhook', 'plans_count', 'active_plans_count'];
 
-    protected $hidden = ['password', 'api_key', 'secret_key', 'encryption_key'];
+    protected $hidden = ['password', 'api_key', 'secret_key', 'encryption_key', 'webhook_access'];
 
     protected $fillable = [
         'name', 'code', 'base_url', 'username', 'password', 'api_key', 'public_key',
@@ -65,8 +65,8 @@ class Vendor extends Model
                 $vendor->setAttribute(
                     'webhook_access',
                     $vendor->exists
-                        ? ($vendor->getRawOriginal('webhook_access') ?? '1')
-                        : '1'
+                        ? $vendor->getRawOriginal('webhook_access')
+                        : null
                 );
             }
         });

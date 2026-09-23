@@ -355,9 +355,15 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
 
-    function getBanksAttribute($query)
+    function getBanksAttribute()
     {
-        return Bank::where("user_id", $this->id)->get();
+        return Bank::query()
+            ->where('user_id', $this->id)
+            ->where('status', 'active')
+            ->whereIn(DB::raw("LOWER(REPLACE(provider, ' ', ''))"), Provider::query()
+                ->getPaymentProviders()
+                ->selectRaw("LOWER(REPLACE(name, ' ', ''))"))
+            ->get();
     }
 
     public function loginStamp(): void

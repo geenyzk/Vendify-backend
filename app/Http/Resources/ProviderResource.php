@@ -31,7 +31,10 @@ class ProviderResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'username' => $this->username,
-            'credentials_configured' => (bool) ($this->password || $this->api_key || $this->secret_key || $this->encryption_key),
+            'credentials_configured' => strtolower(trim((string) $this->name)) === 'flutterwave'
+                ? (bool) $this->secret_key
+                : (bool) ($this->password || $this->api_key || $this->secret_key || $this->encryption_key),
+            'webhook_configured' => (bool) $this->webhook_access,
             'connection' => (bool) $this->active,
             'active' => (bool) $this->active,
             'plans_count' => $this->plans_count,

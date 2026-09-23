@@ -23,7 +23,7 @@ class Transaction extends Model
     protected $hidden = ['idempotency_key', 'raw_payload'];
     protected $fillable = [
         'user_id', 'transaction_type', 'provider', 'account_or_phone', 'amount', 'cost',
-        'quantity', 'status', 'transaction_reference', 'payment_reference',
+        'quantity', 'status', 'transaction_reference', 'payment_reference', 'provider_transaction_id',
         'funding_method', 'balance_before', 'balance_after', 'completed_at',
         'response_message', 'service_fee', 'platform', 'receiver', 'plan_type', 'token',
         'promotion_id', 'discount_amount', 'refunded_at', 'refund_reason',

@@ -24,7 +24,7 @@ class ServiceControlSeeder extends Seeder
             ['name' => 'moniepoint MFB', 'category' => 'transaction', 'sub_category' => 'bank', 'isActive' => 1, 'isDevLock' => 0],
             ['name' => 'paystack', 'category' => 'transaction', 'sub_category' => 'payment gateway', 'isActive' => 0, 'isDevLock' => 1],
             ['name' => 'wema bank', 'category' => 'transaction', 'sub_category' => 'bank', 'isActive' => 1, 'isDevLock' => 0],
-            ['name' => 'flutterwave', 'category' => 'transaction', 'sub_category' => 'payment gateway', 'isActive' => 1, 'isDevLock' => 0],
+            ['name' => 'flutterwave', 'category' => 'transaction', 'sub_category' => 'payment gateway', 'isActive' => 0, 'isDevLock' => 0],
             ['name' => 'monnify', 'category' => 'transaction', 'sub_category' => 'payment gateway', 'isActive' => 0, 'isDevLock' => 0],
             ['name' => 'sterling bank', 'category' => 'transaction', 'sub_category' => 'bank', 'isActive' => 1, 'isDevLock' => 0],
             ['name' => 'palmpay', 'category' => 'transaction', 'sub_category' => 'bank', 'isActive' => 1, 'isDevLock' => 1],

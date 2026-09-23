@@ -133,9 +133,25 @@ class ServiceControlController extends Controller
     public function update(Request $request, string $id)
     {
         $control = ServiceControl::find($id);
+        if (!$control) {
+            return $this->fail([], 'Service control not found.', 404);
+        }
         $validated = $request->validate([
         'isActive' => 'required|boolean',
     ]);
+
+        if ($validated['isActive'] && strtolower(trim((string) $control->name)) === 'flutterwave') {
+            $provider = Provider::whereRaw('LOWER(name) = ?', ['flutterwave'])
+                ->where('category', 'payment')
+                ->first();
+            if (!$provider || !$provider->active || empty($provider->secret_key) || empty($provider->webhook_access)) {
+                return $this->fail(
+                    [],
+                    'Flutterwave requires an active provider, secret key, and webhook secret before it can be enabled.',
+                    422,
+                );
+            }
+        }
 
     $control->update($validated);
 

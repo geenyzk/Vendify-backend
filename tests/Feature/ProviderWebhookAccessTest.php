@@ -15,12 +15,23 @@ beforeEach(function () {
         $table->string('name')->nullable();
         $table->string('category')->nullable();
         $table->string('sub_category')->nullable();
-        $table->string('webhook_access')->default('1');
+        $table->string('webhook_access')->nullable()->default(null);
         $table->decimal('charge_fee', 12, 2)->nullable();
         $table->decimal('charge_fee_cap', 12, 2)->nullable();
         $table->string('charge_type')->nullable();
         $table->decimal('withdrawal_fee', 12, 2)->nullable();
         $table->timestamps();
+    });
+
+    Schema::create('data_plans', function (Blueprint $table) {
+        $table->id();
+        $table->boolean('active')->default(true);
+    });
+    Schema::create('providerables', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('provider_id');
+        $table->unsignedBigInteger('providerable_id');
+        $table->string('providerable_type');
     });
 });
 
@@ -45,7 +56,7 @@ it('preserves provider webhook access when an update submits null', function () 
         ->and($provider->fresh()->webhook_access)->toBe('0');
 });
 
-it('defaults null webhook access for newly registered providers and vendors', function (string $modelClass) {
+it('defaults webhook access to null for newly registered providers and vendors', function (string $modelClass) {
     $record = $modelClass::create([
         'name' => 'New service',
         'category' => 'vendor',
@@ -53,7 +64,7 @@ it('defaults null webhook access for newly registered providers and vendors', fu
         'webhook_access' => null,
     ]);
 
-    expect($record->fresh()->webhook_access)->toBe('1');
+    expect($record->fresh()->webhook_access)->toBeNull();
 })->with([
     'provider model' => Provider::class,
     'vendor model' => Vendor::class,

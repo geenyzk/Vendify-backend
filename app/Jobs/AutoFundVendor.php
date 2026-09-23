@@ -44,9 +44,14 @@ class AutoFundVendor implements ShouldQueue
         }
 
         // Load the payment gateway provider
-        $paymentProvider = Provider::find($vendor->funding_provider_id);
+        $paymentProvider = Provider::query()
+            ->whereKey($vendor->funding_provider_id)
+            ->getPaymentProviders()
+            ->first();
         if (!$paymentProvider) {
-            Log::error("AutoFundVendor: funding_provider_id {$vendor->funding_provider_id} not found for vendor [{$vendor->name}].");
+            Log::warning("AutoFundVendor: funding provider is missing or disabled for vendor [{$vendor->name}].", [
+                'funding_provider_id' => $vendor->funding_provider_id,
+            ]);
             return;
         }
 

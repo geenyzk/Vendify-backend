@@ -90,7 +90,7 @@ Route::post('/forgot-password', [PasswordResetLinkController::class, 'apiStore']
     ->middleware('throttle:6,1');
 Route::post('/reset-password', [NewPasswordController::class, 'apiStore'])
     ->middleware('throttle:6,1');
-Route::any('/webhook/{type}/{identifier}', [WebhookController::class, 'handle']);
+Route::post('/webhook/{type}/{identifier}', [WebhookController::class, 'handle']);
 Route::get('/webhooks/ogdams', OgdamsWebhookController::class);
 
 // Pull/ack half of the parent<->child channel — the child polls these on

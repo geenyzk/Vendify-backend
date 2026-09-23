@@ -15,7 +15,7 @@ class Provider extends Model
     protected $fillable = ["id", "name", "code", "base_url", "username", "password", "identifier", "sub_category", "category", "api_key", "public_key", "secret_key", "encryption_key", "webhook_access", "charge_fee", "charge_fee_cap", "charge_type", "withdrawal_fee", "withdrawal_fee_type", "active",
         "auto_fund_enabled", "auto_fund_threshold", "auto_fund_amount", "account_number", "account_name", "bank_code", "bank_name", "funding_provider_id"];
     protected $appends = ["webhook", "connection", "balance", "plans_count", "active_plans_count"];
-    protected $hidden = ['password', 'api_key', 'secret_key', 'encryption_key'];
+    protected $hidden = ['password', 'api_key', 'secret_key', 'encryption_key', 'webhook_access'];
     protected $casts = ["active" => "boolean", "auto_fund_enabled" => "boolean"];
 
     protected static function booted(): void
@@ -24,15 +24,15 @@ class Provider extends Model
             // The provider form may submit null when the webhook toggle is
             // not present. MySQL rejects an explicit NULL even though this
             // column has a default, so retain the stored value on updates
-            // and use the schema default for new providers. Do not use
+            // and fail closed for new providers. Do not use
             // empty(), because "0" is a valid disabled setting.
             if (array_key_exists('webhook_access', $provider->getAttributes())
                 && $provider->getAttribute('webhook_access') === null) {
                 $provider->setAttribute(
                     'webhook_access',
                     $provider->exists
-                        ? ($provider->getRawOriginal('webhook_access') ?? '1')
-                        : '1'
+                        ? $provider->getRawOriginal('webhook_access')
+                        : null
                 );
             }
         });
