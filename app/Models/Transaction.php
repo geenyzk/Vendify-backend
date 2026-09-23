@@ -209,8 +209,14 @@ class Transaction extends Model
         }
 
         $network = is_string($this->network) && trim($this->network) !== '' ? trim($this->network) : null;
+        $network ??= $this->dataSnapshot('data_network');
 
-        return $network ?? $this->dataSnapshot('data_network');
+        // Rows predating both still name the network they were sold for:
+        // the recharged line's own prefix. A ported number resolves to the
+        // network that issued the prefix, which is why this is last.
+        return $network
+            ? strtolower($network)
+            : \App\Support\PhoneNetwork::forPhone($this->account_or_phone ?: $this->receiver);
     }
 
     public function getDataPlanNameAttribute(): ?string
@@ -220,7 +226,41 @@ class Transaction extends Model
 
     public function getDataPlanSizeAttribute(): ?string
     {
-        return $this->dataSnapshot('data_plan_size');
+        // quantity has held the bundle's volume in GB since long before the
+        // snapshot (VendorBase::resolveDataGb writes it on every data vend),
+        // so older rows can still say how much data was sold even when the
+        // plan's own name is gone.
+        return $this->dataSnapshot('data_plan_size') ?? $this->volumeFromQuantity();
+    }
+
+    /** "500MB" / "2GB" from the stored GB volume, or null when unusable. */
+    private function volumeFromQuantity(): ?string
+    {
+        if ($this->transaction_type !== 'data_subscription' || ! is_numeric($this->quantity)) {
+            return null;
+        }
+
+        $gb = (float) $this->quantity;
+        if ($gb <= 0) {
+            return null;
+        }
+
+        // quantity's column default is exactly 1.00, so that one value can
+        // mean "1GB" or "never written". cost is only set when the plan was
+        // resolved on this vend, which is also what writes the volume — so
+        // without it, 1.00 is treated as unknown rather than shown as 1GB.
+        if ($gb === 1.0 && ! ($this->cost > 0)) {
+            return null;
+        }
+
+        // Sub-1GB bundles were stored as MB/1024 into a 2-decimal column, so
+        // 500MB comes back as 0.49 (≈502MB). Bundles are sold in 50MB steps,
+        // which is coarser than that error — snapping restores the real size.
+        if ($gb < 1) {
+            return (round($gb * 1024 / 50) * 50).'MB';
+        }
+
+        return rtrim(rtrim(number_format($gb, 2, '.', ''), '0'), '.').'GB';
     }
 
     public function getDataPlanValidityAttribute(): ?string
