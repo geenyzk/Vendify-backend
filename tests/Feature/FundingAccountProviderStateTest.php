@@ -125,6 +125,35 @@ it('does not display a saved account belonging to a disabled provider', function
         ->assertJsonPath('account.bank_name', 'PalmPay');
 });
 
+it('does not display an incomplete account row as ready', function () {
+    $user = fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+
+    Bank::query()->create([
+        'user_id' => $user->id,
+        'account_type' => 'virtual',
+        'bank_account' => '6679854996',
+        'bank_name' => 'PalmPay',
+        'provider' => 'payment point',
+        'status' => 'active',
+    ]);
+    Bank::query()->create([
+        'user_id' => $user->id,
+        'account_type' => 'virtual',
+        'bank_account' => '   ',
+        'bank_name' => '',
+        'provider' => 'payment point',
+        'status' => 'active',
+    ]);
+
+    $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertOk()
+        ->assertJsonPath('status', 'ready')
+        ->assertJsonPath('account.account_number', '6679854996')
+        ->assertJsonPath('account.bank_name', 'PalmPay');
+});
+
 it('does not load inactive providers for account generation', function () {
     fundingProvider('flutterwave', false, true);
     fundingProvider('PaymentPoint', true, true);

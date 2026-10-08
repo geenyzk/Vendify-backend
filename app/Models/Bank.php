@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -26,6 +27,20 @@ class Bank extends Model
         'failure_reason',
         'expired_at',
     ];
+
+    /**
+     * Only accounts whose identifying details can actually be shown and used.
+     * Some failed provider attempts left empty strings rather than nulls, so a
+     * null-only check can incorrectly present an incomplete row as "active".
+     */
+    public function scopeWithUsableAccountDetails(Builder $query): Builder
+    {
+        return $query
+            ->whereNotNull('bank_account')
+            ->whereRaw('LENGTH(TRIM(bank_account)) > 0')
+            ->whereNotNull('bank_name')
+            ->whereRaw('LENGTH(TRIM(bank_name)) > 0');
+    }
 
     function getLogoAttribute(){
         return url("/images/".str_replace(" ", "_", Str::lower($this->bank_name)) . ".png");

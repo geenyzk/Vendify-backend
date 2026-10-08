@@ -139,8 +139,7 @@ abstract class PaymentBase implements PaymentInterface
             $alreadyProvisioned = Bank::where('user_id', $user->id)
                 ->where('provider', $this->providerName)
                 ->where('status', 'active')
-                ->whereNotNull('bank_account')
-                ->whereNotNull('bank_name')
+                ->withUsableAccountDetails()
                 ->exists();
             if ($alreadyProvisioned) {
                 return;
