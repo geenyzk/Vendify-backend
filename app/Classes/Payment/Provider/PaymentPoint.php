@@ -76,6 +76,7 @@ class PaymentPoint extends PaymentBase
                 ->post($url, $payload);
             $data = $response->json();
             $data = is_array($data) ? $data : [];
+            $diagnostics = $this->redactedResponseDiagnostics($data);
 
             Log::info('funding_account.provider_response', [
                 'stage' => 'provider_response',
@@ -88,6 +89,7 @@ class PaymentPoint extends PaymentBase
                 'response_fields' => array_keys($data),
                 'bank_account_count' => is_array($data['bankAccounts'] ?? null) ? count($data['bankAccounts']) : 0,
                 'error_count' => is_array($data['errors'] ?? null) ? count($data['errors']) : 0,
+                ...$diagnostics,
             ]);
 
             if ($response->successful()) {
@@ -111,6 +113,7 @@ class PaymentPoint extends PaymentBase
                         'user_id' => $user->id,
                         'http_status' => $response->status(),
                         'bank_account_count' => is_array($data['bankAccounts'] ?? null) ? count($data['bankAccounts']) : 0,
+                        'failure_category' => $diagnostics['failure_category'],
                     ]);
 
                     return null;
@@ -184,10 +187,12 @@ class PaymentPoint extends PaymentBase
                 'ok' => $response->successful(),
             ]);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
+                $data = $response->json();
+                $data = is_array($data) ? $data : [];
                 Log::error('PaymentPoint: child virtual account creation failed', [
                     'http_status' => $response->status(),
-                    'message' => $response->json('message'),
+                    ...$this->redactedResponseDiagnostics($data),
                 ]);
                 return null;
             }
@@ -196,8 +201,7 @@ class PaymentPoint extends PaymentBase
             if (($data['status'] ?? null) !== 'success') {
                 Log::warning('PaymentPoint rejected child virtual account creation.', [
                     'status' => $data['status'] ?? null,
-                    'message' => $data['message'] ?? null,
-                    'errors' => $data['errors'] ?? [],
+                    ...$this->redactedResponseDiagnostics($data),
                 ]);
 
                 return null;
@@ -215,7 +219,9 @@ class PaymentPoint extends PaymentBase
 
             return $accounts !== [] ? $accounts : null;
         } catch (\Throwable $e) {
-            Log::error('PaymentPoint::generateForCustomer exception: ' . $e->getMessage());
+            Log::error('PaymentPoint::generateForCustomer exception.', [
+                'exception' => $e::class,
+            ]);
             return null;
         }
     }
@@ -301,6 +307,140 @@ class PaymentPoint extends PaymentBase
             ->all();
     }
 
+    /**
+     * PaymentPoint documents an errors array but not the shape of its entries.
+     * Keep diagnostics useful without persisting free-form provider text or
+     * customer identifiers. Only values from semantic, allowlisted keys are
+     * emitted, and validation fields/bank codes are restricted to values this
+     * integration already knows how to send.
+     *
+     * @return array<string, mixed>
+     */
+    private function redactedResponseDiagnostics(array $data): array
+    {
+        $errors = is_array($data['errors'] ?? null) ? array_values($data['errors']) : [];
+        $codes = [];
+        $categories = [];
+        $fields = [];
+        $bankCodes = [];
+        $itemTypes = [];
+        $hasUnclassifiedFields = false;
+
+        $knownFields = [
+            'email' => 'email',
+            'name' => 'name',
+            'phonenumber' => 'phone_number',
+            'phone_number' => 'phone_number',
+            'bankcode' => 'bank_code',
+            'bank_code' => 'bank_code',
+            'businessid' => 'business_id',
+            'business_id' => 'business_id',
+            'idtype' => 'id_type',
+            'id_type' => 'id_type',
+            'idnumber' => 'id_number',
+            'id_number' => 'id_number',
+        ];
+
+        foreach ($errors as $error) {
+            if (!is_array($error)) {
+                $itemTypes[] = get_debug_type($error);
+
+                continue;
+            }
+
+            $itemTypes[] = 'object';
+            $recognizedKeys = 0;
+
+            foreach (['code', 'errorCode', 'error_code'] as $key) {
+                if (!array_key_exists($key, $error)) {
+                    continue;
+                }
+
+                $recognizedKeys++;
+                if ($token = $this->safeDiagnosticToken($error[$key])) {
+                    $codes[] = $token;
+                }
+            }
+
+            foreach (['category', 'type'] as $key) {
+                if (!array_key_exists($key, $error)) {
+                    continue;
+                }
+
+                $recognizedKeys++;
+                if ($token = $this->safeDiagnosticToken($error[$key])) {
+                    $categories[] = $token;
+                }
+            }
+
+            foreach (['field', 'path', 'parameter', 'param'] as $key) {
+                if (!array_key_exists($key, $error)) {
+                    continue;
+                }
+
+                $recognizedKeys++;
+                $normalized = strtolower(str_replace(['.', '-', ' '], '_', trim((string) $error[$key])));
+                $compact = str_replace('_', '', $normalized);
+                if (isset($knownFields[$normalized])) {
+                    $fields[] = $knownFields[$normalized];
+                } elseif (isset($knownFields[$compact])) {
+                    $fields[] = $knownFields[$compact];
+                }
+            }
+
+            foreach (['bankCode', 'bank_code'] as $key) {
+                if (!array_key_exists($key, $error)) {
+                    continue;
+                }
+
+                $recognizedKeys++;
+                $bankCode = trim((string) $error[$key]);
+                if (in_array($bankCode, self::VIRTUAL_ACCOUNT_BANK_CODES, true)) {
+                    $bankCodes[] = $bankCode;
+                }
+            }
+
+            $hasUnclassifiedFields = $hasUnclassifiedFields || count($error) > $recognizedKeys;
+        }
+
+        $customer = is_array($data['customer'] ?? null) ? $data['customer'] : [];
+        $customerIdPresent = trim((string) ($customer['customer_id'] ?? '')) !== '';
+        $usableBankAccountCount = count($this->usableBankAccounts($data));
+
+        $failureCategory = match (true) {
+            $usableBankAccountCount > 0 => 'none',
+            $customerIdPresent && $errors !== [] => 'customer_created_bank_generation_failed',
+            $errors !== [] => 'provider_error_unclassified',
+            default => 'missing_usable_bank_account',
+        };
+
+        return [
+            'provider_message_present' => trim((string) ($data['message'] ?? '')) !== '',
+            'customer_record_present' => $customer !== [],
+            'customer_id_present' => $customerIdPresent,
+            'error_item_types' => array_values(array_unique($itemTypes)),
+            'error_codes' => array_values(array_unique($codes)),
+            'error_categories' => array_values(array_unique($categories)),
+            'error_fields' => array_values(array_unique($fields)),
+            'error_bank_codes' => array_values(array_unique($bankCodes)),
+            'has_unclassified_error_fields' => $hasUnclassifiedFields,
+            'usable_bank_account_count' => $usableBankAccountCount,
+            'failure_category' => $failureCategory,
+        ];
+    }
+
+    private function safeDiagnosticToken(mixed $value): ?string
+    {
+        if (!is_string($value) && !is_int($value)) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        return preg_match('/^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/', $value) === 1
+            ? $value
+            : null;
+    }
 
     // Parsing only — see PaymentBase::callback() docblock. Wallet crediting
     // and idempotency are centralized in PaymentBase::webhook().

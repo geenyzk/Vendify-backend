@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 function paymentPointGateway(array $attributes = []): PaymentPoint
 {
@@ -19,6 +20,7 @@ function paymentPointGateway(array $attributes = []): PaymentPoint
 }
 
 it('creates a virtual account with documented headers and both partner banks', function () {
+    Log::spy();
     Http::fake([
         'api.paymentpoint.co/*' => Http::response([
             'status' => 'success',
@@ -42,6 +44,11 @@ it('creates a virtual account with documented headers and both partner banks', f
     $account = paymentPointGateway()->generate($user);
 
     expect($account['bank_account'])->toBe('6698059290');
+
+    Log::shouldHaveReceived('info')->withArgs(fn (string $event, array $context): bool => $event === 'funding_account.provider_response'
+        && $context['usable_bank_account_count'] === 1
+        && $context['failure_category'] === 'none'
+    )->once();
 
     Http::assertSent(function (ClientRequest $request) {
         return $request->url() === 'https://api.paymentpoint.co/api/v1/createVirtualAccount'
@@ -74,6 +81,82 @@ it('rejects a successful HTTP response that has no usable bank account', functio
     $user->id = 10;
 
     expect(paymentPointGateway()->generate($user))->toBeNull();
+});
+
+it('logs only redacted structured diagnostics for an unusable provider response', function () {
+    Log::spy();
+    Http::fake([
+        'api.paymentpoint.co/*' => Http::response([
+            'status' => 'success',
+            'message' => 'Sensitive provider message for customer@example.com',
+            'customer' => [
+                'customer_id' => 'sensitive-customer-id',
+                'customer_email' => 'customer@example.com',
+            ],
+            'bankAccounts' => [],
+            'errors' => [[
+                'code' => 'BANK_ACCOUNT_CREATION_FAILED',
+                'category' => 'bank_generation',
+                'field' => 'bankCode',
+                'bankCode' => '20946',
+                'message' => 'Sensitive bank error for customer@example.com',
+            ]],
+        ], 201),
+    ]);
+
+    $user = new User([
+        'email' => 'customer@example.com',
+        'username' => 'customer',
+        'fullname' => 'Test Customer',
+        'phone' => '08012345678',
+    ]);
+    $user->id = 10;
+
+    expect(paymentPointGateway()->generate($user))->toBeNull();
+
+    Log::shouldHaveReceived('info')->withArgs(function (string $event, array $context): bool {
+        return $event === 'funding_account.provider_response'
+            && $context['customer_record_present'] === true
+            && $context['customer_id_present'] === true
+            && $context['error_codes'] === ['BANK_ACCOUNT_CREATION_FAILED']
+            && $context['error_categories'] === ['bank_generation']
+            && $context['error_fields'] === ['bank_code']
+            && $context['error_bank_codes'] === ['20946']
+            && $context['failure_category'] === 'customer_created_bank_generation_failed'
+            && ! str_contains(json_encode($context), 'customer@example.com')
+            && ! str_contains(json_encode($context), 'Sensitive provider message')
+            && ! str_contains(json_encode($context), 'Sensitive bank error')
+            && ! str_contains(json_encode($context), 'sensitive-customer-id');
+    })->once();
+});
+
+it('does not promote free-form provider errors into diagnostic fields', function () {
+    Log::spy();
+    Http::fake([
+        'api.paymentpoint.co/*' => Http::response([
+            'status' => 'success',
+            'bankAccounts' => [],
+            'errors' => ['Customer customer@example.com could not be provisioned'],
+        ], 201),
+    ]);
+
+    $user = new User([
+        'email' => 'customer@example.com',
+        'username' => 'customer',
+        'fullname' => 'Test Customer',
+        'phone' => '08012345678',
+    ]);
+    $user->id = 10;
+
+    expect(paymentPointGateway()->generate($user))->toBeNull();
+
+    Log::shouldHaveReceived('info')->withArgs(fn (string $event, array $context): bool => $event === 'funding_account.provider_response'
+        && $context['error_item_types'] === ['string']
+        && $context['error_codes'] === []
+        && $context['error_categories'] === []
+        && $context['error_fields'] === []
+        && ! str_contains(json_encode($context), 'customer@example.com')
+    )->once();
 });
 
 it('does not call PaymentPoint when a required credential is still a placeholder', function () {
