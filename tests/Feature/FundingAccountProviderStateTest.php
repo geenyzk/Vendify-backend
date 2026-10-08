@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Bank;
+use App\Http\Controllers\ServiceControlController;
 use App\Models\Provider;
 use App\Models\ServiceControl;
 use App\Models\User;
@@ -171,4 +172,71 @@ it('does not load inactive providers for account generation', function () {
 
     expect(Provider::query()->getPaymentProviders()->pluck('name')->all())
         ->toBe(['PaymentPoint']);
+});
+
+it('matches enabled PaymentPoint controls regardless of spaces or case', function () {
+    fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+
+    ServiceControl::query()->where('name', 'PaymentPoint')->update([
+        'name' => 'payment point',
+    ]);
+
+    expect(Provider::query()->getPaymentProviders()->pluck('name')->all())
+        ->toBe(['PaymentPoint']);
+});
+
+it('never uses a dev locked PaymentPoint control', function () {
+    fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+
+    ServiceControl::query()->where('name', 'PaymentPoint')->update([
+        'isDevLock' => true,
+    ]);
+
+    expect(Provider::query()->getPaymentProviders()->get())->toBeEmpty();
+});
+
+it('repairs a locked PaymentPoint control while preserving an enabled duplicate', function () {
+    ServiceControl::query()->create([
+        'name' => 'payment point',
+        'category' => 'transaction',
+        'sub_category' => 'payment gateway',
+        'isActive' => false,
+        'isDevLock' => true,
+    ]);
+    ServiceControl::query()->create([
+        'name' => 'PaymentPoint',
+        'category' => 'transaction',
+        'sub_category' => 'payment gateway',
+        'isActive' => true,
+        'isDevLock' => false,
+    ]);
+
+    $migration = require database_path('migrations/2026_10_08_230000_repair_payment_point_service_control.php');
+    $migration->up();
+
+    $controls = ServiceControl::query()
+        ->whereRaw("LOWER(REPLACE(TRIM(name), ' ', '')) = ?", ['paymentpoint'])
+        ->get();
+
+    expect($controls)->toHaveCount(1)
+        ->and($controls->first()->name)->toBe('payment point')
+        ->and($controls->first()->isActive)->toBeTrue()
+        ->and($controls->first()->isDevLock)->toBeFalse();
+});
+
+it('unlocks the existing PaymentPoint control without changing other dev locks', function () {
+    fundingProvider('PaymentPoint', true, true);
+    fundingProvider('paystack', true, false);
+
+    ServiceControl::query()->update(['isDevLock' => true]);
+    ServiceControl::query()->where('name', 'PaymentPoint')->update(['name' => 'payment point']);
+
+    (new ServiceControlController)->index();
+
+    expect(ServiceControl::query()->whereRaw("LOWER(REPLACE(TRIM(name), ' ', '')) = ?", ['paymentpoint'])->count())
+        ->toBe(1)
+        ->and(ServiceControl::query()->where('name', 'payment point')->value('isDevLock'))->toBeFalse()
+        ->and(ServiceControl::query()->where('name', 'paystack')->value('isDevLock'))->toBeTrue();
 });

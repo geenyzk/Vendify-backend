@@ -3,6 +3,7 @@
 namespace App\Classes\Payment\Provider;
 
 use App\Classes\Payment\PaymentBase;
+use App\Classes\Payment\PaymentFactory;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\General;
@@ -48,21 +49,51 @@ class PaymentPoint extends PaymentBase
     public function generate(User $user): array|null
     {
         try {
+            if (!$this->hasRequiredCredentials()) {
+                return null;
+            }
+
             $payload = $this->formatPayload($user);
             $url = $this->baseUrl() . "/createVirtualAccount";
             $response = Http::withHeaders($this->getHeaders())->post($url, $payload);
 
-            Log::info("PaymentPoint: Creating virtual account for {$user->email}", [
-                'payload' => $payload,
-                'response' => $response->json(),
-            ]);
-
             if ($response->successful()) {
                 $data = $response->json();
+
+                if (($data['status'] ?? null) !== 'success') {
+                    Log::warning('PaymentPoint rejected virtual account creation.', [
+                        'user_id' => $user->id,
+                        'status' => $data['status'] ?? null,
+                        'message' => $data['message'] ?? null,
+                        'errors' => $data['errors'] ?? [],
+                    ]);
+
+                    return null;
+                }
+
+                $accounts = $this->usableBankAccounts($data);
+                if ($accounts === []) {
+                    Log::warning('PaymentPoint returned success without usable bank details.', [
+                        'user_id' => $user->id,
+                        'message' => $data['message'] ?? null,
+                        'errors' => $data['errors'] ?? [],
+                    ]);
+
+                    return null;
+                }
+
+                $data['bankAccounts'] = $accounts;
+                Log::info('PaymentPoint virtual account created.', [
+                    'user_id' => $user->id,
+                    'accounts_count' => count($accounts),
+                ]);
+
                 return $this->formatResponse($data, $user);
             } else {
                 Log::error("PaymentPoint: Failed to create virtual account", [
-                    'body' => $response->body(),
+                    'user_id' => $user->id,
+                    'http_status' => $response->status(),
+                    'message' => $response->json('message'),
                 ]);
                 return null;
             }
@@ -92,6 +123,10 @@ class PaymentPoint extends PaymentBase
     public function generateForCustomer(array $customer): ?array
     {
         try {
+            if (!$this->hasRequiredCredentials()) {
+                return null;
+            }
+
             $payload = [
                 'email'       => $customer['email'] ?? null,
                 'name'        => $customer['name'] ?? ($customer['username'] ?? null),
@@ -104,17 +139,29 @@ class PaymentPoint extends PaymentBase
                 ->post($this->baseUrl() . "/createVirtualAccount", $payload);
 
             Log::info('PaymentPoint: creating child virtual account', [
-                'email' => $payload['email'],
                 'ok' => $response->successful(),
             ]);
 
             if (!$response->successful()) {
-                Log::error('PaymentPoint: child virtual account creation failed', ['body' => $response->body()]);
+                Log::error('PaymentPoint: child virtual account creation failed', [
+                    'http_status' => $response->status(),
+                    'message' => $response->json('message'),
+                ]);
                 return null;
             }
 
-            $accounts = collect((array) $response->json('bankAccounts'))
-                ->filter(fn ($b) => is_array($b) && !empty($b['accountNumber']))
+            $data = $response->json();
+            if (($data['status'] ?? null) !== 'success') {
+                Log::warning('PaymentPoint rejected child virtual account creation.', [
+                    'status' => $data['status'] ?? null,
+                    'message' => $data['message'] ?? null,
+                    'errors' => $data['errors'] ?? [],
+                ]);
+
+                return null;
+            }
+
+            $accounts = collect($this->usableBankAccounts($data))
                 ->map(fn ($b) => [
                     'account_number' => $b['accountNumber'],
                     'bank_name'      => $b['bankName'] ?? null,
@@ -154,7 +201,7 @@ class PaymentPoint extends PaymentBase
         $user = $payload instanceof User ? $payload : $user;
         return [
             'email'       => $user->email,
-            'name'        => $user->username,
+            'name'        => trim((string) ($user->fullname ?: $user->username)),
             'phoneNumber' => $user->phone,
             'bankCode'    => self::VIRTUAL_ACCOUNT_BANK_CODES,
             'businessId'  => $this->provider->username,
@@ -180,6 +227,36 @@ class PaymentPoint extends PaymentBase
             'tx_ref'       => $txRef,
             'expired_at'   => now()->addYears(1),
         ];
+    }
+
+    /** PaymentPoint requires all three values for createVirtualAccount. */
+    private function hasRequiredCredentials(): bool
+    {
+        $missing = PaymentFactory::missingRequiredCredentials($this->provider);
+
+        if ($missing !== []) {
+            Log::warning('PaymentPoint virtual account credentials are incomplete.', [
+                'provider_id' => $this->provider->id,
+                'missing_fields' => $missing,
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function usableBankAccounts(array $data): array
+    {
+        return collect((array) ($data['bankAccounts'] ?? []))
+            ->filter(fn ($account) => is_array($account)
+                && trim((string) ($account['accountNumber'] ?? '')) !== ''
+                && trim((string) ($account['bankName'] ?? '')) !== '')
+            ->values()
+            ->all();
     }
 
 
@@ -228,7 +305,7 @@ class PaymentPoint extends PaymentBase
     protected function verifyWebhookSignature(Request $request): bool
     {
         $secret = $this->provider->webhook_access;
-        if (empty($secret)) {
+        if (in_array(trim((string) $secret), ['', '#', '1'], true)) {
             Log::warning('PaymentPoint webhook secret (webhook_access) not configured — rejecting webhook.', [
                 'provider_id' => $this->provider->id,
             ]);

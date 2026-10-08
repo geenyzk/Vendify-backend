@@ -34,6 +34,7 @@ it('creates a virtual account with documented headers and both partner banks', f
     $user = new User([
         'email' => 'customer@example.com',
         'username' => 'Test Customer',
+        'fullname' => 'Test Customer Fullname',
         'phone' => '08012345678',
     ]);
     $user->id = 10;
@@ -47,8 +48,47 @@ it('creates a virtual account with documented headers and both partner banks', f
             && $request->hasHeader('Authorization', 'Bearer api-token')
             && $request->hasHeader('api-key', 'public-api-key')
             && $request['businessId'] === 'business-id'
+            && $request['name'] === 'Test Customer Fullname'
             && $request['bankCode'] === ['20946', '20897'];
     });
+});
+
+it('rejects a successful HTTP response that has no usable bank account', function () {
+    Http::fake([
+        'api.paymentpoint.co/*' => Http::response([
+            'status' => 'success',
+            'message' => 'Processed',
+            'bankAccounts' => [[
+                'accountNumber' => '',
+                'bankName' => '',
+            ]],
+        ]),
+    ]);
+
+    $user = new User([
+        'email' => 'customer@example.com',
+        'username' => 'customer',
+        'fullname' => 'Test Customer',
+        'phone' => '08012345678',
+    ]);
+    $user->id = 10;
+
+    expect(paymentPointGateway()->generate($user))->toBeNull();
+});
+
+it('does not call PaymentPoint when a required credential is still a placeholder', function () {
+    Http::fake();
+
+    $user = new User([
+        'email' => 'customer@example.com',
+        'username' => 'customer',
+        'fullname' => 'Test Customer',
+        'phone' => '08012345678',
+    ]);
+    $user->id = 10;
+
+    expect(paymentPointGateway(['username' => '#'])->generate($user))->toBeNull();
+    Http::assertNothingSent();
 });
 
 it('reads the documented receiver account number from a webhook', function () {
@@ -70,4 +110,16 @@ it('verifies the documented Paymentpoint-Signature header', function () {
     $method = new ReflectionMethod(PaymentPoint::class, 'verifyWebhookSignature');
 
     expect($method->invoke(paymentPointGateway(), $request))->toBeTrue();
+});
+
+it('rejects webhook signatures when the secret is still the database placeholder', function () {
+    $body = json_encode(['transaction_id' => 'tx-123', 'amount_paid' => 100]);
+    $request = Request::create('/webhook', 'POST', [], [], [], [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_PAYMENTPOINT_SIGNATURE' => hash_hmac('sha256', $body, '1'),
+    ], $body);
+
+    $method = new ReflectionMethod(PaymentPoint::class, 'verifyWebhookSignature');
+
+    expect($method->invoke(paymentPointGateway(['webhook_access' => '1']), $request))->toBeFalse();
 });

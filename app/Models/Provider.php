@@ -39,15 +39,21 @@ class Provider extends Model
     }
 
     function scopeGetPaymentProviders($query) {
-        $query
-        ->where('active', true)
-        ->whereIn("name", function($subQuery){
-            $subQuery->select("name")
-            ->from("service_controls")
-            ->where("isActive", true)
-            ->where("isDevLock", false);
-        });
-        return $query;
+        return $query
+            ->where('active', true)
+            ->whereExists(function ($subQuery) {
+                $subQuery->selectRaw('1')
+                    ->from('service_controls')
+                    ->where('isActive', true)
+                    ->where('isDevLock', false)
+                    // Historical rows use both "PaymentPoint" and
+                    // "payment point". Match the integration name after
+                    // normalising case and spaces so an enabled control is
+                    // not silently ignored.
+                    ->whereRaw(
+                        "LOWER(REPLACE(TRIM(service_controls.name), ' ', '')) = LOWER(REPLACE(TRIM(providers.name), ' ', ''))"
+                    );
+            });
     }
 
     function getWebhookAttribute(){

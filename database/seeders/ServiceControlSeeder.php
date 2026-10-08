@@ -19,7 +19,7 @@ class ServiceControlSeeder extends Seeder
     {
         DB::table('service_controls')->insert([
             ['name' => 'billstack', 'category' => 'transaction', 'sub_category' => 'payment gateway', 'isActive' => 0, 'isDevLock' => 1],
-            ['name' => 'payment point', 'category' => 'transaction', 'sub_category' => 'payment gateway', 'isActive' => 0, 'isDevLock' => 1],
+            ['name' => 'payment point', 'category' => 'transaction', 'sub_category' => 'payment gateway', 'isActive' => 0, 'isDevLock' => 0],
             ['name' => 'pin', 'category' => 'transaction', 'sub_category' => 'transaction', 'isActive' => 0, 'isDevLock' => 0],
             ['name' => 'moniepoint MFB', 'category' => 'transaction', 'sub_category' => 'bank', 'isActive' => 1, 'isDevLock' => 0],
             ['name' => 'paystack', 'category' => 'transaction', 'sub_category' => 'payment gateway', 'isActive' => 0, 'isDevLock' => 1],

@@ -20,7 +20,7 @@ class ProviderResource extends JsonResource
         // look disconnected when a provider is temporarily unavailable.
         // Each gateway integration reads a different combination of these
         // (Flutterwave: api_key only. Monnify: api_key + secret_key +
-        // username. PaymentPoint: password + api_key) — expose them
+        // username. PaymentPoint: password + api_key + username) — expose them
         // distinctly instead of merging, so editing one doesn't silently
         // no-op for a gateway that actually reads a different column.
         return [
@@ -31,10 +31,12 @@ class ProviderResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'username' => $this->username,
-            'credentials_configured' => strtolower(trim((string) $this->name)) === 'flutterwave'
-                ? (bool) $this->secret_key
-                : (bool) ($this->password || $this->api_key || $this->secret_key || $this->encryption_key),
-            'webhook_configured' => (bool) $this->webhook_access,
+            'credentials_configured' => \App\Classes\Payment\PaymentFactory::isPaymentPoint($this->resource)
+                ? \App\Classes\Payment\PaymentFactory::missingRequiredCredentials($this->resource) === []
+                : (strtolower(trim((string) $this->name)) === 'flutterwave'
+                    ? (bool) $this->secret_key
+                    : (bool) ($this->password || $this->api_key || $this->secret_key || $this->encryption_key)),
+            'webhook_configured' => ! in_array(trim((string) $this->webhook_access), ['', '#', '1'], true),
             'connection' => (bool) $this->active,
             'active' => (bool) $this->active,
             'plans_count' => $this->plans_count,

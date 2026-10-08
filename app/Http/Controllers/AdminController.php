@@ -714,6 +714,22 @@ class AdminController extends Controller
                     $item['active'] = filter_var($item['connection'], FILTER_VALIDATE_BOOLEAN);
                 }
 
+                if ($modelClass === Provider::class && ($item['active'] ?? false)) {
+                    $candidate = isset($item['id'])
+                        ? Provider::find($item['id']) ?? new Provider
+                        : new Provider;
+                    $candidate->fill($item);
+
+                    if ($candidate->category === 'payment') {
+                        $missing = PaymentFactory::missingFundingConfiguration($candidate);
+                        if ($missing !== []) {
+                            throw ValidationException::withMessages([
+                                'credentials' => ['Configure PaymentPoint API key, API token, Business ID, and webhook HMAC key before enabling it. Missing: '.implode(', ', $missing).'.'],
+                            ]);
+                        }
+                    }
+                }
+
                 // 1. Prepare Data (Normalize & Clean)
                 $data = $self->prepareModelData($item, $tableColumns);
                 if (empty($data)) {

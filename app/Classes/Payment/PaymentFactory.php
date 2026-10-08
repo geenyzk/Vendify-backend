@@ -45,6 +45,11 @@ class PaymentFactory
         ],
     ];
 
+    /** Credentials required by the provider's virtual-account endpoint. */
+    private const REQUIRED_CREDENTIALS = [
+        'paymentpoint' => ['api_key', 'password', 'username'],
+    ];
+
     /**
      * Create a new class instance.
      */
@@ -83,6 +88,46 @@ class PaymentFactory
             ];
         }
         return $out;
+    }
+
+    /** @return array<int, string> */
+    public static function missingRequiredCredentials(Provider $provider): array
+    {
+        $name = self::normalisedProviderName($provider);
+        $required = self::REQUIRED_CREDENTIALS[$name] ?? [];
+
+        return array_values(array_filter(
+            $required,
+            function (string $field) use ($provider) {
+                $value = trim((string) $provider->getAttribute($field));
+
+                return $value === '' || $value === '#';
+            },
+        ));
+    }
+
+    /** @return array<int, string> */
+    public static function missingFundingConfiguration(Provider $provider): array
+    {
+        $missing = self::missingRequiredCredentials($provider);
+        if (self::isPaymentPoint($provider)) {
+            $webhookSecret = trim((string) $provider->webhook_access);
+            if (in_array($webhookSecret, ['', '#', '1'], true)) {
+                $missing[] = 'webhook_access';
+            }
+        }
+
+        return array_values(array_unique($missing));
+    }
+
+    public static function isPaymentPoint(Provider $provider): bool
+    {
+        return self::normalisedProviderName($provider) === 'paymentpoint';
+    }
+
+    private static function normalisedProviderName(Provider $provider): string
+    {
+        return (string) preg_replace('/\s+/', '', strtolower(trim((string) $provider->name)));
     }
 
     /**
