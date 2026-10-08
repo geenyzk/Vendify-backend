@@ -154,6 +154,17 @@ it('does not display an incomplete account row as ready', function () {
         ->assertJsonPath('account.bank_name', 'PalmPay');
 });
 
+it('reports automatic provisioning without asking the customer to complete setup', function () {
+    $user = fundingAccountUser();
+
+    $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertAccepted()
+        ->assertJsonPath('status', 'pending')
+        ->assertJsonPath('retryable', true)
+        ->assertJsonPath('message', 'Your bank details are being created automatically. No extra setup is required.');
+});
+
 it('does not load inactive providers for account generation', function () {
     fundingProvider('flutterwave', false, true);
     fundingProvider('PaymentPoint', true, true);

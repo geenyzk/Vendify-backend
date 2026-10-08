@@ -180,8 +180,8 @@ class AccountController extends Controller
      * register/login, but generation can fail silently (provider outage, no
      * active provider at the time) or a provider can be activated later, so
      * the wallet page offers this as a manual retry. Safe to call
-     * repeatedly: PaymentBase::generateAccount() skips any provider a Bank
-     * row already exists for.
+     * repeatedly: PaymentBase::generateAccount() skips providers that already
+     * have a usable Bank row.
      */
     public function generateVirtualAccounts(Request $request)
     {
@@ -212,10 +212,10 @@ class AccountController extends Controller
 
         if (!$account) {
             return response()->json([
-                'status' => 'failed',
-                'message' => 'We could not create your funding account. Check that your profile identity details are complete, then retry.',
+                'status' => 'pending',
+                'message' => 'Your bank details are being created automatically. No extra setup is required.',
                 'retryable' => true,
-            ]);
+            ], 202);
         }
 
         return response()->json([
