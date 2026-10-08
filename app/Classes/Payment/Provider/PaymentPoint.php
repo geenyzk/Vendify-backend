@@ -48,6 +48,8 @@ class PaymentPoint extends PaymentBase
 
     public function generate(User $user): array|null
     {
+        $startedAt = microtime(true);
+
         try {
             if (!$this->hasRequiredCredentials()) {
                 return null;
@@ -55,17 +57,47 @@ class PaymentPoint extends PaymentBase
 
             $payload = $this->formatPayload($user);
             $url = $this->baseUrl() . "/createVirtualAccount";
-            $response = Http::withHeaders($this->getHeaders())->post($url, $payload);
+            Log::info('funding_account.provider_request', [
+                'stage' => 'provider_request',
+                'provider' => 'paymentpoint',
+                'provider_id' => $this->provider->id,
+                'user_id' => $user->id,
+                'endpoint' => '/api/v1/createVirtualAccount',
+                'has_email' => trim((string) $payload['email']) !== '',
+                'has_name' => trim((string) $payload['name']) !== '',
+                'has_phone_number' => trim((string) $payload['phoneNumber']) !== '',
+                'bank_codes' => $payload['bankCode'],
+                'has_business_id' => trim((string) $payload['businessId']) !== '',
+            ]);
+
+            $response = Http::connectTimeout(5)
+                ->timeout(20)
+                ->withHeaders($this->getHeaders())
+                ->post($url, $payload);
+            $data = $response->json();
+            $data = is_array($data) ? $data : [];
+
+            Log::info('funding_account.provider_response', [
+                'stage' => 'provider_response',
+                'provider' => 'paymentpoint',
+                'provider_id' => $this->provider->id,
+                'user_id' => $user->id,
+                'http_status' => $response->status(),
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'provider_status' => $data['status'] ?? null,
+                'response_fields' => array_keys($data),
+                'bank_account_count' => is_array($data['bankAccounts'] ?? null) ? count($data['bankAccounts']) : 0,
+                'error_count' => is_array($data['errors'] ?? null) ? count($data['errors']) : 0,
+            ]);
 
             if ($response->successful()) {
-                $data = $response->json();
-
                 if (($data['status'] ?? null) !== 'success') {
-                    Log::warning('PaymentPoint rejected virtual account creation.', [
+                    Log::warning('funding_account.provider_rejected', [
+                        'stage' => 'provider_response',
+                        'provider' => 'paymentpoint',
                         'user_id' => $user->id,
-                        'status' => $data['status'] ?? null,
-                        'message' => $data['message'] ?? null,
-                        'errors' => $data['errors'] ?? [],
+                        'http_status' => $response->status(),
+                        'provider_status' => $data['status'] ?? null,
                     ]);
 
                     return null;
@@ -73,34 +105,44 @@ class PaymentPoint extends PaymentBase
 
                 $accounts = $this->usableBankAccounts($data);
                 if ($accounts === []) {
-                    Log::warning('PaymentPoint returned success without usable bank details.', [
+                    Log::warning('funding_account.provider_response_unusable', [
+                        'stage' => 'provider_response',
+                        'provider' => 'paymentpoint',
                         'user_id' => $user->id,
-                        'message' => $data['message'] ?? null,
-                        'errors' => $data['errors'] ?? [],
+                        'http_status' => $response->status(),
+                        'bank_account_count' => is_array($data['bankAccounts'] ?? null) ? count($data['bankAccounts']) : 0,
                     ]);
 
                     return null;
                 }
 
                 $data['bankAccounts'] = $accounts;
-                Log::info('PaymentPoint virtual account created.', [
+                Log::info('funding_account.provider_account_ready', [
+                    'stage' => 'provider_response',
+                    'provider' => 'paymentpoint',
                     'user_id' => $user->id,
                     'accounts_count' => count($accounts),
                 ]);
 
                 return $this->formatResponse($data, $user);
             } else {
-                Log::error("PaymentPoint: Failed to create virtual account", [
+                Log::error('funding_account.provider_http_failed', [
+                    'stage' => 'provider_response',
+                    'provider' => 'paymentpoint',
                     'user_id' => $user->id,
                     'http_status' => $response->status(),
-                    'message' => $response->json('message'),
                 ]);
                 return null;
             }
 
         } catch (\Throwable $e) {
-            Log::error("PaymentPoint::generate exception: " . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
+            Log::error('funding_account.provider_exception', [
+                'stage' => 'provider_request',
+                'provider' => 'paymentpoint',
+                'provider_id' => $this->provider->id,
+                'user_id' => $user->id,
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'exception' => $e::class,
             ]);
             return null;
         }

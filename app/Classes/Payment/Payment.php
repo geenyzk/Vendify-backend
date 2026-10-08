@@ -6,6 +6,7 @@ use App\Models\Provider;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class Payment
 {
@@ -18,19 +19,59 @@ class Payment
     }
 
 
-    static function generateAccount(User $user){
+    /**
+     * @return array{eligible_providers:int,outcomes:array<string, string>}
+     */
+    static function generateAccount(User $user, ?string $correlationId = null): array
+    {
+        $correlationId ??= (string) Str::uuid();
+        Log::withContext(['correlation_id' => $correlationId]);
+
         // Used to Log::info() the full Provider models here — every call
         // wrote api_key/password/webhook_access to the log file in plain
         // text. Same credential-leak class already fixed once this session
         // in VendorFactory::sumAllBalances().
         $providers = Provider::getPaymentProviders()->get();
-        Log::info('Generating payment accounts for user.', [
+        Log::info('funding_account.eligibility_checked', [
+            'stage' => 'eligibility',
             'user_id' => $user->id,
-            'providers' => $providers->pluck('name'),
+            'eligible_provider_count' => $providers->count(),
+            'eligible_provider_ids' => $providers->pluck('id')->values()->all(),
         ]);
-        $providers->map(function ($provider) use($user){
-            PaymentFactory::make($provider)->generateAccount($user);
-        });
+
+        $outcomes = [];
+        foreach ($providers as $provider) {
+            $missing = PaymentFactory::missingRequiredCredentials($provider);
+            if ($missing !== []) {
+                Log::error('funding_account.configuration_invalid', [
+                    'stage' => 'configuration',
+                    'user_id' => $user->id,
+                    'provider_id' => $provider->id,
+                    'provider' => $provider->name,
+                    'missing_fields' => $missing,
+                ]);
+                $outcomes[(string) $provider->id] = 'configuration_invalid';
+                continue;
+            }
+
+            try {
+                $outcomes[(string) $provider->id] = PaymentFactory::make($provider)->generateAccount($user);
+            } catch (\Throwable $exception) {
+                Log::error('funding_account.provider_initialisation_failed', [
+                    'stage' => 'provider_initialisation',
+                    'user_id' => $user->id,
+                    'provider_id' => $provider->id,
+                    'provider' => $provider->name,
+                    'exception' => $exception::class,
+                ]);
+                $outcomes[(string) $provider->id] = 'provider_initialisation_failed';
+            }
+        }
+
+        return [
+            'eligible_providers' => $providers->count(),
+            'outcomes' => $outcomes,
+        ];
     }
 
     /**

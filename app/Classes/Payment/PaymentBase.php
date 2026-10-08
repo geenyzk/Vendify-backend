@@ -12,6 +12,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 abstract class PaymentBase implements PaymentInterface
@@ -128,8 +129,35 @@ abstract class PaymentBase implements PaymentInterface
         return true;
     }
 
-    public function generateAccount(User $user): void
+    public function generateAccount(User $user): string
     {
+        $providerKey = $this->provider->id ?: strtolower(str_replace(' ', '', (string) $this->provider->name));
+        try {
+            $lock = Cache::lock("funding-account:{$providerKey}:{$user->id}", 30);
+            $acquired = $lock->get();
+        } catch (\Throwable $exception) {
+            Log::error('funding_account.lock_failed', [
+                'stage' => 'lock',
+                'user_id' => $user->id,
+                'provider_id' => $this->provider->id,
+                'provider' => $this->provider->name,
+                'exception' => $exception::class,
+            ]);
+
+            return 'lock_failed';
+        }
+
+        if (! $acquired) {
+            Log::info('funding_account.provisioning_in_progress', [
+                'stage' => 'lock',
+                'user_id' => $user->id,
+                'provider_id' => $this->provider->id,
+                'provider' => $this->provider->name,
+            ]);
+
+            return 'in_progress';
+        }
+
         try {
             // This runs on every login and registration. Calling the provider's
             // (remote, often slow) account-creation API for a user who already
@@ -142,29 +170,61 @@ abstract class PaymentBase implements PaymentInterface
                 ->withUsableAccountDetails()
                 ->exists();
             if ($alreadyProvisioned) {
-                return;
+                Log::info('funding_account.already_ready', [
+                    'stage' => 'preflight',
+                    'user_id' => $user->id,
+                    'provider_id' => $this->provider->id,
+                    'provider' => $this->provider->name,
+                ]);
+
+                return 'already_ready';
             }
 
             $response = $this->generate($user);
 
             if (!$response) {
-                Log::warning("No account generated for user {$user->id}.");
-                return;
+                Log::warning('funding_account.provider_failed', [
+                    'stage' => 'provider_response',
+                    'user_id' => $user->id,
+                    'provider_id' => $this->provider->id,
+                    'provider' => $this->provider->name,
+                ]);
+
+                return 'provider_failed';
             }
 
-            Bank::updateOrCreate(
+            $account = Bank::updateOrCreate(
                 ['user_id' => $user->id, 'provider' => $this->providerName],
                 $response,
             );
+
+            Log::info('funding_account.persisted', [
+                'stage' => 'persistence',
+                'user_id' => $user->id,
+                'provider_id' => $this->provider->id,
+                'provider' => $this->provider->name,
+                'bank_id' => $account->id,
+                'created' => $account->wasRecentlyCreated,
+                'has_account_number' => trim((string) $account->bank_account) !== '',
+                'has_bank_name' => trim((string) $account->bank_name) !== '',
+            ]);
+
+            return 'created';
         } catch (\Throwable $th) {
             // Used to be a bare empty catch — a failure here (bad
             // credentials, provider API down, unexpected response shape)
             // was completely invisible; a customer just silently never got
             // a virtual account with no trace of why.
-            Log::error("generateAccount failed for user {$user->id}: " . $th->getMessage(), [
+            Log::error('funding_account.persistence_failed', [
+                'stage' => 'persistence',
+                'user_id' => $user->id,
                 'provider' => $this->providerName ?? get_class($this),
-                'trace' => $th->getTraceAsString(),
+                'exception' => $th::class,
             ]);
+
+            return 'persistence_failed';
+        } finally {
+            $lock->release();
         }
 
     }

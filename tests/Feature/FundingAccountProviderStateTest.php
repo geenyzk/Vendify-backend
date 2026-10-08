@@ -6,6 +6,8 @@ use App\Models\Provider;
 use App\Models\ServiceControl;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -16,6 +18,7 @@ beforeEach(function () {
         $table->string('email')->unique();
         $table->string('phone')->unique();
         $table->string('password');
+        $table->decimal('wallet_balance', 15, 2)->default(0);
         $table->string('status')->default('active');
         $table->string('referral_code')->nullable();
         $table->rememberToken();
@@ -29,6 +32,9 @@ beforeEach(function () {
         $table->string('category')->nullable();
         $table->string('sub_category')->nullable();
         $table->boolean('active')->default(false);
+        $table->string('username')->nullable();
+        $table->string('password')->nullable();
+        $table->string('api_key')->nullable();
         $table->string('webhook_access')->default('1');
         $table->timestamps();
     });
@@ -53,6 +59,8 @@ beforeEach(function () {
         $table->string('provider')->nullable();
         $table->string('status')->nullable();
         $table->string('currency')->nullable();
+        $table->string('ref')->nullable();
+        $table->string('tx_ref')->nullable();
         $table->decimal('amount', 8, 2)->default(0);
         $table->timestamp('expired_at')->nullable();
         $table->timestamps();
@@ -80,11 +88,16 @@ function fundingAccountUser(): User
 
 function fundingProvider(string $name, bool $providerActive, bool $controlActive): void
 {
+    $isPaymentPoint = strtolower(str_replace(' ', '', $name)) === 'paymentpoint';
     Provider::query()->create([
         'name' => $name,
         'category' => 'payment',
         'sub_category' => 'payment',
         'active' => $providerActive,
+        'username' => $isPaymentPoint ? 'business-id' : null,
+        'password' => $isPaymentPoint ? 'api-token' : null,
+        'api_key' => $isPaymentPoint ? 'api-key' : null,
+        'webhook_access' => $isPaymentPoint ? 'webhook-secret' : '1',
     ]);
 
     ServiceControl::query()->create([
@@ -155,15 +168,75 @@ it('does not display an incomplete account row as ready', function () {
         ->assertJsonPath('account.bank_name', 'PalmPay');
 });
 
-it('reports automatic provisioning without asking the customer to complete setup', function () {
+it('reports a traceable provider-unavailable failure without polling forever', function () {
     $user = fundingAccountUser();
+
+    $response = $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertServiceUnavailable()
+        ->assertJsonPath('status', 'failed')
+        ->assertJsonPath('error_code', 'provider_unavailable')
+        ->assertJsonPath('retryable', false)
+        ->assertJsonStructure(['correlation_id']);
+
+    $response->assertHeader('X-Correlation-ID', $response->json('correlation_id'));
+});
+
+it('persists one newly provisioned account and retrieves it without a duplicate provider call', function () {
+    $user = fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+
+    Http::fake([
+        'api.paymentpoint.co/*' => Http::response([
+            'status' => 'success',
+            'bankAccounts' => [[
+                'accountNumber' => '6698059290',
+                'accountName' => 'Test (PaymentPoint)',
+                'bankName' => 'PalmPay',
+                'Reserved_Account_Id' => 'reserved-id',
+            ]],
+            'errors' => [],
+        ]),
+    ]);
+
+    $created = $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertOk()
+        ->assertJsonPath('status', 'ready')
+        ->assertJsonPath('account.account_number', '6698059290');
+    $created->assertHeader('X-Correlation-ID', $created->json('correlation_id'));
 
     $this->actingAs($user, 'sanctum')
         ->getJson('/api/wallet/funding-account')
-        ->assertAccepted()
-        ->assertJsonPath('status', 'pending')
-        ->assertJsonPath('retryable', true)
-        ->assertJsonPath('message', 'Your bank details are being created automatically. No extra setup is required.');
+        ->assertOk()
+        ->assertJsonPath('status', 'ready')
+        ->assertJsonPath('account.account_number', '6698059290');
+
+    Http::assertSentCount(1);
+    expect(Bank::query()->where('user_id', $user->id)->count())->toBe(1)
+        ->and((float) $user->fresh()->wallet_balance)->toBe(0.0);
+});
+
+it('does not make a duplicate provider request while provisioning is locked', function () {
+    $user = fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+    $provider = Provider::query()->where('name', 'PaymentPoint')->firstOrFail();
+    $lock = Cache::lock("funding-account:{$provider->id}:{$user->id}", 30);
+    expect($lock->get())->toBeTrue();
+    Http::fake();
+
+    try {
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/wallet/funding-account')
+            ->assertAccepted()
+            ->assertJsonPath('status', 'pending')
+            ->assertJsonPath('error_code', 'provisioning_in_progress')
+            ->assertJsonPath('retryable', true);
+
+        Http::assertNothingSent();
+    } finally {
+        $lock->release();
+    }
 });
 
 it('does not load inactive providers for account generation', function () {

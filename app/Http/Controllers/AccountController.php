@@ -14,6 +14,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
@@ -195,6 +197,9 @@ class AccountController extends Controller
     public function fundingAccount(Request $request)
     {
         $user = $request->user();
+        $correlationId = (string) ($request->attributes->get('request_id') ?: Str::uuid());
+        Log::withContext(['correlation_id' => $correlationId]);
+
         $find = fn () => Bank::query()
             ->where('user_id', $user->id)
             ->where('status', 'active')
@@ -206,26 +211,67 @@ class AccountController extends Controller
 
         $account = $find();
         if (!$account) {
-            Payment::generateAccount($user);
+            Log::info('funding_account.request_started', [
+                'stage' => 'controller',
+                'user_id' => $user->id,
+                'existing_account' => false,
+            ]);
+            $provisioning = Payment::generateAccount($user, $correlationId);
             $account = $find();
+        } else {
+            $provisioning = ['eligible_providers' => null, 'outcomes' => []];
         }
 
         if (!$account) {
+            $outcomes = array_values($provisioning['outcomes']);
+            $inProgress = in_array('in_progress', $outcomes, true);
+            $configurationInvalid = in_array('configuration_invalid', $outcomes, true);
+            $noProvider = $provisioning['eligible_providers'] === 0;
+
+            $errorCode = $inProgress
+                ? 'provisioning_in_progress'
+                : ($noProvider
+                    ? 'provider_unavailable'
+                    : ($configurationInvalid ? 'provider_configuration_invalid' : 'provider_request_failed'));
+            $retryable = $inProgress || $errorCode === 'provider_request_failed';
+            $status = $inProgress ? 'pending' : 'failed';
+            $httpStatus = $inProgress ? 202 : ($errorCode === 'provider_request_failed' ? 502 : 503);
+
+            Log::warning('funding_account.request_failed', [
+                'stage' => 'controller',
+                'user_id' => $user->id,
+                'error_code' => $errorCode,
+                'retryable' => $retryable,
+                'provider_outcomes' => $outcomes,
+            ]);
+
             return response()->json([
-                'status' => 'pending',
-                'message' => 'Your bank details are being created automatically. No extra setup is required.',
-                'retryable' => true,
-            ], 202);
+                'status' => $status,
+                'error_code' => $errorCode,
+                'message' => $retryable
+                    ? 'We could not create your funding account right now. Please retry once.'
+                    : 'Funding account creation is temporarily unavailable. Support can trace this request.',
+                'retryable' => $retryable,
+                'correlation_id' => $correlationId,
+            ], $httpStatus)->header('X-Correlation-ID', $correlationId);
         }
+
+        Log::info('funding_account.request_ready', [
+            'stage' => 'controller',
+            'user_id' => $user->id,
+            'bank_id' => $account->id,
+            'provider' => $account->provider,
+        ]);
 
         return response()->json([
             'status' => 'ready',
+            'correlation_id' => $correlationId,
             'account' => [
                 'account_number' => $account->bank_account,
                 'bank_name' => $account->bank_name,
                 'account_name' => $account->account_name,
                 'currency' => $account->currency ?: 'NGN',
             ],
-        ]);
+        ])->header('X-Correlation-ID', $correlationId);
     }
 }
