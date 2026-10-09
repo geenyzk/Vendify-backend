@@ -4,16 +4,23 @@ namespace App\Classes\Payment\Provider;
 
 use App\Classes\Payment\PaymentBase;
 use App\Classes\Payment\PaymentFactory;
+use App\Models\PaymentPointProvisioning;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\General;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class PaymentPoint extends PaymentBase
 {
-    private const VIRTUAL_ACCOUNT_BANK_CODES = ['20946', '20897'];
+    private const SUPPORTED_VIRTUAL_ACCOUNT_BANK_CODES = ['20946', '20897'];
+
+    /** @var array{id_type:string,id_number:string}|null */
+    private ?array $identity = null;
+
+    private bool $explicitKycAttempt = false;
 
     // PaymentPoint provider name must match the providers.name value
     // in the database ("payment point"). creditedAmount() relies on
@@ -35,6 +42,92 @@ class PaymentPoint extends PaymentBase
     public function checkBalance(): string
     {
         return '';
+    }
+
+    public function generateAccount(User $user): string
+    {
+        $state = PaymentPointProvisioning::query()
+            ->where('user_id', $user->id)
+            ->where('provider_id', $this->provider->id)
+            ->first();
+
+        if (!$this->explicitKycAttempt && $state?->status === PaymentPointProvisioning::STATUS_KYC_REQUIRED) {
+            return 'identity_required';
+        }
+
+        if (!$this->explicitKycAttempt && $state?->status === PaymentPointProvisioning::STATUS_FAILED) {
+            return 'provider_failed_no_retry';
+        }
+
+        $outcome = parent::generateAccount($user);
+
+        if (in_array($outcome, ['created', 'already_ready'], true)) {
+            $this->updateProvisioningState(
+                $user,
+                PaymentPointProvisioning::STATUS_READY,
+                null,
+                false,
+                $outcome === 'created',
+            );
+        } elseif ($outcome === 'persistence_failed') {
+            $this->updateProvisioningState($user, PaymentPointProvisioning::STATUS_FAILED, 'persistence_failed');
+        }
+
+        $state = PaymentPointProvisioning::query()
+            ->where('user_id', $user->id)
+            ->where('provider_id', $this->provider->id)
+            ->first();
+
+        return match ($state?->status) {
+            PaymentPointProvisioning::STATUS_KYC_REQUIRED => 'identity_required',
+            PaymentPointProvisioning::STATUS_FAILED => 'provider_failed_no_retry',
+            default => $outcome,
+        };
+    }
+
+    public function generateWithIdentity(User $user, string $idType, string $idNumber): string
+    {
+        if (!config('paymentpoint.kyc_recovery_enabled')) {
+            return 'kyc_recovery_unconfirmed';
+        }
+
+        $claim = DB::transaction(function () use ($user): string {
+            $state = PaymentPointProvisioning::query()
+                ->where('user_id', $user->id)
+                ->where('provider_id', $this->provider->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$state || $state->status !== PaymentPointProvisioning::STATUS_KYC_REQUIRED) {
+                return 'identity_not_requested';
+            }
+
+            if ($state->kyc_attempted_at !== null) {
+                return 'kyc_attempt_already_used';
+            }
+
+            $state->forceFill([
+                'kyc_consent_at' => now(),
+                'kyc_attempted_at' => now(),
+            ])->save();
+
+            return 'claimed';
+        });
+
+        if ($claim !== 'claimed') {
+            return $claim;
+        }
+
+        $this->identity = ['id_type' => $idType, 'id_number' => $idNumber];
+        $this->explicitKycAttempt = true;
+
+        try {
+            return $this->generateAccount($user);
+        } finally {
+            // The identity number is request-scoped and is never persisted.
+            $this->identity = null;
+            $this->explicitKycAttempt = false;
+        }
     }
 
     protected function getHeaders(): array
@@ -68,6 +161,7 @@ class PaymentPoint extends PaymentBase
                 'has_phone_number' => trim((string) $payload['phoneNumber']) !== '',
                 'bank_codes' => $payload['bankCode'],
                 'has_business_id' => trim((string) $payload['businessId']) !== '',
+                'has_identity' => isset($payload['idType'], $payload['idNumber']),
             ]);
 
             $response = Http::connectTimeout(5)
@@ -94,6 +188,7 @@ class PaymentPoint extends PaymentBase
 
             if ($response->successful()) {
                 if (($data['status'] ?? null) !== 'success') {
+                    $this->updateProvisioningState($user, PaymentPointProvisioning::STATUS_FAILED, 'provider_rejected');
                     Log::warning('funding_account.provider_rejected', [
                         'stage' => 'provider_response',
                         'provider' => 'paymentpoint',
@@ -107,6 +202,17 @@ class PaymentPoint extends PaymentBase
 
                 $accounts = $this->usableBankAccounts($data);
                 if ($accounts === []) {
+                    $requiresIdentity = !$this->explicitKycAttempt
+                        && is_array($data['errors'] ?? null)
+                        && $data['errors'] !== [];
+                    $this->updateProvisioningState(
+                        $user,
+                        $requiresIdentity
+                            ? PaymentPointProvisioning::STATUS_KYC_REQUIRED
+                            : PaymentPointProvisioning::STATUS_FAILED,
+                        $diagnostics['failure_category'],
+                        (bool) $diagnostics['customer_id_present'],
+                    );
                     Log::warning('funding_account.provider_response_unusable', [
                         'stage' => 'provider_response',
                         'provider' => 'paymentpoint',
@@ -129,6 +235,7 @@ class PaymentPoint extends PaymentBase
 
                 return $this->formatResponse($data, $user);
             } else {
+                $this->updateProvisioningState($user, PaymentPointProvisioning::STATUS_FAILED, 'provider_http_failed');
                 Log::error('funding_account.provider_http_failed', [
                     'stage' => 'provider_response',
                     'provider' => 'paymentpoint',
@@ -139,6 +246,7 @@ class PaymentPoint extends PaymentBase
             }
 
         } catch (\Throwable $e) {
+            $this->updateProvisioningState($user, PaymentPointProvisioning::STATUS_FAILED, 'provider_exception');
             Log::error('funding_account.provider_exception', [
                 'stage' => 'provider_request',
                 'provider' => 'paymentpoint',
@@ -176,7 +284,7 @@ class PaymentPoint extends PaymentBase
                 'email'       => $customer['email'] ?? null,
                 'name'        => $customer['name'] ?? ($customer['username'] ?? null),
                 'phoneNumber' => $customer['phone'] ?? null,
-                'bankCode'    => self::VIRTUAL_ACCOUNT_BANK_CODES,
+                'bankCode'    => $this->virtualAccountBankCodes(),
                 'businessId'  => $this->provider->username,
             ];
 
@@ -247,13 +355,20 @@ class PaymentPoint extends PaymentBase
     protected function formatPayload(array|User $payload, ?User $user = null): array
     {
         $user = $payload instanceof User ? $payload : $user;
-        return [
+        $formatted = [
             'email'       => $user->email,
             'name'        => trim((string) ($user->fullname ?: $user->username)),
             'phoneNumber' => $user->phone,
-            'bankCode'    => self::VIRTUAL_ACCOUNT_BANK_CODES,
+            'bankCode'    => $this->virtualAccountBankCodes(),
             'businessId'  => $this->provider->username,
         ];
+
+        if ($this->identity !== null) {
+            $formatted['idType'] = $this->identity['id_type'];
+            $formatted['idNumber'] = $this->identity['id_number'];
+        }
+
+        return $formatted;
     }
 
     protected function formatResponse(array $data, User $user): array
@@ -292,6 +407,48 @@ class PaymentPoint extends PaymentBase
         }
 
         return true;
+    }
+
+    /** @return array<int, string> */
+    private function virtualAccountBankCodes(): array
+    {
+        $configured = config('paymentpoint.virtual_account_bank_codes', ['20946']);
+        $configured = is_array($configured) ? $configured : [];
+
+        $enabled = array_values(array_unique(array_intersect(
+            self::SUPPORTED_VIRTUAL_ACCOUNT_BANK_CODES,
+            array_map(static fn ($code) => trim((string) $code), $configured),
+        )));
+
+        return $enabled !== [] ? $enabled : ['20946'];
+    }
+
+    private function updateProvisioningState(
+        User $user,
+        string $status,
+        ?string $errorCategory,
+        bool $customerCreated = false,
+        bool $incrementAttempt = true,
+    ): void {
+        if (!$user->exists || !$this->provider->exists) {
+            return;
+        }
+
+        $state = PaymentPointProvisioning::query()->firstOrNew([
+            'user_id' => $user->id,
+            'provider_id' => $this->provider->id,
+        ]);
+
+        $state->status = $status;
+        $state->last_error_category = $errorCategory;
+        $state->customer_created = $state->customer_created || $customerCreated;
+
+        if ($incrementAttempt) {
+            $state->attempt_count = min(255, ((int) $state->attempt_count) + 1);
+            $state->last_attempt_at = now();
+        }
+
+        $state->save();
     }
 
     /**
@@ -395,7 +552,7 @@ class PaymentPoint extends PaymentBase
 
                 $recognizedKeys++;
                 $bankCode = trim((string) $error[$key]);
-                if (in_array($bankCode, self::VIRTUAL_ACCOUNT_BANK_CODES, true)) {
+                if (in_array($bankCode, self::SUPPORTED_VIRTUAL_ACCOUNT_BANK_CODES, true)) {
                     $bankCodes[] = $bankCode;
                 }
             }

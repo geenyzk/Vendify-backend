@@ -19,7 +19,7 @@ function paymentPointGateway(array $attributes = []): PaymentPoint
     ], $attributes)));
 }
 
-it('creates a virtual account with documented headers and both partner banks', function () {
+it('creates a virtual account with documented headers and PalmPay only by default', function () {
     Log::spy();
     Http::fake([
         'api.paymentpoint.co/*' => Http::response([
@@ -56,8 +56,32 @@ it('creates a virtual account with documented headers and both partner banks', f
             && $request->hasHeader('api-key', 'public-api-key')
             && $request['businessId'] === 'business-id'
             && $request['name'] === 'Test Customer Fullname'
-            && $request['bankCode'] === ['20946', '20897'];
+            && $request['bankCode'] === ['20946'];
     });
+});
+
+it('can restore an available configured partner bank without a code change', function () {
+    config()->set('paymentpoint.virtual_account_bank_codes', ['20946', '20897']);
+    Http::fake([
+        'api.paymentpoint.co/*' => Http::response([
+            'status' => 'success',
+            'bankAccounts' => [[
+                'accountNumber' => '6698059290',
+                'bankName' => 'PalmPay',
+            ]],
+        ]),
+    ]);
+
+    $user = new User([
+        'email' => 'customer@example.com',
+        'username' => 'customer',
+        'fullname' => 'Test Customer',
+        'phone' => '08012345678',
+    ]);
+    $user->id = 10;
+
+    expect(paymentPointGateway()->generate($user))->not->toBeNull();
+    Http::assertSent(fn (ClientRequest $request) => $request['bankCode'] === ['20946', '20897']);
 });
 
 it('rejects a successful HTTP response that has no usable bank account', function () {
