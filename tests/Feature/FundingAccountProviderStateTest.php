@@ -7,7 +7,6 @@ use App\Models\PaymentPointProvisioning;
 use App\Models\ServiceControl;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -200,7 +199,7 @@ it('reports a traceable provider-unavailable failure without polling forever', f
     $response->assertHeader('X-Correlation-ID', $response->json('correlation_id'));
 });
 
-it('persists one newly provisioned account and retrieves it without a duplicate provider call', function () {
+it('offers identity first then persists one PalmPay account without a duplicate provider call', function () {
     $user = fundingAccountUser();
     fundingProvider('PaymentPoint', true, true);
 
@@ -217,8 +216,20 @@ it('persists one newly provisioned account and retrieves it without a duplicate 
         ]),
     ]);
 
-    $created = $this->actingAs($user, 'sanctum')
+    $this->actingAs($user, 'sanctum')
         ->getJson('/api/wallet/funding-account')
+        ->assertStatus(409)
+        ->assertJsonPath('status', 'identity_required')
+        ->assertJsonPath('kyc_submission_enabled', true);
+
+    Http::assertNothingSent();
+
+    $created = $this->actingAs($user, 'sanctum')
+        ->postJson('/api/wallet/funding-account/identity', [
+            'id_type' => 'bvn',
+            'id_number' => '22123456789',
+            'consent' => true,
+        ])
         ->assertOk()
         ->assertJsonPath('status', 'ready')
         ->assertJsonPath('account.account_number', '6698059290');
@@ -235,24 +246,27 @@ it('persists one newly provisioned account and retrieves it without a duplicate 
         ->and((float) $user->fresh()->wallet_balance)->toBe(0.0);
 });
 
-it('requests identity after one failed PalmPay allocation and does not call create again on refresh', function () {
+it('keeps a previously failed allocation in recovery without calling create again on refresh', function () {
     $user = fundingAccountUser();
     fundingProvider('PaymentPoint', true, true);
+    $provider = Provider::query()->where('name', 'PaymentPoint')->firstOrFail();
 
-    Http::fake([
-        'api.paymentpoint.co/*' => Http::response([
-            'status' => 'success',
-            'customer' => ['customer_id' => 'provider-customer-id'],
-            'bankAccounts' => [],
-            'errors' => [['code' => 'IDENTITY_REQUIRED']],
-        ], 201),
+    PaymentPointProvisioning::query()->create([
+        'user_id' => $user->id,
+        'provider_id' => $provider->id,
+        'status' => PaymentPointProvisioning::STATUS_KYC_REQUIRED,
+        'customer_created' => true,
+        'attempt_count' => 1,
     ]);
+
+    Http::fake();
 
     $this->actingAs($user, 'sanctum')
         ->getJson('/api/wallet/funding-account')
         ->assertStatus(409)
         ->assertJsonPath('status', 'identity_required')
-        ->assertJsonPath('error_code', 'identity_required')
+        ->assertJsonPath('error_code', 'kyc_recovery_unconfirmed')
+        ->assertJsonPath('kyc_submission_enabled', false)
         ->assertJsonPath('retryable', false);
 
     $this->actingAs($user, 'sanctum')
@@ -260,7 +274,7 @@ it('requests identity after one failed PalmPay allocation and does not call crea
         ->assertStatus(409)
         ->assertJsonPath('status', 'identity_required');
 
-    Http::assertSentCount(1);
+    Http::assertNothingSent();
     expect(PaymentPointProvisioning::query()->where('user_id', $user->id)->value('attempt_count'))->toBe(1)
         ->and(PaymentPointProvisioning::query()->where('user_id', $user->id)->value('customer_created'))->toBeTruthy();
 });
@@ -351,26 +365,97 @@ it('does not transmit identity while duplicate-safe recovery is disabled', funct
     expect(PaymentPointProvisioning::query()->where('user_id', $user->id)->value('kyc_attempted_at'))->toBeNull();
 });
 
-it('does not make a duplicate provider request while provisioning is locked', function () {
+it('rejects an invalid identity number before any provider request', function () {
     $user = fundingAccountUser();
     fundingProvider('PaymentPoint', true, true);
-    $provider = Provider::query()->where('name', 'PaymentPoint')->firstOrFail();
-    $lock = Cache::lock("funding-account:{$provider->id}:{$user->id}", 30);
-    expect($lock->get())->toBeTrue();
     Http::fake();
 
-    try {
-        $this->actingAs($user, 'sanctum')
-            ->getJson('/api/wallet/funding-account')
-            ->assertAccepted()
-            ->assertJsonPath('status', 'pending')
-            ->assertJsonPath('error_code', 'provisioning_in_progress')
-            ->assertJsonPath('retryable', true);
+    $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertStatus(409);
 
-        Http::assertNothingSent();
-    } finally {
-        $lock->release();
-    }
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/wallet/funding-account/identity', [
+            'id_type' => 'bvn',
+            'id_number' => '1234',
+            'consent' => true,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error_code', 'invalid_identity_number');
+
+    Http::assertNothingSent();
+});
+
+it('does not retry after a consented request returns no bank account', function () {
+    $user = fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+    Http::fake([
+        'api.paymentpoint.co/*' => Http::response([
+            'status' => 'success',
+            'customer' => ['customer_id' => 'provider-customer-id'],
+            'bankAccounts' => [],
+            'errors' => [['code' => 'ALLOCATION_PENDING']],
+        ], 201),
+    ]);
+
+    $this->actingAs($user, 'sanctum')->getJson('/api/wallet/funding-account')->assertStatus(409);
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/wallet/funding-account/identity', [
+            'id_type' => 'nin',
+            'id_number' => '22123456789',
+            'consent' => true,
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('status', 'failed')
+        ->assertJsonPath('retryable', false);
+
+    $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertStatus(409)
+        ->assertJsonPath('error_code', 'account_recovery_pending')
+        ->assertJsonPath('kyc_submission_enabled', false);
+
+    Http::assertSentCount(1);
+    expect(PaymentPointProvisioning::query()->where('user_id', $user->id)->value('attempt_count'))->toBe(1)
+        ->and(Bank::query()->where('user_id', $user->id)->count())->toBe(0)
+        ->and((float) $user->fresh()->wallet_balance)->toBe(0.0);
+});
+
+it('does not retry after a provider timeout with an ambiguous remote outcome', function () {
+    $user = fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+    Http::fake(['api.paymentpoint.co/*' => Http::failedConnection('timed out')]);
+
+    $this->actingAs($user, 'sanctum')->getJson('/api/wallet/funding-account')->assertStatus(409);
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/wallet/funding-account/identity', [
+            'id_type' => 'bvn',
+            'id_number' => '22123456789',
+            'consent' => true,
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('retryable', false);
+
+    $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertStatus(409)
+        ->assertJsonPath('error_code', 'account_recovery_pending');
+
+    Http::assertSentCount(1);
+});
+
+it('does not make a provider request merely because an onboarding wallet is opened', function () {
+    $user = fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+    Http::fake();
+
+    $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertStatus(409)
+        ->assertJsonPath('status', 'identity_required')
+        ->assertJsonPath('kyc_submission_enabled', true);
+
+    Http::assertNothingSent();
 });
 
 it('does not load inactive providers for account generation', function () {

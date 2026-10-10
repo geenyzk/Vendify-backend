@@ -11,6 +11,7 @@ use App\Http\Middleware\RejectImpersonatedSession;
 use App\Http\Middleware\RequireRecentAuthentication;
 use App\Http\Middleware\RequireSecureAirtimeToCash;
 use App\Http\Middleware\RequireSecureIdentitySubmission;
+use App\Http\Middleware\SanitizeFundingIdentity;
 use App\Http\Middleware\SanitizeAirtimeToCashSecrets;
 use App\Http\Middleware\TrackLastSeen;
 use App\Http\Middleware\VerifyChildSignature;
@@ -53,6 +54,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'atc.https' => RequireSecureAirtimeToCash::class,
             'atc.secrets' => SanitizeAirtimeToCashSecrets::class,
             'identity.https' => RequireSecureIdentitySubmission::class,
+            'identity.sanitize' => SanitizeFundingIdentity::class,
             'not.impersonating' => RejectImpersonatedSession::class,
             'secure.session' => EnforceSecureSession::class,
             'recent.auth' => RequireRecentAuthentication::class,

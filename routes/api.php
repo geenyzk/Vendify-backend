@@ -201,7 +201,7 @@ Route::middleware(['auth:sanctum', 'secure.session'])->group(function () {
     Route::post('/account/virtual-accounts', [AccountController::class, 'generateVirtualAccounts'])->middleware('not.impersonating');
     Route::get('/wallet/funding-account', [AccountController::class, 'fundingAccount']);
     Route::post('/wallet/funding-account/identity', [AccountController::class, 'submitFundingIdentity'])
-        ->middleware(['not.impersonating', 'identity.https', 'throttle:3,10']);
+        ->middleware(['not.impersonating', 'identity.sanitize', 'identity.https', 'throttle:3,10']);
 
     Route::post('/vtu/{service}', [VTUServicesController::class, 'handle'])->middleware('not.impersonating');
     Route::get('/vtu/{service}/plans', [VTUServicesController::class, 'plan']);

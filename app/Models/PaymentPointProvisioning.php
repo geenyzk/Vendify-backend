@@ -10,6 +10,11 @@ class PaymentPointProvisioning extends Model
     public const STATUS_FAILED = 'failed';
     public const STATUS_READY = 'ready';
 
+    public function isRecovery(): bool
+    {
+        return $this->customer_created || $this->attempt_count > 0;
+    }
+
     protected $fillable = [
         'user_id',
         'provider_id',

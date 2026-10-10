@@ -8,6 +8,7 @@ use App\Classes\Payment\Provider\PaymentPoint;
 use App\Classes\SerivceControl\ServiceControlService;
 use App\HttpResponse;
 use App\Models\Bank;
+use App\Models\PaymentPointProvisioning;
 use App\Models\Provider;
 use App\Models\User;
 use App\Services\Auth\SessionSecurityService;
@@ -212,14 +213,28 @@ class AccountController extends Controller
             ->latest('id')->first();
 
         $account = $find();
-        if (!$account) {
-            Log::info('funding_account.request_started', [
-                'stage' => 'controller',
-                'user_id' => $user->id,
-                'existing_account' => false,
-            ]);
-            $provisioning = Payment::generateAccount($user, $correlationId);
-            $account = $find();
+        if (! $account) {
+            $provider = Provider::query()->getPaymentProviders()->get()
+                ->first(fn (Provider $candidate) => PaymentFactory::isPaymentPoint($candidate));
+
+            if ($provider) {
+                $state = PaymentPointProvisioning::query()->firstOrCreate(
+                    ['user_id' => $user->id, 'provider_id' => $provider->id],
+                    [
+                        'status' => PaymentPointProvisioning::STATUS_KYC_REQUIRED,
+                        'attempt_count' => 0,
+                        'customer_created' => false,
+                    ],
+                );
+
+                if ($state->status === PaymentPointProvisioning::STATUS_KYC_REQUIRED) {
+                    return $this->identityRequiredResponse($state, $correlationId);
+                }
+
+                return $this->pendingSupportResponse($correlationId);
+            }
+
+            $provisioning = ['eligible_providers' => 0, 'outcomes' => []];
         } else {
             $provisioning = ['eligible_providers' => null, 'outcomes' => []];
         }
@@ -287,15 +302,23 @@ class AccountController extends Controller
     {
         $validated = $request->validate([
             'id_type' => ['required', Rule::in(['bvn', 'nin'])],
-            'id_number' => ['required', 'digits:11'],
             'consent' => ['accepted'],
         ]);
 
         $idType = $validated['id_type'];
-        $idNumber = $validated['id_number'];
-        unset($validated['id_number']);
-        $request->request->remove('id_number');
-        $request->json()->remove('id_number');
+        $identityIsValid = preg_match(
+            '/^\d{11}$/',
+            (string) $request->attributes->get('funding_identity_number', ''),
+        ) === 1;
+        if (! $identityIsValid) {
+            return response()->json([
+                'status' => 'failed',
+                'error_code' => 'invalid_identity_number',
+                'message' => 'Enter a valid 11-digit BVN or NIN.',
+                'retryable' => false,
+                'errors' => ['id_number' => ['The identity number must be exactly 11 digits.']],
+            ], 422);
+        }
 
         $user = $request->user();
         $correlationId = (string) ($request->attributes->get('request_id') ?: Str::uuid());
@@ -325,7 +348,7 @@ class AccountController extends Controller
         $provider = Provider::query()->getPaymentProviders()->get()
             ->first(fn (Provider $candidate) => PaymentFactory::isPaymentPoint($candidate));
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
                 'status' => 'failed',
                 'error_code' => 'provider_unavailable',
@@ -336,7 +359,7 @@ class AccountController extends Controller
         }
 
         $gateway = PaymentFactory::make($provider);
-        if (!$gateway instanceof PaymentPoint) {
+        if (! $gateway instanceof PaymentPoint) {
             return response()->json([
                 'status' => 'failed',
                 'error_code' => 'provider_configuration_invalid',
@@ -346,14 +369,27 @@ class AccountController extends Controller
             ], 503)->header('X-Correlation-ID', $correlationId);
         }
 
-        $outcome = $gateway->generateWithIdentity(
-            $user,
-            $idType,
-            $idNumber,
-        );
+        $idNumber = (string) $request->attributes->get('funding_identity_number');
+        try {
+            $outcome = $gateway->generateWithIdentity($user, $idType, $idNumber);
+        } catch (\Throwable $exception) {
+            Log::error('funding_account.identity_submission_failed', [
+                'user_id' => $user->id,
+                'provider_id' => $provider->id,
+                'exception' => $exception::class,
+            ]);
 
-        // Drop the only request-local copy before constructing any response.
-        unset($idNumber);
+            return response()->json([
+                'status' => 'failed',
+                'error_code' => 'identity_verification_failed',
+                'message' => 'PalmPay account activation could not be completed. Support can trace the request.',
+                'retryable' => false,
+                'correlation_id' => $correlationId,
+            ], 409)->header('X-Correlation-ID', $correlationId);
+        } finally {
+            // Drop the controller-local copy before DB reads or response work.
+            unset($idNumber);
+        }
 
         $account = Bank::query()
             ->where('user_id', $user->id)
@@ -389,6 +425,37 @@ class AccountController extends Controller
                 : 'PalmPay could not issue the account from this verification attempt. Support can trace the request.',
             'retryable' => false,
             'kyc_submission_enabled' => false,
+            'correlation_id' => $correlationId,
+        ], 409)->header('X-Correlation-ID', $correlationId);
+    }
+
+    private function identityRequiredResponse(PaymentPointProvisioning $state, string $correlationId): JsonResponse
+    {
+        $isRecovery = $state->isRecovery();
+        $submissionEnabled = !$isRecovery || (bool) config('paymentpoint.kyc_recovery_enabled');
+
+        return response()->json([
+            'status' => 'identity_required',
+            'error_code' => $isRecovery ? 'kyc_recovery_unconfirmed' : 'identity_required',
+            'message' => $submissionEnabled
+                ? 'Verify your identity to activate wallet funding with a dedicated PalmPay account.'
+                : 'Your identity information is required to activate wallet funding. Account activation is temporarily unavailable while we complete the recovery process. Please contact support if you need assistance.',
+            'retryable' => false,
+            'kyc_submission_enabled' => $submissionEnabled,
+            'recovery_required' => $isRecovery,
+            'correlation_id' => $correlationId,
+        ], 409)->header('X-Correlation-ID', $correlationId);
+    }
+
+    private function pendingSupportResponse(string $correlationId): JsonResponse
+    {
+        return response()->json([
+            'status' => 'failed',
+            'error_code' => 'account_recovery_pending',
+            'message' => 'Account activation is temporarily unavailable while we complete the recovery process. Please contact support if you need assistance.',
+            'retryable' => false,
+            'kyc_submission_enabled' => false,
+            'recovery_required' => true,
             'correlation_id' => $correlationId,
         ], 409)->header('X-Correlation-ID', $correlationId);
     }

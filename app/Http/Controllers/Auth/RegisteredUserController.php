@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Auth;
 
 use App\Classes\AdminNotifier;
 use App\Classes\EventService;
-use App\Classes\Payment\Payment;
 use App\Classes\TransactionService;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
@@ -128,20 +127,9 @@ class RegisteredUserController extends Controller
                 context: ['channel' => $isMobile ? 'mobile' : 'web', 'auth_session_id' => $session?->id ?? $credentials['session']['id']],
             );
 
-            // Provisioning the virtual account calls a remote provider API, so
-            // defer it until after the response is flushed to the client. The
-            // user is sent to the PIN-setup step next, which gives it ample
-            // time to land before the dashboard needs it — keeps sign-up fast.
-            app()->terminating(function () use ($user) {
-                try {
-                    Payment::generateAccount($user);
-                } catch (\Throwable $e) {
-                    Log::warning('Virtual account generation failed during registration', [
-                        'user_id' => $user->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            });
+            // Funding-account activation is completed later in Wallet.
+            // PaymentPoint requires explicit BVN/NIN consent, so registration
+            // must not make an identity-free provider request.
 
             try {
                 $user->loginStamp();

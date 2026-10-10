@@ -107,6 +107,29 @@ it('rejects a successful HTTP response that has no usable bank account', functio
     expect(paymentPointGateway()->generate($user))->toBeNull();
 });
 
+it('rejects an unexpected OPay account while PalmPay is the only requested bank', function () {
+    Http::fake([
+        'api.paymentpoint.co/*' => Http::response([
+            'status' => 'success',
+            'bankAccounts' => [[
+                'accountNumber' => '6698059290',
+                'bankName' => 'OPay',
+                'bankCode' => '20897',
+            ]],
+        ]),
+    ]);
+
+    $user = new User([
+        'email' => 'customer@example.com',
+        'username' => 'customer',
+        'fullname' => 'Test Customer',
+        'phone' => '08012345678',
+    ]);
+    $user->id = 10;
+
+    expect(paymentPointGateway()->generate($user))->toBeNull();
+});
+
 it('logs only redacted structured diagnostics for an unusable provider response', function () {
     Log::spy();
     Http::fake([

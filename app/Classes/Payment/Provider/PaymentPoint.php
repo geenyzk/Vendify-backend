@@ -51,6 +51,19 @@ class PaymentPoint extends PaymentBase
             ->where('provider_id', $this->provider->id)
             ->first();
 
+        if (! $this->explicitKycAttempt && ! $state) {
+            PaymentPointProvisioning::query()->firstOrCreate(
+                ['user_id' => $user->id, 'provider_id' => $this->provider->id],
+                [
+                    'status' => PaymentPointProvisioning::STATUS_KYC_REQUIRED,
+                    'attempt_count' => 0,
+                    'customer_created' => false,
+                ],
+            );
+
+            return 'identity_required';
+        }
+
         if (!$this->explicitKycAttempt && $state?->status === PaymentPointProvisioning::STATUS_KYC_REQUIRED) {
             return 'identity_required';
         }
@@ -87,10 +100,6 @@ class PaymentPoint extends PaymentBase
 
     public function generateWithIdentity(User $user, string $idType, string $idNumber): string
     {
-        if (!config('paymentpoint.kyc_recovery_enabled')) {
-            return 'kyc_recovery_unconfirmed';
-        }
-
         $claim = DB::transaction(function () use ($user): string {
             $state = PaymentPointProvisioning::query()
                 ->where('user_id', $user->id)
@@ -100,6 +109,14 @@ class PaymentPoint extends PaymentBase
 
             if (!$state || $state->status !== PaymentPointProvisioning::STATUS_KYC_REQUIRED) {
                 return 'identity_not_requested';
+            }
+
+            // The first consented identity submission is onboarding, not
+            // recovery: no provider request has happened yet. The feature
+            // flag gates only resubmission after an earlier/ambiguous create.
+            $isRecovery = $state->customer_created || (int) $state->attempt_count > 0;
+            if ($isRecovery && ! config('paymentpoint.kyc_recovery_enabled')) {
+                return 'kyc_recovery_unconfirmed';
             }
 
             if ($state->kyc_attempted_at !== null) {
@@ -456,12 +473,35 @@ class PaymentPoint extends PaymentBase
      */
     private function usableBankAccounts(array $data): array
     {
+        $configuredCodes = $this->virtualAccountBankCodes();
+        $configuredNames = array_map(
+            static fn (string $code) => match ($code) {
+                '20946' => 'palmpay',
+                '20897' => 'opay',
+            },
+            $configuredCodes,
+        );
+
         return collect((array) ($data['bankAccounts'] ?? []))
             ->filter(fn ($account) => is_array($account)
                 && trim((string) ($account['accountNumber'] ?? '')) !== ''
-                && trim((string) ($account['bankName'] ?? '')) !== '')
+                && trim((string) ($account['bankName'] ?? '')) !== ''
+                && $this->matchesRequestedBank($account, $configuredCodes, $configuredNames))
             ->values()
             ->all();
+    }
+
+    /** @param array<int, string> $configuredCodes @param array<int, string> $configuredNames */
+    private function matchesRequestedBank(array $account, array $configuredCodes, array $configuredNames): bool
+    {
+        $responseCode = trim((string) ($account['bankCode'] ?? $account['bank_code'] ?? ''));
+        if ($responseCode !== '') {
+            return in_array($responseCode, $configuredCodes, true);
+        }
+
+        $responseName = strtolower(preg_replace('/[^a-z0-9]/i', '', (string) $account['bankName']));
+
+        return in_array($responseName, $configuredNames, true);
     }
 
     /**

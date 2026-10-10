@@ -8,10 +8,15 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: vendify-backend-production
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -29,6 +34,12 @@ jobs:
           php composer-setup.php --install-dir=/usr/local/bin --filename=composer
           composer install --optimize-autoloader
 
+      - name: Test PaymentPoint onboarding and recovery
+        run: php artisan test tests/Feature/FundingAccountProviderStateTest.php tests/Feature/PaymentPointIntegrationTest.php tests/Feature/PaymentPointProvisioningMigrationTest.php
+
+      - name: Remove development dependencies
+        run: composer install --no-dev --optimize-autoloader
+
       - name: Prepare Laravel storage and cache
         run: |
           mkdir -p storage/framework/views
@@ -43,6 +54,8 @@ jobs:
           server: ${{ secrets.CPANEL_HOST }}
           username: ${{ secrets.CPANEL_USERNAME }}
           password: ${{ secrets.CPANEL_PASSWORD }}
+          port: ${{ secrets.CPANEL_PORT }}
+          protocol: ftps
           server-dir: ${{ secrets.CPANEL_PATH_BACKEND }}
           local-dir: ./ # deploy everything
           exclude: |
