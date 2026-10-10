@@ -107,7 +107,14 @@ class PaymentPoint extends PaymentBase
                 ->lockForUpdate()
                 ->first();
 
-            if (!$state || $state->status !== PaymentPointProvisioning::STATUS_KYC_REQUIRED) {
+            $identityEligible = $state
+                && in_array($state->status, [
+                    PaymentPointProvisioning::STATUS_KYC_REQUIRED,
+                    PaymentPointProvisioning::STATUS_FAILED,
+                ], true)
+                && $state->kyc_attempted_at === null;
+
+            if (! $identityEligible) {
                 return 'identity_not_requested';
             }
 

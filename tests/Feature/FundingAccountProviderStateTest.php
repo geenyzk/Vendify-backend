@@ -264,7 +264,7 @@ it('keeps a previously failed allocation in recovery without calling create agai
     $this->actingAs($user, 'sanctum')
         ->getJson('/api/wallet/funding-account')
         ->assertStatus(409)
-        ->assertJsonPath('status', 'identity_required')
+        ->assertJsonPath('status', 'recovery_pending')
         ->assertJsonPath('error_code', 'kyc_recovery_unconfirmed')
         ->assertJsonPath('kyc_submission_enabled', false)
         ->assertJsonPath('retryable', false);
@@ -272,7 +272,7 @@ it('keeps a previously failed allocation in recovery without calling create agai
     $this->actingAs($user, 'sanctum')
         ->getJson('/api/wallet/funding-account')
         ->assertStatus(409)
-        ->assertJsonPath('status', 'identity_required');
+        ->assertJsonPath('status', 'recovery_pending');
 
     Http::assertNothingSent();
     expect(PaymentPointProvisioning::query()->where('user_id', $user->id)->value('attempt_count'))->toBe(1)
@@ -307,6 +307,15 @@ it('submits a consented identity once and never persists the raw number', functi
     ]);
 
     $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertStatus(409)
+        ->assertJsonPath('status', 'identity_required')
+        ->assertJsonPath('kyc_submission_enabled', true)
+        ->assertJsonPath('recovery_required', true);
+
+    Http::assertNothingSent();
+
+    $this->actingAs($user, 'sanctum')
         ->postJson('/api/wallet/funding-account/identity', [
             'id_type' => 'bvn',
             'id_number' => '22123456789',
@@ -316,11 +325,24 @@ it('submits a consented identity once and never persists the raw number', functi
         ->assertJsonPath('status', 'ready')
         ->assertJsonPath('account.bank_name', 'PalmPay');
 
+    // A repeated browser submission returns the persisted account and never
+    // reaches PaymentPoint again.
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/wallet/funding-account/identity', [
+            'id_type' => 'bvn',
+            'id_number' => '22123456789',
+            'consent' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('status', 'ready')
+        ->assertJsonPath('account.account_number', '6698059290');
+
     Http::assertSent(fn (\Illuminate\Http\Client\Request $request) =>
         $request['bankCode'] === ['20946']
         && $request['idType'] === 'bvn'
         && $request['idNumber'] === '22123456789'
     );
+    Http::assertSentCount(1);
 
     $storedState = PaymentPointProvisioning::query()->where('user_id', $user->id)->firstOrFail();
     expect($storedState->status)->toBe(PaymentPointProvisioning::STATUS_READY)
@@ -357,12 +379,60 @@ it('does not transmit identity while duplicate-safe recovery is disabled', funct
             'consent' => true,
         ])
         ->assertStatus(409)
-        ->assertJsonPath('status', 'identity_required')
+        ->assertJsonPath('status', 'recovery_pending')
         ->assertJsonPath('error_code', 'kyc_recovery_unconfirmed')
         ->assertJsonPath('retryable', false);
 
     Http::assertNothingSent();
     expect(PaymentPointProvisioning::query()->where('user_id', $user->id)->value('kyc_attempted_at'))->toBeNull();
+});
+
+it('offers a previously failed pre-kyc record when safe recovery is enabled', function () {
+    config()->set('paymentpoint.kyc_recovery_enabled', true);
+    $user = fundingAccountUser();
+    fundingProvider('PaymentPoint', true, true);
+    $provider = Provider::query()->where('name', 'PaymentPoint')->firstOrFail();
+
+    PaymentPointProvisioning::query()->create([
+        'user_id' => $user->id,
+        'provider_id' => $provider->id,
+        'status' => PaymentPointProvisioning::STATUS_FAILED,
+        'last_error_category' => 'provider_exception',
+        'attempt_count' => 1,
+    ]);
+
+    Http::fake([
+        'api.paymentpoint.co/*' => Http::response([
+            'status' => 'success',
+            'bankAccounts' => [[
+                'accountNumber' => '6698059290',
+                'accountName' => 'Recovered Customer',
+                'bankName' => 'PalmPay',
+            ]],
+            'errors' => [],
+        ], 201),
+    ]);
+
+    $this->actingAs($user, 'sanctum')
+        ->getJson('/api/wallet/funding-account')
+        ->assertStatus(409)
+        ->assertJsonPath('status', 'identity_required')
+        ->assertJsonPath('kyc_submission_enabled', true)
+        ->assertJsonPath('recovery_required', true);
+
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/wallet/funding-account/identity', [
+            'id_type' => 'nin',
+            'id_number' => '22123456789',
+            'consent' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('status', 'ready')
+        ->assertJsonPath('account.account_number', '6698059290');
+
+    Http::assertSentCount(1);
+    expect(PaymentPointProvisioning::query()->where('user_id', $user->id)->value('status'))
+        ->toBe(PaymentPointProvisioning::STATUS_READY);
 });
 
 it('rejects an invalid identity number before any provider request', function () {
@@ -412,7 +482,8 @@ it('does not retry after a consented request returns no bank account', function 
     $this->actingAs($user, 'sanctum')
         ->getJson('/api/wallet/funding-account')
         ->assertStatus(409)
-        ->assertJsonPath('error_code', 'account_recovery_pending')
+        ->assertJsonPath('status', 'recovery_pending')
+        ->assertJsonPath('error_code', 'kyc_recovery_unconfirmed')
         ->assertJsonPath('kyc_submission_enabled', false);
 
     Http::assertSentCount(1);
@@ -439,7 +510,8 @@ it('does not retry after a provider timeout with an ambiguous remote outcome', f
     $this->actingAs($user, 'sanctum')
         ->getJson('/api/wallet/funding-account')
         ->assertStatus(409)
-        ->assertJsonPath('error_code', 'account_recovery_pending');
+        ->assertJsonPath('status', 'recovery_pending')
+        ->assertJsonPath('error_code', 'kyc_recovery_unconfirmed');
 
     Http::assertSentCount(1);
 });

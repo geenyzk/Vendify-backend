@@ -227,7 +227,12 @@ class AccountController extends Controller
                     ],
                 );
 
-                if ($state->status === PaymentPointProvisioning::STATUS_KYC_REQUIRED) {
+                $canOfferIdentity = in_array($state->status, [
+                    PaymentPointProvisioning::STATUS_KYC_REQUIRED,
+                    PaymentPointProvisioning::STATUS_FAILED,
+                ], true) && $state->kyc_attempted_at === null;
+
+                if ($canOfferIdentity) {
                     return $this->identityRequiredResponse($state, $correlationId);
                 }
 
@@ -415,14 +420,14 @@ class AccountController extends Controller
         $recoveryUnconfirmed = $outcome === 'kyc_recovery_unconfirmed';
         $alreadyAttempted = $outcome === 'kyc_attempt_already_used';
 
+        if ($recoveryUnconfirmed) {
+            return $this->pendingSupportResponse($correlationId);
+        }
+
         return response()->json([
-            'status' => $recoveryUnconfirmed ? 'identity_required' : 'failed',
-            'error_code' => $recoveryUnconfirmed
-                ? 'kyc_recovery_unconfirmed'
-                : ($alreadyAttempted ? 'kyc_attempt_already_used' : 'identity_verification_failed'),
-            'message' => $recoveryUnconfirmed
-                ? 'PaymentPoint must confirm that identity recovery will not create a duplicate customer. Please contact support.'
-                : 'PalmPay could not issue the account from this verification attempt. Support can trace the request.',
+            'status' => 'failed',
+            'error_code' => $alreadyAttempted ? 'kyc_attempt_already_used' : 'identity_verification_failed',
+            'message' => 'PalmPay could not issue the account from this verification attempt. Support can trace the request.',
             'retryable' => false,
             'kyc_submission_enabled' => false,
             'correlation_id' => $correlationId,
@@ -434,14 +439,16 @@ class AccountController extends Controller
         $isRecovery = $state->isRecovery();
         $submissionEnabled = !$isRecovery || (bool) config('paymentpoint.kyc_recovery_enabled');
 
+        if (! $submissionEnabled) {
+            return $this->pendingSupportResponse($correlationId);
+        }
+
         return response()->json([
             'status' => 'identity_required',
-            'error_code' => $isRecovery ? 'kyc_recovery_unconfirmed' : 'identity_required',
-            'message' => $submissionEnabled
-                ? 'Verify your identity to activate wallet funding with a dedicated PalmPay account.'
-                : 'Your identity information is required to activate wallet funding. Account activation is temporarily unavailable while we complete the recovery process. Please contact support if you need assistance.',
+            'error_code' => 'identity_required',
+            'message' => 'Verify your identity to activate wallet funding with a dedicated PalmPay account.',
             'retryable' => false,
-            'kyc_submission_enabled' => $submissionEnabled,
+            'kyc_submission_enabled' => true,
             'recovery_required' => $isRecovery,
             'correlation_id' => $correlationId,
         ], 409)->header('X-Correlation-ID', $correlationId);
@@ -450,8 +457,8 @@ class AccountController extends Controller
     private function pendingSupportResponse(string $correlationId): JsonResponse
     {
         return response()->json([
-            'status' => 'failed',
-            'error_code' => 'account_recovery_pending',
+            'status' => 'recovery_pending',
+            'error_code' => 'kyc_recovery_unconfirmed',
             'message' => 'Account activation is temporarily unavailable while we complete the recovery process. Please contact support if you need assistance.',
             'retryable' => false,
             'kyc_submission_enabled' => false,
